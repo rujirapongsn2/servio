@@ -59,6 +59,7 @@ export function useAudio() {
     trackId.current = crypto.randomUUID();
     await wavRecorder.current?.clear();
     audioChunks.current = [];
+
     await wavRecorder.current?.record((data) => {
       audioChunks.current.push(data.mono);
       const updatedFrequencies = wavRecorder.current?.getFrequencies(
@@ -66,7 +67,8 @@ export function useAudio() {
       ) || {
         values: new Float32Array([0]),
       };
-      setFrequencies(normalizeArray(updatedFrequencies.values, 30));
+      const normalizedFreqs = normalizeArray(updatedFrequencies.values, 30);
+      setFrequencies(normalizedFreqs);
     });
   }
 

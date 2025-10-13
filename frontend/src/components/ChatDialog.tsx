@@ -48,7 +48,7 @@ export function ChatHistory({ messages, isLoading }: ChatDialogProps) {
       )}
     >
       <div className="flex flex-col gap-2 relative py-8 px-5 pb-12">
-        {mergedMessages.map((message) => (
+        {mergedMessages.map((message, index) => (
           <MessageBubble
             key={
               Object.hasOwn(message, "id")
@@ -57,6 +57,8 @@ export function ChatHistory({ messages, isLoading }: ChatDialogProps) {
                 : JSON.stringify(message)
             }
             message={message}
+            isLast={index === mergedMessages.length - 1}
+            isLoading={isLoading}
           />
         ))}
         {isLoading && <ChatLoadingDots />}

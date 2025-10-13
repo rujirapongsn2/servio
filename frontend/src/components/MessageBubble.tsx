@@ -8,12 +8,14 @@ import { Message } from "@/lib/types";
 
 type MessageBubbleProps = {
   message: Message;
+  isLast?: boolean;
+  isLoading?: boolean;
 };
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, isLast = false, isLoading = false }: MessageBubbleProps) {
   switch (message.type) {
     case "function_call":
-      return <FunctionCallMessage message={message} />;
+      return <FunctionCallMessage message={message} isLast={isLast} isLoading={isLoading} />;
     case "function_call_output":
       // already rendered in FunctionCall
       return null;

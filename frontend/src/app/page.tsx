@@ -6,13 +6,10 @@ import { Composer } from "@/components/Composer";
 import { Header } from "@/components/Header";
 import { useAudio } from "@/hooks/useAudio";
 import { useWebsocket } from "@/hooks/useWebsocket";
-import { useState } from "react";
 
 import "./styles.css";
 
 export default function Home() {
-  const [prompt, setPrompt] = useState("");
-
   const {
     isReady: audioIsReady,
     playAudio,
@@ -25,7 +22,6 @@ export default function Home() {
   const {
     isReady: websocketReady,
     sendAudioMessage,
-    sendTextMessage,
     history: messages,
     resetHistory,
     isLoading,
@@ -34,11 +30,6 @@ export default function Home() {
     onNewAudio: playAudio,
   });
 
-  function handleSubmit() {
-    setPrompt("");
-    sendTextMessage(prompt);
-  }
-
   async function handleStopPlaying() {
     await stopPlaying();
   }
@@ -46,17 +37,13 @@ export default function Home() {
   return (
     <div className="w-full h-dvh flex flex-col items-center">
       <Header
-        agentName={agentName ?? ""}
+        agentName={agentName ?? "Voice Agent"}
         playbackFrequencies={playbackFrequencies}
         stopPlaying={handleStopPlaying}
         resetConversation={resetHistory}
       />
       <ChatHistory messages={messages} isLoading={isLoading} />
       <Composer
-        prompt={prompt}
-        setPrompt={setPrompt}
-        onSubmit={handleSubmit}
-        isLoading={isLoading}
         audioChat={
           <AudioChat
             frequencies={frequencies}

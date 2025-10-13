@@ -1,19 +1,25 @@
-import React from "react";
+import React, { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { coy } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import ClockIcon from "@/components/icons/ClockIcon";
 import FunctionsIcon from "@/components/icons/FunctionsIcon";
+import ChevronDownIcon from "@/components/icons/ChevronDownIcon";
+import ChevronRightIcon from "@/components/icons/ChevronRightIcon";
 import { HandoffMessage } from "@/components/messages/HandoffMessage";
 import { ToolCall } from "@/lib/types";
 
 type FunctionCallMessageProps = {
   message: ToolCall;
+  isLast?: boolean;
+  isLoading?: boolean;
 };
 
-export function FunctionCallMessage({ message }: FunctionCallMessageProps) {
+export function FunctionCallMessage({ message, isLast = false, isLoading = false }: FunctionCallMessageProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (message.name.startsWith("transfer_to_")) {
-    return <HandoffMessage message={message} />;
+    return <HandoffMessage message={message} isLast={isLast} isLoading={isLoading} />;
   }
 
   let output = message?.output;
@@ -24,11 +30,15 @@ export function FunctionCallMessage({ message }: FunctionCallMessageProps) {
   } catch {
     output = message.output;
   }
+
   return (
     <div className="flex flex-col w-[70%] relative mb-[-8px]">
       <div>
         <div className="flex flex-col text-sm rounded-[16px]">
-          <div className="font-semibold p-3 pl-0 text-gray-700 rounded-b-none flex gap-2">
+          <div
+            className="font-semibold p-3 pl-0 text-gray-700 rounded-b-none flex gap-2 cursor-pointer hover:opacity-70 transition-opacity"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
             <div className="flex gap-2 items-center text-blue-500 ml-[-8px] fill-blue-500">
               <FunctionsIcon width={16} height={16} />
               <div className="text-sm font-medium">
@@ -36,46 +46,53 @@ export function FunctionCallMessage({ message }: FunctionCallMessageProps) {
                   ? `Called ${message.name}`
                   : `Calling ${message.name}...`}
               </div>
+              {isExpanded ? (
+                <ChevronDownIcon width={14} height={14} />
+              ) : (
+                <ChevronRightIcon width={14} height={14} />
+              )}
             </div>
           </div>
 
-          <div className="bg-[#fafafa] rounded-xl py-2 ml-4 mt-2">
-            <div className="max-h-96 overflow-y-scroll text-xs border-b mx-6 p-2">
-              <SyntaxHighlighter
-                customStyle={{
-                  backgroundColor: "#fafafa",
-                  padding: "8px",
-                  paddingLeft: "0px",
-                  marginTop: 0,
-                  marginBottom: 0,
-                }}
-                language="json"
-                style={coy}
-              >
-                {JSON.stringify(JSON.parse(message.arguments), null, 2)}
-              </SyntaxHighlighter>
-            </div>
-            <div className="max-h-80 overflow-y-scroll mx-6 p-2 text-xs">
-              {output ? (
+          {isExpanded && (
+            <div className="bg-[#fafafa] rounded-xl py-2 ml-4 mt-2">
+              <div className="max-h-96 overflow-y-scroll text-xs border-b mx-6 p-2">
                 <SyntaxHighlighter
                   customStyle={{
                     backgroundColor: "#fafafa",
                     padding: "8px",
                     paddingLeft: "0px",
                     marginTop: 0,
+                    marginBottom: 0,
                   }}
                   language="json"
                   style={coy}
                 >
-                  {output}
+                  {JSON.stringify(JSON.parse(message.arguments), null, 2)}
                 </SyntaxHighlighter>
-              ) : (
-                <div className="text-zinc-500 flex items-center gap-2 py-2">
-                  <ClockIcon width={16} height={16} /> Waiting for result...
-                </div>
-              )}
+              </div>
+              <div className="max-h-80 overflow-y-scroll mx-6 p-2 text-xs">
+                {output ? (
+                  <SyntaxHighlighter
+                    customStyle={{
+                      backgroundColor: "#fafafa",
+                      padding: "8px",
+                      paddingLeft: "0px",
+                      marginTop: 0,
+                    }}
+                    language="json"
+                    style={coy}
+                  >
+                    {output}
+                  </SyntaxHighlighter>
+                ) : (
+                  <div className="text-zinc-500 flex items-center gap-2 py-2">
+                    <ClockIcon width={16} height={16} /> Waiting for result...
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

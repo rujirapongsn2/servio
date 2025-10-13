@@ -9,12 +9,131 @@ This repository contains a sample app to highlight how to build [voice agents](h
 
 Features:
 
-- Multi-turn conversation handling
-- Push-to-talk audio mode
-- Function calling
-- Streaming responses & tool calls
+- **Multi-turn conversation handling** - Continuous back-and-forth conversations
+- **Push-to-Talk audio mode** - Press and hold to speak, release to send
+- **Multi-agent system** - Specialized AI agents that work together and transfer conversations
+- **Function calling** - Agents can use tools (web search, database queries, etc.)
+- **Streaming responses** - Real-time text and audio streaming
 
 This app is meant to be used as a starting point to build a conversational assistant that you can customize to your needs.
+
+## Table of Contents
+
+- [Multi-Agent Architecture](#multi-agent-architecture)
+- [Requirements](#requirements)
+- [How to use](#how-to-use)
+- [Using the App](#using-the-app)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Multi-Agent Architecture
+
+This sample app demonstrates a **multi-agent system** where multiple AI agents work together, each specialized in different domains. Think of it like calling a customer service center with different departments!
+
+### The Three Agents
+
+#### 1. **Triage Agent** (Main Router) 🎯
+- **Role**: First point of contact that routes conversations to the appropriate specialist
+- **Instructions**: "Route the user to the appropriate agent based on their request"
+- **Starting Point**: Every conversation begins here
+- **Can transfer to**: Stylist Agent or Customer Support Agent
+
+**Example**:
+```
+You: "Hello, I need help"
+Triage Agent: Greets you and waits for more context
+
+You: "I want to see some clothes"
+Triage Agent: → Transferred to Stylist Agent
+```
+
+#### 2. **Stylist Agent** (Fashion Consultant) 👔
+- **Role**: Provides fashion advice and styling recommendations
+- **Special Tools**:
+  - `WebSearchTool` - Searches the internet for fashion information
+  - Location: Tokyo (can find local stores and trends)
+- **Can transfer to**: Customer Support Agent (if order-related questions come up)
+
+**Example**:
+```
+You: "Recommend summer outfits"
+Stylist Agent: Uses WebSearch → Suggests breathable clothing
+
+You: "I want to check my order"
+Stylist Agent: → Transferred to Customer Support Agent
+```
+
+#### 3. **Customer Support Agent** (Customer Service) 🛍️
+- **Role**: Handles orders, refunds, and purchase information
+- **Special Tools**:
+  - `get_past_orders()` - Retrieves order history
+  - `submit_refund_request(order_number)` - Processes refund requests
+- **Cannot transfer**: This is the final agent (no handoffs)
+
+**Example**:
+```
+You: "Check my orders"
+Customer Support: Uses get_past_orders() → Shows all orders
+
+You: "Refund order AB472"
+Customer Support: Uses submit_refund_request("AB472") → Processes refund
+```
+
+### How Agent Handoffs Work
+
+When you see "**Transferred to [Agent Name]**" in the conversation, it means:
+
+> The AI has determined that a different specialist would better serve your needs and has seamlessly transferred the conversation.
+
+**Technical Flow**:
+1. Current agent decides to transfer → `output.last_agent` changes
+2. Backend updates `self.latest_agent = output.last_agent`
+3. WebSocket sends message with new `agent_name`
+4. Frontend displays "Transferred to [Agent Name]"
+
+### Conversation Flow Diagram
+
+```
+┌─────────────────────┐
+│  Start Conversation │
+│   (Triage Agent)    │
+└──────────┬──────────┘
+           │
+    What did you say?
+           │
+     ┌─────┴─────┐
+     │           │
+     ▼           ▼
+┌─────────┐  ┌──────────────┐
+│ Stylist │  │ Customer     │
+│ Agent   │  │ Support Agent│
+└────┬────┘  └──────────────┘
+     │
+     └──────────┐
+                │
+    (If order mentioned)
+                │
+                ▼
+        ┌──────────────┐
+        │ Customer     │
+        │ Support Agent│
+        └──────────────┘
+```
+
+### Why Multi-Agent?
+
+✅ **Specialized Expertise** - Each agent excels in their domain
+✅ **More Accurate Responses** - Uses domain-specific tools
+✅ **Flexible Routing** - Transfers based on context
+✅ **Easy to Extend** - Add new agents anytime
+
+### Customizing Agents
+
+Edit `server/app/agent_config.py` to:
+- Add new agents with specialized tools
+- Modify agent instructions and behavior
+- Configure handoff relationships
+- Add custom function tools
 
 ## Requirements
 
@@ -59,6 +178,58 @@ This app is meant to be used as a starting point to build a conversational assis
    ```
 
    The app will be available at [`http://localhost:3000`](http://localhost:3000).
+
+## Using the App
+
+### Push-to-Talk Interface
+
+The app uses a **Push-to-Talk** system for voice interaction:
+
+1. **Start a Call**: Click the green **Call** button 🟢
+2. **Push-to-Talk Button Appears**: A large blue microphone button will appear
+3. **Hold to Speak**:
+   - Press and hold the button (mouse/touch)
+   - Button turns red 🔴 and shows "Recording..."
+   - Speak your message
+4. **Release to Send**:
+   - Release the button
+   - Audio is sent immediately to the agent
+   - Button returns to blue, ready for next message
+5. **End Call**: Click the red "End Call" button to finish
+
+### Console Debugging
+
+Open your browser's Developer Console (F12) to see real-time logs:
+
+```
+📞 Call started - Ready for Push-to-Talk
+🎤 Push-to-Talk: Recording started
+🛑 Push-to-Talk: Recording stopped
+📤 Sending audio, length: 48000
+Transferred to Stylist Agent
+📞 Call ended
+```
+
+### Example Conversations
+
+**Fashion Advice**:
+```
+You: [Press & hold] "What should I wear for summer?"
+Stylist Agent: "I recommend breathable cotton t-shirts and linen shorts..."
+
+You: [Press & hold] "Show me some trendy styles in Tokyo"
+Stylist Agent: [Uses WebSearch] "Current trends in Tokyo include..."
+```
+
+**Order Management**:
+```
+You: [Press & hold] "Check my orders"
+→ Transferred to Customer Support Agent
+Customer Support: "You have 9 orders. The most recent is AB472..."
+
+You: [Press & hold] "Refund order AB472"
+Customer Support: [Uses submit_refund_request] "Refund processed successfully"
+```
 
 ## Contributing
 
