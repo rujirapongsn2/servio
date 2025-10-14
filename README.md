@@ -23,6 +23,8 @@ This app is meant to be used as a starting point to build a conversational assis
 - [Requirements](#requirements)
 - [How to use](#how-to-use)
 - [Using the App](#using-the-app)
+- [Admin & Agents](#admin--agents)
+- [Screenshots & GIFs](#screenshots--gifs)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -36,7 +38,7 @@ This sample app demonstrates a **multi-agent system** where multiple AI agents w
 - **Role**: First point of contact that routes conversations to the appropriate specialist
 - **Instructions**: "Route the user to the appropriate agent based on their request"
 - **Starting Point**: Every conversation begins here
-- **Can transfer to**: Softnix Sales Agent, Stylist Agent, or Customer Support Agent
+- **Can transfer to**: Softnix Sales Agent, Stylist Agent, Customer Support Agent, and any agents you create in Admin (e.g., Dtwin Agent)
 
 **Example**:
 ```
@@ -109,6 +111,7 @@ When you see "**Transferred to [Agent Name]**" in the conversation, it means:
 2. Backend updates `self.latest_agent = output.last_agent`
 3. WebSocket sends message with new `agent_name`
 4. Frontend displays "Transferred to [Agent Name]"
+5. The runtime triage agent automatically includes DB-defined agents as handoffs; if you’ve created “Dtwin Agent”, the triage can route to it when users mention DTWIN
 
 ### Conversation Flow Diagram
 
@@ -201,6 +204,58 @@ Edit `server/app/agent_config.py` to:
    ```
 
    The app will be available at [`http://localhost:3000`](http://localhost:3000).
+
+## Admin & Agents
+
+### Admin Console
+- URL: `http://localhost:3002/admin`
+- Default login: `admin` / set via database; token stored in `localStorage` for subsequent requests.
+
+### Dynamic Triage + DB Agents
+- The backend composes a triage agent at runtime that includes agents from the database as handoffs. If you create a "Dtwin Agent" in Admin, triage can transfer to it when a user asks about DTWIN.
+- Reset in-call agent state triggers rebuilding the triage with latest DB changes.
+
+### Dtwin Agent Tips
+- For offline/dev environments, disable MCP tools to avoid network errors:
+  - Add to `.env`: `DISABLE_MCP=1`
+- To make Dtwin testable without network, run:
+  ```bash
+  uv run python server/scripts/configure_dtwin_fallback.py
+  ```
+  This removes MCP tools from Dtwin and attaches a built-in mock tool (`get_past_orders`).
+
+### Testing Agents (API)
+- Test endpoint streams output and aggregates text:
+  ```bash
+  curl -X POST \
+    -H "Authorization: Bearer <ADMIN_TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{"message":"hello"}' \
+    http://localhost:8000/api/admin/agents/<id>/test
+  ```
+  If MCP is disabled or unreachable, the response still returns 200 with an explanatory message rather than a 500.
+
+## Screenshots & GIFs
+
+### Dtwin Transfer (expected)
+- Add your screenshot or GIF demonstrating: user asks about “DTWIN” → triage transfers to “Dtwin Agent” → agent responds.
+- Place files at:
+  - `docs/images/dtwin-transfer.png`
+  - `docs/images/dtwin-transfer.gif` (optional)
+
+Example embed (auto-picks whichever exists):
+
+![Dtwin transfer](docs/images/dtwin-transfer.png)
+
+### Admin Tool Form (MCP)
+![MCP tool form](.playwright-mcp/mcp-tool-form.png)
+
+### Admin Settings Saved
+![Admin settings success](.playwright-mcp/admin-settings-success.png)
+
+### Tips to Capture a GIF
+- macOS: QuickTime Player → New Screen Recording → export → convert to GIF via `ffmpeg` or an online tool.
+- CLI (ffmpeg): `ffmpeg -i input.mov -vf "fps=12,scale=1200:-1:flags=lanczos" -loop 0 docs/images/dtwin-transfer.gif`
 
 ## Using the App
 
