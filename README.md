@@ -34,7 +34,7 @@ This sample app demonstrates a **multi-agent system** where multiple AI agents w
 
 ### The Four Agents
 
-#### 1. **Triage Agent** (Main Router) 🎯
+#### 1. **Coordinator Agent** (Main Router) 🎯
 - **Role**: First point of contact that routes conversations to the appropriate specialist
 - **Instructions**: "Route the user to the appropriate agent based on their request"
 - **Starting Point**: Every conversation begins here
@@ -43,10 +43,10 @@ This sample app demonstrates a **multi-agent system** where multiple AI agents w
 **Example**:
 ```
 You: "Hello, I need help"
-Triage Agent: Greets you and waits for more context
+Coordinator Agent: Greets you and waits for more context
 
 You: "What products does Softnix offer?"
-Triage Agent: → Transferred to Softnix Sales Agent
+Coordinator Agent: → Transferred to Softnix Sales Agent
 ```
 
 #### 2. **Softnix Sales Agent** (Product Information) 💼
@@ -111,39 +111,39 @@ When you see "**Transferred to [Agent Name]**" in the conversation, it means:
 2. Backend updates `self.latest_agent = output.last_agent`
 3. WebSocket sends message with new `agent_name`
 4. Frontend displays "Transferred to [Agent Name]"
-5. The runtime triage agent automatically includes DB-defined agents as handoffs; if you’ve created “Dtwin Agent”, the triage can route to it when users mention DTWIN
+5. The runtime coordinator agent automatically includes DB-defined agents as handoffs; if you’ve created “Dtwin Agent”, the coordinator can route to it when users mention DTWIN
 
 ### Conversation Flow Diagram
 
 ```
                     ┌─────────────────────┐
                     │  Start Conversation │
-                    │   (Triage Agent)    │
+                    │ (Coordinator Agent) │
                     └──────────┬──────────┘
                                │
                         What did you say?
                                │
-              ┌────────────────┼────────────────┐
-              │                │                │
-              ▼                ▼                ▼
-      ┌───────────────┐  ┌─────────┐  ┌──────────────┐
-      │ Softnix Sales │  │ Stylist │  │ Customer     │
-      │    Agent      │  │ Agent   │  │ Support Agent│
-      └───────┬───────┘  └────┬────┘  └──────────────┘
-              │               │
-              │               │ (If order mentioned)
-              │               │
-              │               ▼
-              │       ┌──────────────┐
-              └──────>│ Customer     │
-                      │ Support Agent│
-                      └──────────────┘
+        ┌───────────────┬─────────────┬───────────────┬───────────────┐
+        ▼               ▼             ▼               ▼
+┌───────────────┐  ┌─────────┐  ┌──────────────┐  ┌───────────────┐
+│ Softnix Sales │  │ Stylist │  │ Customer     │  │  Dtwin Agent  │
+│    Agent      │  │ Agent   │  │ Support Agent│  │     (DB)      │
+└───────┬───────┘  └────┬────┘  └──────────────┘  └───────────────┘
+        │               │
+        │               │ (If order mentioned)
+        │               │
+        │               ▼
+        │       ┌──────────────┐
+        └──────>│ Customer     │
+                │ Support Agent│
+                └──────────────┘
 
 Routes:
 • Softnix questions → Softnix Sales Agent
 • Fashion advice → Stylist Agent
 • Order/refund issues → Customer Support Agent
-• Both specialized agents can transfer to Customer Support if needed
+• DTWIN questions → Dtwin Agent (from database)
+• Additional DB agents appear as extra branches as configured in Admin
 ```
 
 ### Why Multi-Agent?
@@ -211,9 +211,9 @@ Edit `server/app/agent_config.py` to:
 - URL: `http://localhost:3002/admin`
 - Default login: `admin` / set via database; token stored in `localStorage` for subsequent requests.
 
-### Dynamic Triage + DB Agents
-- The backend composes a triage agent at runtime that includes agents from the database as handoffs. If you create a "Dtwin Agent" in Admin, triage can transfer to it when a user asks about DTWIN.
-- Reset in-call agent state triggers rebuilding the triage with latest DB changes.
+### Dynamic Coordinator + DB Agents
+- The backend composes a coordinator agent at runtime that includes agents from the database as handoffs. If you create a "Dtwin Agent" in Admin, the coordinator can transfer to it when a user asks about DTWIN.
+- Reset in-call agent state triggers rebuilding the coordinator with latest DB changes.
 
 ### Dtwin Agent Tips
 - For offline/dev environments, disable MCP tools to avoid network errors:

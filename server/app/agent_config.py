@@ -89,7 +89,7 @@ stylist_agent = Agent(
 )
 
 triage_agent = Agent(
-    name="Triage Agent",
+    name="Coordinator Agent",
     model="gpt-4o-mini",
     instructions=f"""Route the user to the appropriate agent based on their request.
 
@@ -377,9 +377,9 @@ def load_agents_from_db():
 
 
 def get_runtime_starting_agent() -> Agent:
-    """Compose a runtime starting agent (triage) that includes DB agents as handoffs.
+    """Compose a runtime starting agent (coordinator) that includes DB agents as handoffs.
 
-    - Keeps the familiar Triage Agent UX
+    - Keeps the familiar Coordinator Agent UX
     - Dynamically appends DB-defined agents as additional handoffs
     - Augments instructions with a brief list of available agents so the
       model learns routing options (helps it pick Dtwin Agent when asked)
@@ -419,7 +419,7 @@ def get_runtime_starting_agent() -> Agent:
             break
 
     triage = Agent(
-        name="Triage Agent",
+        name="Coordinator Agent",
         model=triage_agent.model,
         instructions=triage_agent.instructions + extra,
         handoffs=combined_handoffs,

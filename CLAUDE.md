@@ -73,7 +73,7 @@ The backend runs on `http://localhost:8000` with a WebSocket endpoint at `/ws`. 
      - `text_output_complete()`: Finalizes response and updates agent state
 
 3. **Agent Configuration** (`app/agent_config.py`): Multi-agent architecture
-   - **Triage Agent**: Routes users to specialized agents (starting point)
+- **Coordinator Agent**: Routes users to specialized agents (starting point)
    - **Stylist Agent**: Handles styling queries, uses WebSearchTool with Tokyo location
    - **Customer Support Agent**: Handles orders and refunds
    - All agents use conversational tone without emojis or formal formatting
@@ -97,7 +97,7 @@ The backend runs on `http://localhost:8000` with a WebSocket endpoint at `/ws`. 
    - Key functions:
      - `sendTextMessage()`: Sends text input
      - `sendAudioMessage()`: Sends audio as base64-encoded Int16Array
-     - `resetHistory()`: Clears conversation and resets to triage agent
+     - `resetHistory()`: Clears conversation and resets to coordinator agent
    - Message types handled:
      - `history.updated`: Updates conversation state
      - `response.audio.delta`: Receives audio chunks from backend

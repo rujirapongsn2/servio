@@ -82,7 +82,7 @@ class Workflow(VoiceWorkflowBase):
 async def websocket_endpoint(websocket: WebSocket):
     with trace("Voice Agent Chat"):
         await websocket.accept()
-        # Compose a fresh triage agent that includes DB-defined agents as handoffs
+        # Compose a fresh coordinator agent that includes DB-defined agents as handoffs
         dynamic_starting_agent = get_runtime_starting_agent()
         connection = WebsocketHelper(websocket, [], dynamic_starting_agent)
         audio_buffer = []
