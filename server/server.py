@@ -10,7 +10,7 @@ from agents.voice import (
     VoicePipelineConfig,
     VoiceWorkflowBase,
 )
-from app.agent_config import starting_agent
+from app.agent_config import get_runtime_starting_agent
 from app.utils import (
     WebsocketHelper,
     concat_audio_chunks,
@@ -82,7 +82,9 @@ class Workflow(VoiceWorkflowBase):
 async def websocket_endpoint(websocket: WebSocket):
     with trace("Voice Agent Chat"):
         await websocket.accept()
-        connection = WebsocketHelper(websocket, [], starting_agent)
+        # Compose a fresh triage agent that includes DB-defined agents as handoffs
+        dynamic_starting_agent = get_runtime_starting_agent()
+        connection = WebsocketHelper(websocket, [], dynamic_starting_agent)
         audio_buffer = []
 
         workflow = Workflow(connection)
@@ -97,7 +99,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if is_sync_message(message):
                 connection.history = message["inputs"]
                 if message.get("reset_agent", False):
-                    connection.latest_agent = starting_agent
+                    # Recompose to pick up latest DB changes on reset
+                    connection.latest_agent = get_runtime_starting_agent()
             elif is_new_text_message(message):
                 user_input = process_inputs(message, connection)
                 async for new_output_tokens in workflow.run(user_input):

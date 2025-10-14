@@ -374,3 +374,54 @@ def load_agents_from_db():
 
     # If no starting agent marked, return first agent or default
     return all_agents[agents_data[0]["id"]] if all_agents else starting_agent
+
+
+def get_runtime_starting_agent() -> Agent:
+    """Compose a runtime starting agent (triage) that includes DB agents as handoffs.
+
+    - Keeps the familiar Triage Agent UX
+    - Dynamically appends DB-defined agents as additional handoffs
+    - Augments instructions with a brief list of available agents so the
+      model learns routing options (helps it pick Dtwin Agent when asked)
+    """
+    from app import database
+
+    # Build DB agents (if any)
+    db_agents_data = database.get_all_agents()
+    db_agents: list[Agent] = []
+    for a in db_agents_data:
+        try:
+            db_agents.append(build_agent_from_db(a))
+        except Exception:
+            # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
+            continue
+
+    # Base triage
+    base_handoffs = [softnix_sales_agent, stylist_agent, customer_support_agent]
+    combined_handoffs = base_handoffs + db_agents
+
+    # Enrich instructions with dynamic agent list (names only to avoid long prompts)
+    extra = "\n\nAdditional agents available for transfer: "
+    if db_agents_data:
+        names = ", ".join([a["name"] for a in db_agents_data])
+        extra += names + "."
+    else:
+        extra += "None."
+
+    # Add explicit routing hint for Dtwin if present
+    for a in db_agents_data:
+        name = a.get("name", "").lower()
+        if "dtwin" in name:
+            extra += (
+                "\nIf the user mentions DTWIN (e.g., 'DTWIN', 'ดีทวิน'), "
+                "transfer to the Dtwin Agent."
+            )
+            break
+
+    triage = Agent(
+        name="Triage Agent",
+        model=triage_agent.model,
+        instructions=triage_agent.instructions + extra,
+        handoffs=combined_handoffs,
+    )
+    return triage
