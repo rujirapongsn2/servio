@@ -30,24 +30,43 @@ This app is meant to be used as a starting point to build a conversational assis
 
 This sample app demonstrates a **multi-agent system** where multiple AI agents work together, each specialized in different domains. Think of it like calling a customer service center with different departments!
 
-### The Three Agents
+### The Four Agents
 
 #### 1. **Triage Agent** (Main Router) 🎯
 - **Role**: First point of contact that routes conversations to the appropriate specialist
 - **Instructions**: "Route the user to the appropriate agent based on their request"
 - **Starting Point**: Every conversation begins here
-- **Can transfer to**: Stylist Agent or Customer Support Agent
+- **Can transfer to**: Softnix Sales Agent, Stylist Agent, or Customer Support Agent
 
 **Example**:
 ```
 You: "Hello, I need help"
 Triage Agent: Greets you and waits for more context
 
-You: "I want to see some clothes"
-Triage Agent: → Transferred to Stylist Agent
+You: "What products does Softnix offer?"
+Triage Agent: → Transferred to Softnix Sales Agent
 ```
 
-#### 2. **Stylist Agent** (Fashion Consultant) 👔
+#### 2. **Softnix Sales Agent** (Product Information) 💼
+- **Role**: Provides information about Softnix products and services
+- **Special Tools**:
+  - `get_softnix_info(question)` - Queries Softnix GenAI knowledge base API
+  - Connects to: https://genai.softnix.ai/external/api/chat-messages
+- **Can transfer to**: Customer Support Agent (if purchase-related questions come up)
+
+**Example**:
+```
+You: "What is Softnix GenAI?"
+Softnix Sales Agent: Uses get_softnix_info() → Returns detailed product information
+
+You: "How much does it cost?"
+Softnix Sales Agent: Uses get_softnix_info() → Provides pricing details
+
+You: "I want to place an order"
+Softnix Sales Agent: → Transferred to Customer Support Agent
+```
+
+#### 3. **Stylist Agent** (Fashion Consultant) 👔
 - **Role**: Provides fashion advice and styling recommendations
 - **Special Tools**:
   - `WebSearchTool` - Searches the internet for fashion information
@@ -94,30 +113,34 @@ When you see "**Transferred to [Agent Name]**" in the conversation, it means:
 ### Conversation Flow Diagram
 
 ```
-┌─────────────────────┐
-│  Start Conversation │
-│   (Triage Agent)    │
-└──────────┬──────────┘
-           │
-    What did you say?
-           │
-     ┌─────┴─────┐
-     │           │
-     ▼           ▼
-┌─────────┐  ┌──────────────┐
-│ Stylist │  │ Customer     │
-│ Agent   │  │ Support Agent│
-└────┬────┘  └──────────────┘
-     │
-     └──────────┐
-                │
-    (If order mentioned)
-                │
-                ▼
-        ┌──────────────┐
-        │ Customer     │
-        │ Support Agent│
-        └──────────────┘
+                    ┌─────────────────────┐
+                    │  Start Conversation │
+                    │   (Triage Agent)    │
+                    └──────────┬──────────┘
+                               │
+                        What did you say?
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+      ┌───────────────┐  ┌─────────┐  ┌──────────────┐
+      │ Softnix Sales │  │ Stylist │  │ Customer     │
+      │    Agent      │  │ Agent   │  │ Support Agent│
+      └───────┬───────┘  └────┬────┘  └──────────────┘
+              │               │
+              │               │ (If order mentioned)
+              │               │
+              │               ▼
+              │       ┌──────────────┐
+              └──────>│ Customer     │
+                      │ Support Agent│
+                      └──────────────┘
+
+Routes:
+• Softnix questions → Softnix Sales Agent
+• Fashion advice → Stylist Agent
+• Order/refund issues → Customer Support Agent
+• Both specialized agents can transfer to Customer Support if needed
 ```
 
 ### Why Multi-Agent?
