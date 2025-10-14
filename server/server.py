@@ -34,11 +34,22 @@ load_dotenv(dotenv_path="../.env", override=True)
 
 app = FastAPI()
 
+# Import and include admin routes
+from app.admin_routes import router as admin_router
+app.include_router(admin_router)
+
 logger = getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
