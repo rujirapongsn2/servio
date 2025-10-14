@@ -13,13 +13,26 @@ type FunctionCallMessageProps = {
   message: ToolCall;
   isLast?: boolean;
   isLoading?: boolean;
+  hasNextFunctionCall?: boolean;
 };
 
-export function FunctionCallMessage({ message, isLast = false, isLoading = false }: FunctionCallMessageProps) {
+export function FunctionCallMessage({
+  message,
+  isLast = false,
+  isLoading = false,
+  hasNextFunctionCall = false
+}: FunctionCallMessageProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (message.name.startsWith("transfer_to_")) {
-    return <HandoffMessage message={message} isLast={isLast} isLoading={isLoading} />;
+    return (
+      <HandoffMessage
+        message={message}
+        isLast={isLast}
+        isLoading={isLoading}
+        hasNextFunctionCall={hasNextFunctionCall}
+      />
+    );
   }
 
   let output = message?.output;

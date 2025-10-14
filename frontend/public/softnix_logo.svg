@@ -1,0 +1,11 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Softnix Logo - Simple "S" lettermark -->
+  <circle cx="60" cy="60" r="58" fill="#2563EB" stroke="#1E40AF" stroke-width="2"/>
+  <path d="M60 25 C75 25, 85 35, 85 45 C85 55, 75 60, 60 60 C45 60, 35 65, 35 75 C35 85, 45 95, 60 95"
+        stroke="white"
+        stroke-width="12"
+        stroke-linecap="round"
+        fill="none"/>
+  <circle cx="60" cy="20" r="6" fill="white"/>
+  <circle cx="60" cy="100" r="6" fill="white"/>
+</svg>

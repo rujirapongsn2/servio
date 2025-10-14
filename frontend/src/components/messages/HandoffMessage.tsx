@@ -1,5 +1,4 @@
 import React from "react";
-import { motion } from "motion/react";
 
 import ShuffleIcon from "@/components/icons/ShuffleIcon";
 import { ToolCall } from "@/lib/types";
@@ -8,9 +7,15 @@ type HandoffMessageProps = {
   message: ToolCall;
   isLast?: boolean;
   isLoading?: boolean;
+  hasNextFunctionCall?: boolean;
 };
 
-export function HandoffMessage({ message, isLast = false, isLoading = false }: HandoffMessageProps) {
+export function HandoffMessage({
+  message,
+  isLast = false,
+  isLoading = false,
+  hasNextFunctionCall = false
+}: HandoffMessageProps) {
   let agentName: string;
   if (message?.output) {
     agentName = message?.output?.match(/'assistant':\s*'([^']+)'/)?.[1] || "";
@@ -18,8 +23,8 @@ export function HandoffMessage({ message, isLast = false, isLoading = false }: H
     agentName = message.name;
   }
 
-  // Always show spinner after transfer message is completed
-  const showSpinner = message.status === "completed";
+  // Show spinner if transfer completed and no function call yet
+  const showSpinner = message.status === "completed" && !hasNextFunctionCall;
 
   return (
     <div className="flex flex-col w-[70%] relative mb-[-8px]">
@@ -33,30 +38,23 @@ export function HandoffMessage({ message, isLast = false, isLoading = false }: H
                   ? `Transferred to ${agentName}`
                   : `Transferring conversation...`}
                 {showSpinner && (
-                  <div className="flex items-center ml-1">
-                    <motion.span
+                  <div className="flex items-center ml-2 gap-1">
+                    <span
                       className="w-1.5 h-1.5 bg-blue-500 rounded-full"
-                      animate={{ opacity: [0.2, 1, 0.2] }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
-                    />
-                    <motion.span
-                      className="w-1.5 h-1.5 bg-blue-500 rounded-full mx-0.5"
-                      animate={{ opacity: [0.2, 1, 0.2] }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                        delay: 0.2,
+                      style={{
+                        animation: 'pulse 1.4s ease-in-out infinite'
                       }}
                     />
-                    <motion.span
+                    <span
                       className="w-1.5 h-1.5 bg-blue-500 rounded-full"
-                      animate={{ opacity: [0.2, 1, 0.2] }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                        delay: 0.4,
+                      style={{
+                        animation: 'pulse 1.4s ease-in-out 0.2s infinite'
+                      }}
+                    />
+                    <span
+                      className="w-1.5 h-1.5 bg-blue-500 rounded-full"
+                      style={{
+                        animation: 'pulse 1.4s ease-in-out 0.4s infinite'
                       }}
                     />
                   </div>
@@ -66,6 +64,16 @@ export function HandoffMessage({ message, isLast = false, isLoading = false }: H
           </div>
         </div>
       </div>
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 0.2;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }

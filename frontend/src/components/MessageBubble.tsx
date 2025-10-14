@@ -10,12 +10,25 @@ type MessageBubbleProps = {
   message: Message;
   isLast?: boolean;
   isLoading?: boolean;
+  hasNextFunctionCall?: boolean;
 };
 
-export function MessageBubble({ message, isLast = false, isLoading = false }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  isLast = false,
+  isLoading = false,
+  hasNextFunctionCall = false
+}: MessageBubbleProps) {
   switch (message.type) {
     case "function_call":
-      return <FunctionCallMessage message={message} isLast={isLast} isLoading={isLoading} />;
+      return (
+        <FunctionCallMessage
+          message={message}
+          isLast={isLast}
+          isLoading={isLoading}
+          hasNextFunctionCall={hasNextFunctionCall}
+        />
+      );
     case "function_call_output":
       // already rendered in FunctionCall
       return null;
