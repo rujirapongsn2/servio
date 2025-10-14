@@ -160,9 +160,10 @@ async def test_agent(
     request: TestAgentRequest,
     current_user: str = Depends(get_current_user)
 ):
-    """Test an agent with a sample message"""
+    """Test an agent with a sample message (streaming aggregation)."""
     from agents import Runner
     from app.agent_config import build_agent_from_db
+    from app.utils import is_text_output
 
     agent_data = database.get_agent_by_id(agent_id)
 
@@ -176,22 +177,18 @@ async def test_agent(
         # Build agent from database configuration
         agent = build_agent_from_db(agent_data)
 
-        # Run the agent with the test message
-        output = Runner.run(agent, [{"role": "user", "content": request.message}])
-
-        # Extract response and tool calls
+        # Stream the agent response and aggregate text
         response_text = ""
-        tool_calls = []
+        tool_calls = []  # Optionally populate if tool call events are exposed
 
-        for item in output.items:
-            if hasattr(item, "content") and item.content:
-                response_text += item.content
-            if hasattr(item, "tool_calls") and item.tool_calls:
-                for tc in item.tool_calls:
-                    tool_calls.append({
-                        "name": tc.name if hasattr(tc, "name") else "unknown",
-                        "arguments": tc.arguments if hasattr(tc, "arguments") else {}
-                    })
+        output = Runner.run_streamed(
+            agent,
+            [{"role": "user", "content": request.message}],
+        )
+
+        async for event in output.stream_events():
+            if is_text_output(event):
+                response_text += event.data.delta  # type: ignore[attr-defined]
 
         return TestAgentResponse(response=response_text or "No response", tool_calls=tool_calls)
 

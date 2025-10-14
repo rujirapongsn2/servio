@@ -1,6 +1,7 @@
 import json
 import requests
 import asyncio
+import os
 from typing import Dict, Any, List, Optional
 
 from agents import Agent, WebSearchTool, function_tool
@@ -120,6 +121,24 @@ def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
         # Create a dynamic function tool for custom API
         return create_custom_api_tool(tool_name, tool_config)
     elif tool_config and tool_config.get("type") == "mcp_streamable_http":
+        # Respect safe-mode: allow disabling MCP for offline/dev environments
+        if os.getenv("DISABLE_MCP", "").lower() in {"1", "true", "yes"} or os.getenv(
+            "AGENTS_SAFE_MODE_DISABLE_EXTERNAL", ""
+        ).lower() in {"1", "true", "yes"}:
+            @function_tool
+            def mcp_disabled_tool(query: str):
+                """MCP disabled in this environment (safe mode)."""
+                return (
+                    "MCP tools are disabled in this environment. "
+                    "Please enable network access or unset DISABLE_MCP to use this tool."
+                )
+
+            mcp_disabled_tool.__name__ = tool_name
+            mcp_disabled_tool.__doc__ = tool_config.get(
+                "description", f"Call {tool_name} MCP tool"
+            )
+            return mcp_disabled_tool
+
         # Create a dynamic function tool for MCP Streamable HTTP
         return create_mcp_tool(tool_name, tool_config)
     else:
