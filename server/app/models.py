@@ -64,11 +64,18 @@ class UpdateAgentRequest(BaseModel):
 
 class TestAgentRequest(BaseModel):
     message: str
+    class ForceTool(BaseModel):
+        name: str
+        arguments: Dict[str, Any] = {}
+
+    force_tool: Optional[ForceTool] = None
 
 
 class TestAgentResponse(BaseModel):
     response: str
     tool_calls: List[Dict[str, Any]] = []
+    citations: List[str] = []
+    tool_outputs: List[Dict[str, Any]] = []
 
 
 # Tool models
@@ -77,17 +84,31 @@ class ToolResponse(BaseModel):
     name: str
     type: str
     config: Optional[str] = None
+    icon: str = "Wrench"
     created_at: str
 
 
 class CreateCustomToolRequest(BaseModel):
     name: str
     config: Dict[str, Any]
+    icon: str = "Wrench"
 
 
 class UpdateCustomToolRequest(BaseModel):
     name: str
     config: Dict[str, Any]
+    icon: str = "Wrench"
+
+
+# Prompt optimizer models
+class OptimizePromptRequest(BaseModel):
+    instructions: str
+    agent_name: str = ""
+    model: str = ""
+
+
+class OptimizePromptResponse(BaseModel):
+    optimized_instructions: str
 
 
 # Generic response

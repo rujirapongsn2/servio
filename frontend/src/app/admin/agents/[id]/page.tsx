@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { Sparkles } from "lucide-react";
 
 interface Tool {
   id: number;
@@ -41,6 +42,7 @@ export default function AgentEditorPage() {
   >([]);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -167,6 +169,50 @@ export default function AgentEditorPage() {
     }
   };
 
+  const handleOptimizePrompt = async () => {
+    if (!formData.instructions.trim()) {
+      alert("Please enter some instructions first");
+      return;
+    }
+
+    setOptimizing(true);
+    setError("");
+
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        "http://localhost:8000/api/admin/agents/optimize-prompt",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            instructions: formData.instructions,
+            agent_name: formData.name,
+            model: formData.model,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Failed to optimize prompt");
+      }
+
+      const data = await response.json();
+      setFormData({
+        ...formData,
+        instructions: data.optimized_instructions,
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to optimize prompt");
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="text-gray-600 dark:text-gray-400">Loading agent...</div>
@@ -225,9 +271,21 @@ export default function AgentEditorPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Instructions
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Instructions
+                </label>
+                <button
+                  type="button"
+                  onClick={handleOptimizePrompt}
+                  disabled={optimizing || !formData.instructions.trim()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/20 hover:bg-purple-200 dark:hover:bg-purple-900/30 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Use AI to optimize and improve your instructions"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {optimizing ? "Optimizing..." : "Optimize with AI"}
+                </button>
+              </div>
               <textarea
                 required
                 rows={6}
@@ -238,6 +296,9 @@ export default function AgentEditorPage() {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
                 placeholder="Describe the agent's purpose and behavior..."
               />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Use the "Optimize with AI" button to automatically improve your instructions using AI
+              </p>
             </div>
 
             <div className="flex items-center">

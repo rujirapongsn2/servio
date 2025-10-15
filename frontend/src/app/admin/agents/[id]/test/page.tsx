@@ -4,22 +4,22 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  tool_calls?: any[];
-}
-
 export default function AgentTestPage() {
+  const FORCE_ARGS_PLACEHOLDER = 'Arguments (JSON or key=value, comma-separated). Example: {"symbol":"AAPL"} or symbol=AAPL';
   const router = useRouter();
   const params = useParams();
-  const agentId = parseInt(params.id as string);
+  const agentId = parseInt((params && (params as any).id ? (params as any).id.toString() : "0"));
 
   const [agentName, setAgentName] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetchingAgent, setFetchingAgent] = useState(true);
+  const [forceEnabled, setForceEnabled] = useState(false);
+  const [forceToolName, setForceToolName] = useState("");
+  const [forceArgsText, setForceArgsText] = useState("");
+  const [showToolOutputs, setShowToolOutputs] = useState(true);
+  const [collapseToolOutputs, setCollapseToolOutputs] = useState(true);
 
   useEffect(() => {
     fetchAgent();
@@ -46,13 +46,44 @@ export default function AgentTestPage() {
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const userMessage: Message = { role: "user", content: input };
+    const userMessage = { role: "user", content: input };
     setMessages([...messages, userMessage]);
     setInput("");
     setLoading(true);
 
     try {
       const token = localStorage.getItem("adminToken");
+      // Build request body
+      const bodyObj: any = { message: input };
+      if (forceEnabled && forceToolName.trim()) {
+        let args: any = {};
+        const t = forceArgsText.trim();
+        if (t) {
+          try {
+            const parsed = JSON.parse(t);
+            if (parsed && typeof parsed === "object") args = parsed;
+            else args = { query: String(parsed) };
+          } catch (e) {
+            // parse key=value pairs by comma/newline
+            const parts = t
+              .replace(/\n/g, ",")
+              .split(",")
+              .map((p) => p.trim())
+              .filter(Boolean);
+            for (const part of parts) {
+              const idx = part.indexOf("=");
+              if (idx > -1) {
+                const k = part.slice(0, idx).trim();
+                const v = part.slice(idx + 1).trim();
+                if (k) args[k] = v;
+              }
+            }
+            if (Object.keys(args).length === 0) args = { query: t };
+          }
+        }
+        bodyObj.force_tool = { name: forceToolName.trim(), arguments: args };
+      }
+
       const response = await fetch(
         `http://localhost:8000/api/admin/agents/${agentId}/test`,
         {
@@ -61,23 +92,25 @@ export default function AgentTestPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ message: input }),
+          body: JSON.stringify(bodyObj),
         }
       );
 
       if (!response.ok) throw new Error("Failed to get response");
 
       const data = await response.json();
-      const assistantMessage: Message = {
+      const assistantMessage = {
         role: "assistant",
         content: data.response,
         tool_calls: data.tool_calls || [],
+        citations: data.citations || [],
+        tool_outputs: data.tool_outputs || [],
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Failed to send message:", error);
-      const errorMessage: Message = {
+      const errorMessage = {
         role: "assistant",
         content: "Error: Failed to get response from agent",
       };
@@ -125,6 +158,60 @@ export default function AgentTestPage() {
         </div>
       </div>
 
+      {/* Force Tool Controls */}
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={forceEnabled}
+              onChange={(e) => setForceEnabled(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-700"
+            />
+            Force tool for this test
+          </label>
+        </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={showToolOutputs}
+              onChange={(e) => setShowToolOutputs(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-700"
+            />
+            Show tool outputs
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={collapseToolOutputs}
+              onChange={(e) => setCollapseToolOutputs(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-700"
+              disabled={!showToolOutputs}
+            />
+            Collapse tool outputs
+          </label>
+        </div>
+        {forceEnabled && (
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <input
+              type="text"
+              placeholder="Tool name (e.g., mcp_alpha_vantage)"
+              value={forceToolName}
+              onChange={(e) => setForceToolName(e.target.value)}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+            />
+            <textarea
+              placeholder={FORCE_ARGS_PLACEHOLDER}
+              value={forceArgsText}
+              onChange={(e) => setForceArgsText(e.target.value)}
+              rows={1}
+              className="sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+            />
+          </div>
+        )}
+      </div>
+
       {/* Chat Container */}
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col h-[600px]">
         {/* Messages Area */}
@@ -164,6 +251,71 @@ export default function AgentTestPage() {
                           • {tc.name}
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {message.citations && message.citations.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600">
+                      <div className="text-xs font-semibold mb-1">
+                        Citations:
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {message.citations.map((c, i) => (
+                          <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {showToolOutputs && message.tool_outputs && message.tool_outputs.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600">
+                      <div className="text-xs font-semibold mb-2">Tool Outputs:</div>
+                      <div className="space-y-2">
+                        {message.tool_outputs.map((to: any, i: number) => {
+                          const label = to?.name || `tool_${i+1}`;
+                          const raw = to?.output;
+                          let content = "";
+                          let isJson = false;
+                          try {
+                            if (typeof raw === 'string') {
+                              const trimmed = raw.trim();
+                              if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                content = JSON.stringify(JSON.parse(trimmed), null, 2);
+                                isJson = true;
+                              } else {
+                                content = raw;
+                              }
+                            } else {
+                              content = JSON.stringify(raw, null, 2);
+                              isJson = true;
+                            }
+                          } catch {
+                            content = String(raw ?? '');
+                          }
+                          const box = (
+                            <pre className="text-xs bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded p-2 overflow-auto max-h-60 whitespace-pre-wrap">
+                              {content}
+                            </pre>
+                          );
+                          return (
+                            <div key={i} className="text-xs">
+                              {collapseToolOutputs ? (
+                                <details>
+                                  <summary className="cursor-pointer select-none font-medium">
+                                    {label} {isJson ? <span className="opacity-60">(JSON)</span> : null}
+                                  </summary>
+                                  <div className="mt-1">{box}</div>
+                                </details>
+                              ) : (
+                                <div>
+                                  <div className="font-medium mb-1">{label} {isJson ? <span className="opacity-60">(JSON)</span> : null}</div>
+                                  {box}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>

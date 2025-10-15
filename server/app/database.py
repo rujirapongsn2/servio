@@ -326,7 +326,7 @@ def get_tool_by_id(tool_id: int) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
-def create_custom_tool(name: str, config: Dict[str, Any]) -> int:
+def create_custom_tool(name: str, config: Dict[str, Any], icon: str = "Wrench") -> int:
     """Create a custom API tool or MCP tool"""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -335,8 +335,8 @@ def create_custom_tool(name: str, config: Dict[str, Any]) -> int:
     tool_type = config.get("type", "custom_api")
 
     cursor.execute(
-        "INSERT INTO tools (name, type, config) VALUES (?, ?, ?)",
-        (name, tool_type, json.dumps(config))
+        "INSERT INTO tools (name, type, config, icon) VALUES (?, ?, ?, ?)",
+        (name, tool_type, json.dumps(config), icon)
     )
     tool_id = cursor.lastrowid
     conn.commit()
@@ -344,7 +344,7 @@ def create_custom_tool(name: str, config: Dict[str, Any]) -> int:
     return tool_id
 
 
-def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any]) -> bool:
+def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: str = "Wrench") -> bool:
     """Update a custom API tool or MCP tool"""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -353,8 +353,8 @@ def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any]) -> bool:
     tool_type = config.get("type", "custom_api")
 
     cursor.execute(
-        "UPDATE tools SET name = ?, type = ?, config = ? WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http')",
-        (name, tool_type, json.dumps(config), tool_id)
+        "UPDATE tools SET name = ?, type = ?, config = ?, icon = ? WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http')",
+        (name, tool_type, json.dumps(config), icon, tool_id)
     )
     conn.commit()
     success = cursor.rowcount > 0
