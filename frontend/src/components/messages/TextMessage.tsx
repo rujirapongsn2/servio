@@ -20,9 +20,10 @@ const CustomLink = ({ href, children, ...props }: CustomLinkProps) => (
 type TextMessageProps = {
   text: string;
   isUser: boolean;
+  collapsed?: boolean;
 };
 
-export function TextMessage({ text, isUser }: TextMessageProps) {
+export function TextMessage({ text, isUser, collapsed = false }: TextMessageProps) {
   return (
     <div
       className={clsx("flex flex-row gap-2", {
@@ -35,7 +36,9 @@ export function TextMessage({ text, isUser }: TextMessageProps) {
           "px-4 max-w-[90%] mr-4 text-black bg-white dark:bg-gray-800 dark:text-white": !isUser, 
         })}
       >
-        <ReactMarkdown components={{ a: CustomLink }}>{text}</ReactMarkdown>
+        <div className={clsx({ "clamp-1": collapsed })}>
+          <ReactMarkdown components={{ a: CustomLink }}>{text}</ReactMarkdown>
+        </div>
       </div>
     </div>
   );

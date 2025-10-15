@@ -6,6 +6,7 @@ import { Composer } from "@/components/Composer";
 import { Header } from "@/components/Header";
 import { useAudio } from "@/hooks/useAudio";
 import { useWebsocket } from "@/hooks/useWebsocket";
+import { useCollapsePreference } from "@/hooks/useCollapsePreference";
 
 import "./styles.css";
 
@@ -30,6 +31,8 @@ export default function Home() {
     onNewAudio: playAudio,
   });
 
+  const { collapsed, toggle } = useCollapsePreference();
+
   async function handleStopPlaying() {
     await stopPlaying();
   }
@@ -41,8 +44,10 @@ export default function Home() {
         playbackFrequencies={playbackFrequencies}
         stopPlaying={handleStopPlaying}
         resetConversation={resetHistory}
+        collapsed={collapsed}
+        onToggleCollapsed={toggle}
       />
-      <ChatHistory messages={messages} isLoading={isLoading} />
+      <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} />
       <Composer
         audioChat={
           <AudioChat

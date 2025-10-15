@@ -44,10 +44,19 @@ def query_softnix_genai(query: str, files: Optional[list] = None, inputs: Option
     }
 
     # Prepare request body
+    # Allow optional extra inputs via env to adapt to server configuration without code changes
+    extra_inputs_env = os.getenv("SOFTNIX_API_INPUTS", "")
+    extra_inputs = {}
+    if extra_inputs_env:
+        try:
+            extra_inputs = json.loads(extra_inputs_env)
+        except Exception:
+            extra_inputs = {}
+
     payload = {
         "query": query,
         "files": files or [],
-        "inputs": inputs or {},
+        "inputs": {**(inputs or {}), **extra_inputs},
         "citation": True,
         "response_mode": "blocking"
     }

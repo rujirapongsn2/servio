@@ -25,6 +25,7 @@ from app.utils import (
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
+import os
 
 
 from dotenv import load_dotenv
@@ -54,6 +55,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve Softnix.png placed at repo root via a simple static endpoint
+@app.get("/assets/Softnix.png")
+def softnix_logo_png():
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    path = os.path.join(root_dir, "Softnix.png")
+    if os.path.exists(path):
+        return FileResponse(path)
+    return HTMLResponse("Softnix.png not found", status_code=404)
 
 class Workflow(VoiceWorkflowBase):
     def __init__(self, connection: WebsocketHelper):

@@ -14,11 +14,15 @@ export function Header({
   playbackFrequencies,
   stopPlaying,
   resetConversation,
+  collapsed,
+  onToggleCollapsed,
 }: {
   agentName: string;
   playbackFrequencies: number[];
   stopPlaying: () => Promise<void>;
   resetConversation: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const showAudioPlayback = playbackFrequencies.length === 5;
 
@@ -114,6 +118,15 @@ export function Header({
         </div>
       )}
       <div className="flex flex-row gap-2 px-5 items-center">
+        <Button
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? "Expand messages" : "Collapse messages"}
+          title={collapsed ? "แสดงบทสนทนา (Expand)" : "ซ่อนบทสนทนา (Collapse)"}
+          size="sm"
+          variant="outline"
+        >
+          {collapsed ? "Expand" : "Collapse"}
+        </Button>
         <Button
           onClick={resetConversation}
           aria-label="Start new conversation"

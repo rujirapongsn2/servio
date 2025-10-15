@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { Button } from "@/components/ui/Button";
 
 export default function AdminLayout({
   children,
@@ -14,6 +15,7 @@ export default function AdminLayout({
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [username, setUsername] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     // Skip auth check for login page
@@ -34,12 +36,28 @@ export default function AdminLayout({
     setIsAuthenticated(true);
     setUsername(storedUsername || "Admin");
     setIsLoading(false);
+
+    // restore sidebar state
+    try {
+      const raw = localStorage.getItem("adminSidebarCollapsed");
+      if (raw != null) setCollapsed(raw === "1" || raw === "true");
+    } catch {}
   }, [pathname, router]);
 
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminUsername");
     router.push("/admin/login");
+  };
+
+  const toggleSidebar = () => {
+    setCollapsed((v) => {
+      const nv = !v;
+      try {
+        localStorage.setItem("adminSidebarCollapsed", nv ? "1" : "0");
+      } catch {}
+      return nv;
+    });
   };
 
   // Show loading or login page without layout
@@ -54,55 +72,74 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+      {/* Sidebar (blue, with Softnix logo) */}
+      <div
+        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} bg-[#2563eb] text-white border-r border-blue-700 transition-all duration-200 z-20`}
+      >
         <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-              Admin Panel
-            </h1>
+          {/* Header with logo */}
+          <div className="flex items-center justify-between h-16 px-4 border-b border-blue-600">
+            <img
+              src="http://localhost:8000/assets/Softnix.png"
+              alt="Softnix"
+              className={`${collapsed ? "w-[32px]" : "w-[120px]"} h-auto transition-all`}
+            />
+            <Button
+              size="iconSmall"
+              variant="outline"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={toggleSidebar}
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+            >
+              <span className={`transform transition-transform ${collapsed ? "rotate-180" : ""}`}>
+                ›
+              </span>
+            </Button>
           </div>
 
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-            <NavLink href="/admin" active={pathname === "/admin"}>
+            <NavLink href="/admin" active={pathname === "/admin"} collapsed={collapsed}>
               Dashboard
             </NavLink>
             <NavLink
               href="/admin/agents"
               active={pathname.startsWith("/admin/agents")}
+              collapsed={collapsed}
             >
               Agents
             </NavLink>
             <NavLink
               href="/admin/tools"
               active={pathname.startsWith("/admin/tools")}
+              collapsed={collapsed}
             >
               Tools
             </NavLink>
             <NavLink
               href="/admin/settings"
               active={pathname.startsWith("/admin/settings")}
+              collapsed={collapsed}
             >
               Settings
             </NavLink>
           </nav>
 
           {/* User info and logout */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="p-4 border-t border-blue-600">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                <div className="w-8 h-8 bg-white text-blue-700 rounded-full flex items-center justify-center font-semibold">
                   {username.charAt(0).toUpperCase()}
                 </div>
-                <div className="text-sm text-gray-900 dark:text-white">
+                <div className={`text-sm text-white ${collapsed ? "hidden" : "block"}`}>
                   {username}
                 </div>
               </div>
               <button
                 onClick={handleLogout}
-                className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                className="text-sm text-white/80 hover:text-white"
               >
                 Logout
               </button>
@@ -112,7 +149,7 @@ export default function AdminLayout({
       </div>
 
       {/* Main content */}
-      <div className="ml-64">
+      <div className={`${collapsed ? "ml-16" : "ml-64"} transition-all duration-200 relative z-0`}>
         <main className="p-8">{children}</main>
       </div>
     </div>
@@ -123,21 +160,31 @@ function NavLink({
   href,
   active,
   children,
+  collapsed = false,
 }: {
   href: string;
   active: boolean;
   children: React.ReactNode;
+  collapsed?: boolean;
 }) {
+  const label = typeof children === "string" ? (children as string) : "";
   return (
     <Link
       href={href}
       className={`block px-3 py-2 rounded-md text-sm font-medium ${
         active
-          ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-          : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+          ? "bg-white/20 text-white"
+          : "text-white/90 hover:bg-white/10 hover:text-white"
       }`}
+      title={label || undefined}
     >
-      {children}
+      {collapsed ? (
+        <span className="inline-flex w-full justify-center font-semibold">
+          {label ? label.charAt(0) : "·"}
+        </span>
+      ) : (
+        <span className="inline-block whitespace-nowrap">{children}</span>
+      )}
     </Link>
   );
 }

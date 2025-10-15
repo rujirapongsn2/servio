@@ -11,13 +11,15 @@ type MessageBubbleProps = {
   isLast?: boolean;
   isLoading?: boolean;
   hasNextFunctionCall?: boolean;
+  collapsed?: boolean;
 };
 
 export function MessageBubble({
   message,
   isLast = false,
   isLoading = false,
-  hasNextFunctionCall = false
+  hasNextFunctionCall = false,
+  collapsed = false,
 }: MessageBubbleProps) {
   switch (message.type) {
     case "function_call":
@@ -43,13 +45,13 @@ export function MessageBubble({
         const content = message.content[0];
         if (content.type === "output_text") {
           const isUser = message.role === "user";
-          return <TextMessage text={content.text} isUser={isUser} />;
+          return <TextMessage text={content.text} isUser={isUser} collapsed={collapsed} />;
         } else if (content.type === "refusal") {
           return null;
         }
       } else if (typeof message.content === "string") {
         const isUser = message.role === "user";
-        return <TextMessage text={message.content} isUser={isUser} />;
+        return <TextMessage text={message.content} isUser={isUser} collapsed={collapsed} />;
       }
       return null;
     case "web_search_call":

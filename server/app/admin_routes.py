@@ -179,7 +179,7 @@ async def test_agent(
 
         # Stream the agent response and aggregate text
         response_text = ""
-        tool_calls = []  # Optionally populate if tool call events are exposed
+        tool_calls = []
 
         output = Runner.run_streamed(
             agent,
@@ -189,6 +189,13 @@ async def test_agent(
         async for event in output.stream_events():
             if is_text_output(event):
                 response_text += event.data.delta  # type: ignore[attr-defined]
+            # Track tool calls from RunItemStreamEvent
+            elif hasattr(event, 'item') and hasattr(event.item, 'type'):
+                if event.item.type == 'function_call':
+                    tool_calls.append({
+                        'name': event.item.name if hasattr(event.item, 'name') else 'unknown',
+                        'arguments': event.item.arguments if hasattr(event.item, 'arguments') else {}
+                    })
 
         return TestAgentResponse(response=response_text or "No response", tool_calls=tool_calls)
 

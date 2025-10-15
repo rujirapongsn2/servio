@@ -10,9 +10,10 @@ import { Message, ToolCall } from "@/lib/types";
 interface ChatDialogProps {
   messages: Message[];
   isLoading: boolean;
+  collapsed?: boolean;
 }
 
-export function ChatHistory({ messages, isLoading }: ChatDialogProps) {
+export function ChatHistory({ messages, isLoading, collapsed = false }: ChatDialogProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,6 +41,8 @@ export function ChatHistory({ messages, isLoading }: ChatDialogProps) {
     }, [] as Message[]);
   }, [messages]);
 
+  const displayMessages = collapsed ? [] : mergedMessages;
+
   return (
     <div
       className={clsx(
@@ -48,9 +51,9 @@ export function ChatHistory({ messages, isLoading }: ChatDialogProps) {
       )}
     >
       <div className="flex flex-col gap-2 relative py-8 px-5 pb-12">
-        {mergedMessages.map((message, index) => {
+        {displayMessages.map((message, index) => {
           // Check if next message is a function call (not transfer)
-          const nextMessage = mergedMessages[index + 1];
+          const nextMessage = displayMessages[index + 1];
           const hasNextFunctionCall =
             nextMessage?.type === "function_call" &&
             !(nextMessage as ToolCall).name?.startsWith("transfer_to_");
@@ -64,9 +67,10 @@ export function ChatHistory({ messages, isLoading }: ChatDialogProps) {
                   : JSON.stringify(message)
               }
               message={message}
-              isLast={index === mergedMessages.length - 1}
+              isLast={index === displayMessages.length - 1}
               isLoading={isLoading}
               hasNextFunctionCall={hasNextFunctionCall}
+              collapsed={collapsed}
             />
           );
         })}

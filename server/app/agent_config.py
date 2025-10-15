@@ -51,7 +51,23 @@ def get_softnix_info(question: str):
         Answer from Softnix GenAI knowledge base
     """
     try:
-        return query_softnix_genai(question)
+        q = question.strip()
+
+        # Heuristics: ensure the knowledge base sees canonical brand keyword and language hint
+        contains_thai = any('\u0e00' <= ch <= '\u0e7f' for ch in q)
+        brand_hints = ["Softnix", "ซอฟนิค"]
+        has_brand = any(h.lower() in q.lower() for h in brand_hints)
+
+        enriched_q = q
+        if contains_thai and "softnix" not in q.lower():
+            # Add canonical English brand keyword to help KB retrieval
+            enriched_q = f"{q} (Softnix)"
+
+        if contains_thai:
+            # Add a polite language instruction for Thai responses
+            enriched_q = f"กรุณาตอบเป็นภาษาไทย: {enriched_q}"
+
+        return query_softnix_genai(enriched_q)
     except SoftnixAPIError as e:
         return f"I apologize, but I'm having trouble accessing the Softnix information system right now. Error: {str(e)}"
 
@@ -152,8 +168,8 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
     method = config.get("method", "POST")
     description = config.get("description", f"Call {tool_name} API")
 
-    @function_tool
-    def custom_api_call(query: str):
+    # Create the function dynamically
+    def dynamic_tool_func(query: str):
         """Dynamic API tool"""
         try:
             headers = {
@@ -162,9 +178,21 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
             if auth_token:
                 headers["Authorization"] = f"Bearer {auth_token}"
 
-            payload = config.get("payload_template", {"query": query})
-            if isinstance(payload, dict) and "query" in payload:
-                payload["query"] = query
+            # Clone the payload template and substitute query
+            payload = json.loads(json.dumps(config.get("payload_template", {"query": query})))
+            if isinstance(payload, dict):
+                if "query" in payload:
+                    payload["query"] = query
+                # For compatibility, also try common variations
+                elif "message" in payload:
+                    payload["message"] = query
+                elif "text" in payload:
+                    payload["text"] = query
+                elif "input" in payload:
+                    payload["input"] = query
+            else:
+                # If not a dict, wrap it
+                payload = {"query": query}
 
             if method.upper() == "POST":
                 response = requests.post(api_endpoint, headers=headers, json=payload, timeout=60)
@@ -189,11 +217,12 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
         except Exception as e:
             return f"Error calling {tool_name}: {str(e)}"
 
-    # Set the function name and docstring
-    custom_api_call.__name__ = tool_name
-    custom_api_call.__doc__ = description
+    # Set the function name and docstring BEFORE applying decorator
+    dynamic_tool_func.__name__ = tool_name
+    dynamic_tool_func.__doc__ = description
 
-    return custom_api_call
+    # Apply the decorator
+    return function_tool(dynamic_tool_func)
 
 
 def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
@@ -400,23 +429,30 @@ def get_runtime_starting_agent() -> Agent:
     base_handoffs = [softnix_sales_agent, stylist_agent, customer_support_agent]
     combined_handoffs = base_handoffs + db_agents
 
-    # Enrich instructions with dynamic agent list (names only to avoid long prompts)
-    extra = "\n\nAdditional agents available for transfer: "
+    # Enrich instructions with dynamic agent list and routing hints
+    extra = "\n\nAdditional agents available for transfer:"
     if db_agents_data:
-        names = ", ".join([a["name"] for a in db_agents_data])
-        extra += names + "."
+        for a in db_agents_data:
+            agent_name = a.get("name", "")
+            agent_instructions = a.get("instructions", "")
+            extra += f"\n- {agent_name}: {agent_instructions[:150]}"
     else:
-        extra += "None."
+        extra += " None."
 
-    # Add explicit routing hint for Dtwin if present
+    # Add explicit routing hint for specific agents
     for a in db_agents_data:
         name = a.get("name", "").lower()
-        if "dtwin" in name:
+        if "dtwin" in name or "ดีทวิน" in name.lower():
             extra += (
-                "\nIf the user mentions DTWIN (e.g., 'DTWIN', 'ดีทวิน'), "
+                "\n\nIf the user mentions DTWIN (e.g., 'DTWIN', 'ดีทวิน'), "
                 "transfer to the Dtwin Agent."
             )
-            break
+        elif "it" in name or "ไอที" in name.lower():
+            extra += (
+                "\n\nIf the user asks about IT problems, system issues, technical support, "
+                "or needs help with IT systems (e.g., 'IT', 'ไอที', 'ปัญหาระบบ'), "
+                "transfer to the IT Agent."
+            )
 
     triage = Agent(
         name="Coordinator Agent",
