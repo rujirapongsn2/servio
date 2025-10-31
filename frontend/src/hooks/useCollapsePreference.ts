@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 export function useCollapsePreference() {
-  const [collapsed, setCollapsed] = useState<boolean>(false);
+  // Default to collapsed = true so conversation is hidden by default
+  const [collapsed, setCollapsed] = useState<boolean>(true);
 
   useEffect(() => {
     try {
@@ -24,4 +25,3 @@ export function useCollapsePreference() {
 
   return { collapsed, setCollapsed, toggle } as const;
 }
-

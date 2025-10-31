@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -9,6 +9,25 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [sys, setSys] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchInfo = async () => {
+      try {
+        const token = localStorage.getItem("adminToken");
+        const res = await fetch("http://localhost:8000/api/admin/system-info", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSys(data);
+        }
+      } catch (e) {
+        // silent
+      }
+    };
+    fetchInfo();
+  }, []);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,13 +174,43 @@ export default function SettingsPage() {
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-400">Backend API:</span>
             <span className="text-gray-900 dark:text-white font-mono">
-              http://localhost:8000
+              {sys?.backend_url || "http://localhost:8000"}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-400">Frontend:</span>
             <span className="text-gray-900 dark:text-white font-mono">
-              http://localhost:3000
+              {sys?.frontend_origin || (typeof window !== 'undefined' ? window.location.origin : '')}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Server Time (UTC):</span>
+            <span className="text-gray-900 dark:text-white font-mono">
+              {sys?.server_time || "-"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Python:</span>
+            <span className="text-gray-900 dark:text-white font-mono">
+              {sys?.python_version || "-"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">MCP Enabled:</span>
+            <span className="text-gray-900 dark:text-white">
+              {sys?.mcp_enabled ? "Yes" : "No"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">OpenAI Key Set:</span>
+            <span className="text-gray-900 dark:text-white">
+              {sys?.openai_api_key_set ? "Yes" : "No"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600 dark:text-gray-400">Agents / Tools:</span>
+            <span className="text-gray-900 dark:text-white">
+              {sys ? `${sys.agents_count} / ${sys.tools_count}` : "-"}
             </span>
           </div>
           <div className="flex justify-between">

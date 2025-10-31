@@ -115,3 +115,15 @@ class OptimizePromptResponse(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+
+
+# System info
+class SystemInfoResponse(BaseModel):
+    backend_url: str
+    frontend_origin: str | None = None
+    server_time: str
+    python_version: str
+    mcp_enabled: bool
+    openai_api_key_set: bool
+    agents_count: int
+    tools_count: int

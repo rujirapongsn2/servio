@@ -199,11 +199,41 @@ Edit `server/app/agent_config.py` to:
 
 4. **Run the app:**
 
+   You have multiple options to start the application:
+
+   **Option 1: Quick Start (Recommended)**
+   ```bash
+   ./start.sh
+   ```
+   This will start both frontend and backend in development mode with hot reload.
+
+   **Option 2: Using Make (Production Mode)**
    ```bash
    make serve
    ```
+   Starts the app in production mode at [`http://localhost:3000`](http://localhost:3000).
 
-   The app will be available at [`http://localhost:3000`](http://localhost:3000).
+   **Option 3: Development Mode with Hot Reload**
+   ```bash
+   cd frontend && npm run dev
+   ```
+   - Frontend: [`http://localhost:3001`](http://localhost:3001) (or next available port)
+   - Backend: [`http://localhost:8000`](http://localhost:8000)
+   - WebSocket: `ws://localhost:8000/ws`
+
+   **Option 4: Run Separately**
+   ```bash
+   # Terminal 1 - Frontend only
+   cd frontend && npm run dev:next
+
+   # Terminal 2 - Backend only
+   cd server && uv run server.py
+   ```
+
+   **Available Ports:**
+   - Frontend: `3000` (production) or `3001+` (development, auto-increments if busy)
+   - Backend: `8000`
+   - Admin Console: [`http://localhost:3001/admin`](http://localhost:3001/admin)
 
 ## Admin & Agents
 

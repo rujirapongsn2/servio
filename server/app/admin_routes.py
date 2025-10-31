@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 import json
 from typing import List
 
@@ -19,6 +19,7 @@ from app.models import (
     OptimizePromptRequest,
     OptimizePromptResponse,
     MessageResponse,
+    SystemInfoResponse,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -389,6 +390,48 @@ async def get_tool(tool_id: int, current_user: str = Depends(get_current_user)):
         )
 
     return tool
+
+
+@router.get("/system-info", response_model=SystemInfoResponse)
+async def system_info(request: Request, current_user: str = Depends(get_current_user)):
+    """Return dynamic system information for the Admin UI."""
+    import os, sys, datetime
+    from app import database as db
+
+    # Backend URL from request
+    backend_url = str(request.base_url).rstrip('/')
+    # Frontend origin hint from Referer (best-effort)
+    frontend_origin = request.headers.get('origin') or request.headers.get('referer')
+    if frontend_origin:
+        # Trim paths if referer
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(frontend_origin)
+            frontend_origin = f"{parsed.scheme}://{parsed.netloc}"
+        except Exception:
+            pass
+
+    # Flags
+    disable_mcp = os.getenv("DISABLE_MCP", "").lower() in {"1", "true", "yes"} or os.getenv(
+        "AGENTS_SAFE_MODE_DISABLE_EXTERNAL", ""
+    ).lower() in {"1", "true", "yes"}
+    mcp_enabled = not disable_mcp
+    openai_api_key_set = bool(os.getenv("OPENAI_API_KEY"))
+
+    # Counts
+    agents = db.get_all_agents()
+    tools = db.get_all_tools()
+
+    return SystemInfoResponse(
+        backend_url=backend_url,
+        frontend_origin=frontend_origin,
+        server_time=datetime.datetime.utcnow().isoformat() + "Z",
+        python_version=sys.version.split()[0],
+        mcp_enabled=mcp_enabled,
+        openai_api_key_set=openai_api_key_set,
+        agents_count=len(agents),
+        tools_count=len(tools),
+    )
 
 
 @router.post("/tools", response_model=MessageResponse)
