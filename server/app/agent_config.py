@@ -171,6 +171,9 @@ def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
     elif tool_config and tool_config.get("type") == "custom_api":
         # Create a dynamic function tool for custom API
         return create_custom_api_tool(tool_name, tool_config)
+    elif tool_config and tool_config.get("type") == "gemini_file_search":
+        # Create a dynamic function tool for Gemini File Search
+        return create_gemini_file_search_tool(tool_name, tool_config)
     elif tool_config and tool_config.get("type") == "mcp_streamable_http":
         # Respect safe-mode: allow disabling MCP for offline/dev environments
         if os.getenv("DISABLE_MCP", "").lower() in {"1", "true", "yes"} or os.getenv(
@@ -298,6 +301,46 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
 
     # Apply the decorator
     return function_tool(dynamic_tool_func)
+
+
+def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
+    """Create a Gemini File Search tool from configuration"""
+    from app.gemini_service import GeminiFileSearchService
+
+    gemini_store_id = config.get("gemini_store_id", "")
+    description = config.get("description", f"Search documents using {tool_name}")
+    model = config.get("model", "gemini-2.5-flash")
+
+    # Create the function dynamically
+    def dynamic_gemini_tool(query: str):
+        """Search documents in Gemini file store"""
+        try:
+            log_tool_call(tool_name, {"query": query})
+
+            # Initialize Gemini service
+            service = GeminiFileSearchService(model=model)
+
+            # Query the file store
+            result = service.query(store_id=gemini_store_id, query=query)
+
+            # Format response with sources
+            response_text = result.get("response", "No response generated")
+            sources = result.get("grounding_sources", [])
+
+            if sources:
+                response_text += "\n\nSources:\n" + "\n".join(f"- {source}" for source in sources)
+
+            return response_text
+
+        except Exception as e:
+            return f"Error searching documents: {str(e)}"
+
+    # Set the function name and docstring BEFORE applying decorator
+    dynamic_gemini_tool.__name__ = tool_name
+    dynamic_gemini_tool.__doc__ = description
+
+    # Apply the decorator
+    return function_tool(dynamic_gemini_tool)
 
 
 def create_mcp_tool(tool_name: str, config: Dict[str, Any]):

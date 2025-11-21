@@ -127,3 +127,38 @@ class SystemInfoResponse(BaseModel):
     openai_api_key_set: bool
     agents_count: int
     tools_count: int
+
+
+# File Store models
+class FileStoreResponse(BaseModel):
+    id: int
+    name: str
+    gemini_store_id: str
+    display_name: Optional[str]
+    file_count: int
+    created_at: str
+
+
+class FileStoreFileResponse(BaseModel):
+    id: int
+    file_store_id: int
+    filename: str
+    original_filename: str
+    file_size: int
+    uploaded_at: str
+
+
+class CreateFileStoreRequest(BaseModel):
+    display_name: str
+    create_tool: bool = True
+
+
+class TestFileStoreRequest(BaseModel):
+    query: str
+
+
+class TestFileStoreResponse(BaseModel):
+    response: str
+    grounding_sources: List[str] = []
+    metadata: Optional[Dict[str, Any]] = None
+    response_time: float

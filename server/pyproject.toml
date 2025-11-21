@@ -15,4 +15,5 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "mcp>=1.9.0",
     "httpx>=0.27.0",
+    "google-genai>=0.3.0",
 ]

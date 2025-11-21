@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 import json
+import os
+import time
 from typing import List
+from pathlib import Path
 
 from app import database
 from app.auth import get_current_user, verify_password, create_access_token
@@ -20,6 +23,11 @@ from app.models import (
     OptimizePromptResponse,
     MessageResponse,
     SystemInfoResponse,
+    FileStoreResponse,
+    FileStoreFileResponse,
+    CreateFileStoreRequest,
+    TestFileStoreRequest,
+    TestFileStoreResponse,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -483,3 +491,247 @@ async def delete_tool(
         )
 
     return MessageResponse(message="Tool deleted successfully")
+
+
+# File Store endpoints
+@router.get("/file-stores", response_model=List[FileStoreResponse])
+async def get_file_stores(current_user: str = Depends(get_current_user)):
+    """Get all file stores"""
+    stores = database.get_all_file_stores()
+    return stores
+
+
+@router.post("/file-stores", response_model=MessageResponse)
+async def create_file_store(
+    request: CreateFileStoreRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new file search store"""
+    try:
+        from app.gemini_service import GeminiFileSearchService
+
+        # Initialize Gemini service
+        service = GeminiFileSearchService()
+
+        # Create Gemini store
+        result = service.create_store(display_name=request.display_name)
+        gemini_store_id = result["store_id"]
+
+        # Generate unique name from display name
+        name = request.display_name.lower().replace(" ", "_")
+
+        # Save to database
+        store_id = database.create_file_store(
+            name=name,
+            gemini_store_id=gemini_store_id,
+            display_name=request.display_name
+        )
+
+        # Auto-create tool if requested
+        if request.create_tool:
+            tool_name = f"{name}_search"
+            tool_config = {
+                "type": "gemini_file_search",
+                "description": f"Search documents in {request.display_name}",
+                "gemini_store_id": gemini_store_id,
+                "model": "gemini-2.5-flash"
+            }
+            database.create_custom_tool(tool_name, tool_config, icon="FileSearch")
+
+        return MessageResponse(
+            message=f"File store created successfully with ID {store_id}. Gemini store: {gemini_store_id}"
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create file store: {str(e)}"
+        )
+
+
+@router.delete("/file-stores/{store_id}", response_model=MessageResponse)
+async def delete_file_store(
+    store_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete a file store and optionally its Gemini store"""
+    store = database.get_file_store_by_id(store_id)
+
+    if not store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File store not found"
+        )
+
+    try:
+        from app.gemini_service import GeminiFileSearchService
+
+        # Try to delete from Gemini (best effort)
+        try:
+            service = GeminiFileSearchService()
+            service.delete_store(store["gemini_store_id"])
+        except Exception as e:
+            print(f"Warning: Could not delete Gemini store: {e}")
+
+        # Delete from database (cascades to files)
+        success = database.delete_file_store(store_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete file store from database"
+            )
+
+        return MessageResponse(message="File store deleted successfully")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete file store: {str(e)}"
+        )
+
+
+@router.get("/file-stores/{store_id}/files", response_model=List[FileStoreFileResponse])
+async def get_files(
+    store_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Get all files in a file store"""
+    store = database.get_file_store_by_id(store_id)
+
+    if not store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File store not found"
+        )
+
+    files = database.get_files_by_store(store_id)
+    return files
+
+
+@router.post("/file-stores/{store_id}/upload", response_model=MessageResponse)
+async def upload_file(
+    store_id: int,
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user)
+):
+    """Upload a file to a file store"""
+    store = database.get_file_store_by_id(store_id)
+
+    if not store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File store not found"
+        )
+
+    try:
+        from app.gemini_service import GeminiFileSearchService
+
+        # Save uploaded file temporarily
+        temp_dir = Path("/tmp")
+        temp_path = temp_dir / f"upload_{int(time.time())}_{file.filename}"
+
+        with open(temp_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        try:
+            # Upload to Gemini
+            service = GeminiFileSearchService()
+            result = service.upload_file(
+                store_id=store["gemini_store_id"],
+                file_path=str(temp_path)
+            )
+
+            if not result.get("success"):
+                raise Exception(result.get("error", "Upload failed"))
+
+            # Save file record to database
+            file_size = len(content)
+            database.add_file_to_store(
+                file_store_id=store_id,
+                filename=result["filename"],
+                original_filename=file.filename,
+                file_size=file_size
+            )
+
+            return MessageResponse(
+                message=f"File '{file.filename}' uploaded successfully in {result.get('upload_time', 0):.1f}s"
+            )
+
+        finally:
+            # Clean up temp file
+            if temp_path.exists():
+                temp_path.unlink()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )
+
+
+@router.delete("/file-stores/files/{file_id}", response_model=MessageResponse)
+async def delete_file(
+    file_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete a file from a file store"""
+    # Note: Gemini API doesn't support individual file deletion
+    # We only delete the record from our database
+    success = database.delete_file(file_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    return MessageResponse(
+        message="File record deleted successfully. Note: File remains in Gemini store."
+    )
+
+
+@router.post("/file-stores/{store_id}/test", response_model=TestFileStoreResponse)
+async def test_file_store(
+    store_id: int,
+    request: TestFileStoreRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Test a file store by querying it"""
+    store = database.get_file_store_by_id(store_id)
+
+    if not store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File store not found"
+        )
+
+    try:
+        from app.gemini_service import GeminiFileSearchService
+
+        # Query the file store
+        service = GeminiFileSearchService()
+        start_time = time.time()
+        result = service.query(
+            store_id=store["gemini_store_id"],
+            query=request.query
+        )
+        response_time = time.time() - start_time
+
+        return TestFileStoreResponse(
+            response=result["response"],
+            grounding_sources=result.get("grounding_sources", []),
+            metadata=result.get("metadata"),
+            response_time=response_time
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to test file store: {str(e)}"
+        )

@@ -14,12 +14,14 @@ Features:
 - **Multi-agent system** - Specialized AI agents that work together and transfer conversations
 - **Function calling** - Agents can use tools (web search, database queries, etc.)
 - **Streaming responses** - Real-time text and audio streaming
+- **File Store Agents** - Document search and retrieval using Gemini File Search API
 
 This app is meant to be used as a starting point to build a conversational assistant that you can customize to your needs.
 
 ## Table of Contents
 
 - [Multi-Agent Architecture](#multi-agent-architecture)
+- [File Store Agents](#file-store-agents)
 - [Requirements](#requirements)
 - [How to use](#how-to-use)
 - [Using the App](#using-the-app)
@@ -161,26 +163,147 @@ Edit `server/app/agent_config.py` to:
 - Configure handoff relationships
 - Add custom function tools
 
+## File Store Agents
+
+The app includes a **File Store Agent** system that allows you to create document search agents powered by Google's Gemini File Search API. This enables your AI agents to answer questions based on your uploaded documents.
+
+### What are File Store Agents?
+
+File Store Agents are specialized agents that can search and retrieve information from a collection of documents you upload. They use Gemini's advanced RAG (Retrieval-Augmented Generation) capabilities to provide accurate answers with source citations.
+
+### Key Features
+
+✅ **Multi-File Upload** - Upload multiple documents at once (PDF, TXT, MD, DOC, DOCX)
+✅ **Drag-and-Drop Interface** - Easy file upload with visual feedback
+✅ **Auto-Tool Creation** - Automatically creates a search tool when you create a file store
+✅ **File Management** - Add or remove files from stores at any time
+✅ **Detailed Testing** - Test queries with grounding sources and metadata
+✅ **Thai Filename Support** - Handles non-ASCII characters automatically
+✅ **Progress Tracking** - Visual progress bars during file uploads
+
+### How to Create a File Store Agent
+
+1. **Navigate to Admin Console**
+   - Go to `http://localhost:3001/admin` (or your configured port)
+   - Click "Agents" in the sidebar
+   - Switch to the "File Store Agents" tab
+
+2. **Create a New File Store**
+   - Click "New File Store" button
+   - Enter a descriptive display name (e.g., "Product Documentation")
+   - Upload your documents (supports multiple files)
+   - Check "Create Tool Automatically" (default: enabled)
+   - Click "Create File Store"
+
+3. **The Tool is Auto-Created**
+   - When "Create Tool Automatically" is enabled, a search tool is automatically created
+   - Tool name: `{store_name}_search`
+   - This tool becomes available to all agents in your system
+   - Agents can use it to search the documents in that store
+
+4. **Test Your File Store**
+   - Click the green "Play" button next to your file store
+   - Enter a question about your documents
+   - See the AI response with:
+     - Answer based on document content
+     - Grounding sources (which documents were referenced)
+     - Response time and metadata
+
+5. **Manage Files**
+   - Click the blue "Upload" button to manage files
+   - View all files in the store
+   - Upload additional files
+   - Delete individual files
+
+### Example Use Cases
+
+**Product Documentation**
+```
+Store: "Product Manuals"
+Files: product_guide.pdf, faq.pdf, specifications.pdf
+Use case: Customer support agents can answer technical questions
+```
+
+**HR Knowledge Base**
+```
+Store: "HR Policies"
+Files: employee_handbook.pdf, leave_policy.pdf, benefits.pdf
+Use case: HR chatbot can answer employee policy questions
+```
+
+**Legal Documents**
+```
+Store: "Legal Contracts"
+Files: contract_template.pdf, terms.pdf, privacy_policy.pdf
+Use case: Legal assistant can help with contract questions
+```
+
+### Using File Store Tools in Agents
+
+Once a file store is created with auto-tool enabled, you can assign the tool to any agent:
+
+1. Go to "Agents" tab in Admin
+2. Create or edit an agent
+3. In the "Tools" section, select the auto-created tool (e.g., "product_docs_search")
+4. Save the agent
+
+Now when users talk to that agent, it can search your documents to answer questions!
+
+### API Configuration
+
+To use File Store Agents, you need a Gemini API key:
+
+1. Get your API key from: https://ai.google.dev/
+2. Add to your `.env` file:
+   ```bash
+   GEMINI_API_KEY=your_api_key_here
+   ```
+
+### Technical Details
+
+- **Backend**: `server/app/gemini_service.py` handles all Gemini API interactions
+- **Database**: Stores file store metadata and file references in SQLite
+- **File Upload**: Supports up to 10MB per file (configurable)
+- **Supported Formats**: PDF, TXT, MD, DOC, DOCX
+- **Unicode Support**: Automatically handles non-ASCII filenames by creating temporary ASCII copies
+
+### Troubleshooting
+
+**Issue**: Files with Thai/Unicode names fail to upload
+- **Solution**: The system automatically handles this by creating temporary ASCII-named copies
+
+**Issue**: Query returns no results
+- **Solution**: Make sure your documents contain relevant information and try rephrasing your query
+
+**Issue**: File upload is slow
+- **Solution**: Large files take time to process. The progress bar shows upload status.
+
 ## Requirements
 
 - OpenAI API key
   - If you're new to the OpenAI API, [sign up for an account](https://platform.openai.com/signup).
   - Follow the [Quickstart](https://platform.openai.com/docs/quickstart) to retrieve your API key.
+- Gemini API key (optional, for File Store Agents)
+  - Get your API key from: https://ai.google.dev/
+  - Required only if you want to use File Store Agents feature
 - Node.js and npm
 - `uv` installed on your system
 
 ## How to use
 
-1. **Set the OpenAI API key:**
+1. **Set the API keys:**
 
-   2 options:
-
-   - Set the `OPENAI_API_KEY` environment variable [globally in your system](https://platform.openai.com/docs/libraries#create-and-export-an-api-key)
-   - Set the `OPENAI_API_KEY` environment variable in the project: Create a `.env` file at the root of the project and add the following line (see `.env.example` for reference):
+   Create a `.env` file at the root of the project (see `.env.example` for reference):
 
    ```bash
-   OPENAI_API_KEY=<your_api_key>
+   # Required: OpenAI API key for voice agents
+   OPENAI_API_KEY=<your_openai_api_key>
+
+   # Optional: Gemini API key for File Store Agents
+   GEMINI_API_KEY=<your_gemini_api_key>
    ```
+
+   Alternatively, you can set the `OPENAI_API_KEY` environment variable [globally in your system](https://platform.openai.com/docs/libraries#create-and-export-an-api-key).
 
 2. **Clone the Repository:**
 
@@ -238,12 +361,29 @@ Edit `server/app/agent_config.py` to:
 ## Admin & Agents
 
 ### Admin Console
-- URL: `http://localhost:3002/admin`
+- URL: `http://localhost:3001/admin` (or next available port in development mode)
 - Default login: `admin` / set via database; token stored in `localStorage` for subsequent requests.
+
+### Agents Management
+The Admin Console provides two tabs for managing your AI agents:
+
+#### 1. **Agents Tab**
+- Create, edit, and delete traditional agents
+- Configure agent instructions, models, and tools
+- Set up agent handoffs and relationships
+- Test agents directly in the browser
+
+#### 2. **File Store Agents Tab**
+- Create document search agents powered by Gemini File Search
+- Upload and manage document collections
+- Auto-create search tools for your file stores
+- Test queries with grounding sources
+- Manage files: add, remove, or update documents
 
 ### Dynamic Coordinator + DB Agents
 - The backend composes a coordinator agent at runtime that includes agents from the database as handoffs. If you create a "Dtwin Agent" in Admin, the coordinator can transfer to it when a user asks about DTWIN.
 - Reset in-call agent state triggers rebuilding the coordinator with latest DB changes.
+- File Store Agent tools are automatically available to all agents once created.
 
 ### Dtwin Agent Tips
 - For offline/dev environments, disable MCP tools to avoid network errors:

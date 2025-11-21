@@ -83,6 +83,31 @@ def init_database():
         )
     """)
 
+    # Create file_stores table for Gemini File Search
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_stores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            gemini_store_id TEXT UNIQUE NOT NULL,
+            display_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            file_count INTEGER DEFAULT 0
+        )
+    """)
+
+    # Create file_store_files table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_store_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_store_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            file_size INTEGER,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_store_id) REFERENCES file_stores(id) ON DELETE CASCADE
+        )
+    """)
+
     # Insert default admin user if not exists
     cursor.execute("SELECT COUNT(*) FROM admins WHERE username = 'admin'")
     if cursor.fetchone()[0] == 0:
@@ -345,7 +370,7 @@ def create_custom_tool(name: str, config: Dict[str, Any], icon: str = "Wrench") 
 
 
 def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: str = "Wrench") -> bool:
-    """Update a custom API tool or MCP tool"""
+    """Update a custom API tool, MCP tool, or Gemini File Search tool"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -353,7 +378,7 @@ def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: st
     tool_type = config.get("type", "custom_api")
 
     cursor.execute(
-        "UPDATE tools SET name = ?, type = ?, config = ?, icon = ? WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http')",
+        "UPDATE tools SET name = ?, type = ?, config = ?, icon = ? WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http', 'gemini_file_search')",
         (name, tool_type, json.dumps(config), icon, tool_id)
     )
     conn.commit()
@@ -363,10 +388,157 @@ def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: st
 
 
 def delete_custom_tool(tool_id: int) -> bool:
-    """Delete a custom API tool or MCP tool"""
+    """Delete a custom API tool, MCP tool, or Gemini File Search tool"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM tools WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http')", (tool_id,))
+    cursor.execute("DELETE FROM tools WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http', 'gemini_file_search')", (tool_id,))
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+
+# File Store operations
+def get_all_file_stores() -> List[Dict[str, Any]]:
+    """Get all file stores"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM file_stores ORDER BY created_at DESC")
+    stores = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return stores
+
+
+def get_file_store_by_id(store_id: int) -> Optional[Dict[str, Any]]:
+    """Get a single file store by ID"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM file_stores WHERE id = ?", (store_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_file_store_by_gemini_id(gemini_store_id: str) -> Optional[Dict[str, Any]]:
+    """Get a file store by Gemini store ID"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM file_stores WHERE gemini_store_id = ?", (gemini_store_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_file_store(name: str, gemini_store_id: str, display_name: str = None) -> int:
+    """Create a new file store"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO file_stores (name, gemini_store_id, display_name)
+           VALUES (?, ?, ?)""",
+        (name, gemini_store_id, display_name)
+    )
+    store_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return store_id
+
+
+def delete_file_store(store_id: int) -> bool:
+    """Delete a file store (cascades to files)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM file_stores WHERE id = ?", (store_id,))
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+
+def add_file_to_store(
+    file_store_id: int,
+    filename: str,
+    original_filename: str,
+    file_size: int
+) -> int:
+    """Add a file record to a store"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO file_store_files (file_store_id, filename, original_filename, file_size)
+           VALUES (?, ?, ?, ?)""",
+        (file_store_id, filename, original_filename, file_size)
+    )
+    file_id = cursor.lastrowid
+
+    # Update file count
+    cursor.execute(
+        """UPDATE file_stores
+           SET file_count = (SELECT COUNT(*) FROM file_store_files WHERE file_store_id = ?)
+           WHERE id = ?""",
+        (file_store_id, file_store_id)
+    )
+
+    conn.commit()
+    conn.close()
+    return file_id
+
+
+def get_files_by_store(file_store_id: int) -> List[Dict[str, Any]]:
+    """Get all files in a store"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM file_store_files WHERE file_store_id = ? ORDER BY uploaded_at DESC",
+        (file_store_id,)
+    )
+    files = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return files
+
+
+def delete_file(file_id: int) -> bool:
+    """Delete a file from a store"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get file_store_id before deleting
+    cursor.execute("SELECT file_store_id FROM file_store_files WHERE id = ?", (file_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        return False
+
+    file_store_id = row["file_store_id"]
+
+    # Delete file
+    cursor.execute("DELETE FROM file_store_files WHERE id = ?", (file_id,))
+
+    # Update file count
+    cursor.execute(
+        """UPDATE file_stores
+           SET file_count = (SELECT COUNT(*) FROM file_store_files WHERE file_store_id = ?)
+           WHERE id = ?""",
+        (file_store_id, file_store_id)
+    )
+
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+
+def update_file_count(file_store_id: int) -> bool:
+    """Update file count for a store"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """UPDATE file_stores
+           SET file_count = (SELECT COUNT(*) FROM file_store_files WHERE file_store_id = ?)
+           WHERE id = ?""",
+        (file_store_id, file_store_id)
+    )
     conn.commit()
     success = cursor.rowcount > 0
     conn.close()

@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Play, Pencil, Trash2, Plus, Bot } from "lucide-react";
+import { Play, Pencil, Trash2, Plus, Bot, Database } from "lucide-react";
+import FileStoresTable from "@/components/FileStoresTable";
 
 interface Agent {
   id: number;
@@ -16,8 +17,11 @@ interface Agent {
   created_at: string;
 }
 
+type TabType = "agents" | "file-stores";
+
 export default function AgentsPage() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>("agents");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -78,20 +82,60 @@ export default function AgentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Agents
+            Agents & File Stores
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Manage your AI agents
+            Manage your AI agents and document stores
           </p>
         </div>
-        <Link
-          href="/admin/agents/new"
-          className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Plus className="w-4 h-4" />
-          New Agent
-        </Link>
+        {activeTab === "agents" && (
+          <Link
+            href="/admin/agents/new"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <Plus className="w-4 h-4" />
+            New Agent
+          </Link>
+        )}
       </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab("agents")}
+            className={`
+              flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors
+              ${
+                activeTab === "agents"
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
+              }
+            `}
+          >
+            <Bot className="w-5 h-5" />
+            Agents
+          </button>
+          <button
+            onClick={() => setActiveTab("file-stores")}
+            className={`
+              flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors
+              ${
+                activeTab === "file-stores"
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
+              }
+            `}
+          >
+            <Database className="w-5 h-5" />
+            File Store Agents
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "agents" ? (
+        <div>
 
       {agents.length === 0 ? (
         <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -190,6 +234,10 @@ export default function AgentsPage() {
             </tbody>
           </table>
         </div>
+      )}
+        </div>
+      ) : (
+        <FileStoresTable />
       )}
     </div>
   );
