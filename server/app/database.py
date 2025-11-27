@@ -108,6 +108,99 @@ def init_database():
         )
     """)
 
+    # Create analytics tables
+    # Conversations Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT UNIQUE NOT NULL,
+            started_at TIMESTAMP NOT NULL,
+            ended_at TIMESTAMP,
+            duration_seconds INTEGER,
+            total_messages INTEGER DEFAULT 0,
+            user_messages INTEGER DEFAULT 0,
+            agent_messages INTEGER DEFAULT 0,
+            agents_involved TEXT,
+            tools_used TEXT,
+            outcome TEXT DEFAULT 'ongoing',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session_id ON conversations(session_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_started_at ON conversations(started_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_outcome ON conversations(outcome)")
+
+    # Messages Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            agent_name TEXT,
+            content TEXT NOT NULL,
+            timestamp TIMESTAMP NOT NULL,
+            tool_calls TEXT,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON conversation_messages(conversation_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON conversation_messages(timestamp)")
+
+    # Enriched Analytics Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversation_analytics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER UNIQUE NOT NULL,
+            overall_sentiment TEXT,
+            sentiment_score REAL,
+            sentiment_explanation TEXT,
+            primary_topic TEXT,
+            topics TEXT,
+            resolution_quality TEXT,
+            agent_performance_score REAL,
+            response_clarity_score REAL,
+            empathy_score REAL,
+            issues_identified TEXT,
+            customer_pain_points TEXT,
+            suggestions TEXT,
+            customer_intent TEXT,
+            urgency_level TEXT,
+            follow_up_needed BOOLEAN DEFAULT 0,
+            follow_up_reason TEXT,
+            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            llm_model TEXT,
+            analysis_version TEXT DEFAULT 'v1.0',
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_conversation_id ON conversation_analytics(conversation_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_sentiment ON conversation_analytics(overall_sentiment)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_topic ON conversation_analytics(primary_topic)")
+
+    # Daily Summary Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS analytics_daily_summary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATE UNIQUE NOT NULL,
+            total_conversations INTEGER DEFAULT 0,
+            avg_duration_seconds INTEGER DEFAULT 0,
+            avg_messages_per_conversation REAL DEFAULT 0,
+            resolution_rate REAL DEFAULT 0,
+            avg_sentiment_score REAL DEFAULT 0,
+            positive_sentiment_count INTEGER DEFAULT 0,
+            neutral_sentiment_count INTEGER DEFAULT 0,
+            negative_sentiment_count INTEGER DEFAULT 0,
+            top_topics TEXT,
+            top_agents TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_summary_date ON analytics_daily_summary(date)")
+
     # Insert default admin user if not exists
     cursor.execute("SELECT COUNT(*) FROM admins WHERE username = 'admin'")
     if cursor.fetchone()[0] == 0:
@@ -543,6 +636,215 @@ def update_file_count(file_store_id: int) -> bool:
     success = cursor.rowcount > 0
     conn.close()
     return success
+
+
+# Analytics operations
+def create_conversation(session_id: str, started_at: str) -> int:
+    """Create a new conversation record"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO conversations (session_id, started_at) VALUES (?, ?)",
+        (session_id, started_at)
+    )
+    conversation_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return conversation_id
+
+
+def get_conversation_by_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """Get conversation by session ID"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM conversations WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_conversation(
+    conversation_id: int,
+    ended_at: Optional[str] = None,
+    duration_seconds: Optional[int] = None,
+    total_messages: Optional[int] = None,
+    user_messages: Optional[int] = None,
+    agent_messages: Optional[int] = None,
+    agents_involved: Optional[str] = None,
+    tools_used: Optional[str] = None,
+    outcome: Optional[str] = None
+) -> bool:
+    """Update conversation with metadata"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    update_fields = []
+    values = []
+
+    if ended_at is not None:
+        update_fields.append("ended_at = ?")
+        values.append(ended_at)
+    if duration_seconds is not None:
+        update_fields.append("duration_seconds = ?")
+        values.append(duration_seconds)
+    if total_messages is not None:
+        update_fields.append("total_messages = ?")
+        values.append(total_messages)
+    if user_messages is not None:
+        update_fields.append("user_messages = ?")
+        values.append(user_messages)
+    if agent_messages is not None:
+        update_fields.append("agent_messages = ?")
+        values.append(agent_messages)
+    if agents_involved is not None:
+        update_fields.append("agents_involved = ?")
+        values.append(agents_involved)
+    if tools_used is not None:
+        update_fields.append("tools_used = ?")
+        values.append(tools_used)
+    if outcome is not None:
+        update_fields.append("outcome = ?")
+        values.append(outcome)
+
+    if not update_fields:
+        conn.close()
+        return False
+
+    values.append(conversation_id)
+    query = f"UPDATE conversations SET {', '.join(update_fields)} WHERE id = ?"
+
+    cursor.execute(query, values)
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+
+def add_conversation_message(
+    conversation_id: int,
+    role: str,
+    content: str,
+    timestamp: str,
+    agent_name: Optional[str] = None,
+    tool_calls: Optional[str] = None
+) -> int:
+    """Add a message to a conversation"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO conversation_messages
+           (conversation_id, role, content, timestamp, agent_name, tool_calls)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (conversation_id, role, content, timestamp, agent_name, tool_calls)
+    )
+    message_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return message_id
+
+
+def get_conversation_messages(conversation_id: int) -> List[Dict[str, Any]]:
+    """Get all messages for a conversation"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY timestamp ASC",
+        (conversation_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def save_conversation_analytics(conversation_id: int, analytics_data: Dict[str, Any]) -> int:
+    """Save LLM-generated analytics for a conversation"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """INSERT INTO conversation_analytics (
+            conversation_id, overall_sentiment, sentiment_score, sentiment_explanation,
+            primary_topic, topics, resolution_quality, agent_performance_score,
+            response_clarity_score, empathy_score, issues_identified,
+            customer_pain_points, suggestions, customer_intent, urgency_level,
+            follow_up_needed, follow_up_reason, llm_model, analysis_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            conversation_id,
+            analytics_data.get('overall_sentiment'),
+            analytics_data.get('sentiment_score'),
+            analytics_data.get('sentiment_explanation'),
+            analytics_data.get('primary_topic'),
+            analytics_data.get('topics'),
+            analytics_data.get('resolution_quality'),
+            analytics_data.get('agent_performance_score'),
+            analytics_data.get('response_clarity_score'),
+            analytics_data.get('empathy_score'),
+            analytics_data.get('issues_identified'),
+            analytics_data.get('customer_pain_points'),
+            analytics_data.get('suggestions'),
+            analytics_data.get('customer_intent'),
+            analytics_data.get('urgency_level'),
+            analytics_data.get('follow_up_needed', False),
+            analytics_data.get('follow_up_reason'),
+            analytics_data.get('llm_model'),
+            analytics_data.get('analysis_version', 'v1.0')
+        )
+    )
+    analytics_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return analytics_id
+
+
+def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
+    """Get analytics summary for dashboard"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Determine date filter based on period
+    if period == 'today':
+        date_filter = "DATE(started_at) = DATE('now')"
+    elif period == 'week':
+        date_filter = "DATE(started_at) >= DATE('now', '-7 days')"
+    elif period == 'month':
+        date_filter = "DATE(started_at) >= DATE('now', '-30 days')"
+    else:
+        date_filter = "1=1"  # All time
+
+    # Total conversations
+    cursor.execute(f"SELECT COUNT(*) FROM conversations WHERE {date_filter}")
+    total_conversations = cursor.fetchone()[0]
+
+    # Resolution rate
+    cursor.execute(
+        f"SELECT COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM conversations WHERE {date_filter}), 0) FROM conversations WHERE {date_filter} AND outcome = 'resolved'"
+    )
+    resolution_rate = cursor.fetchone()[0] or 0
+
+    # Average messages per conversation
+    cursor.execute(
+        f"SELECT AVG(total_messages) FROM conversations WHERE {date_filter} AND total_messages > 0"
+    )
+    avg_messages = cursor.fetchone()[0] or 0
+
+    # Average sentiment score
+    cursor.execute(
+        f"""SELECT AVG(ca.sentiment_score)
+            FROM conversation_analytics ca
+            JOIN conversations c ON ca.conversation_id = c.id
+            WHERE {date_filter} AND ca.sentiment_score IS NOT NULL"""
+    )
+    avg_sentiment = cursor.fetchone()[0] or 0
+
+    conn.close()
+
+    return {
+        'total_conversations': total_conversations,
+        'resolution_rate': round(resolution_rate, 1),
+        'avg_messages': round(avg_messages, 1),
+        'avg_sentiment': round(avg_sentiment, 2)
+    }
 
 
 # Initialize database on module import
