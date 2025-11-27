@@ -1,27 +1,33 @@
-# Voice Agents SDK Sample App
+# Servio - Customer Support Agent
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![FastAPI](https://img.shields.io/badge/Built_with-FastAPI-yellow)
 ![NextJS](https://img.shields.io/badge/Built_with-NextJS-blue)
 ![OpenAI API](https://img.shields.io/badge/Powered_by-OpenAI_API-orange)
 
-This repository contains a sample app to highlight how to build [voice agents](https://platform.openai.com/docs/guides/voice-agents) using the [Agents SDK](https://openai.github.io/openai-agents-python) and Python. The backend is written using FastAPI and exposes a websocket endpoint. The front-end is written using Next.js and connects to the websocket server.
+Servio is a powerful voice-enabled customer support agent system built with OpenAI's [Agents SDK](https://openai.github.io/openai-agents-python) and Python. The backend uses FastAPI with WebSocket support, while the frontend is built with Next.js, providing a seamless voice and chat interface for customer interactions.
 
-Features:
+## Key Features
 
-- **Multi-turn conversation handling** - Continuous back-and-forth conversations
-- **Push-to-Talk audio mode** - Press and hold to speak, release to send
-- **Multi-agent system** - Specialized AI agents that work together and transfer conversations
-- **Function calling** - Agents can use tools (web search, database queries, etc.)
-- **Streaming responses** - Real-time text and audio streaming
-- **File Store Agents** - Document search and retrieval using Gemini File Search API
+- **Voice & Chat Interface** - Dual-mode support for voice (push-to-talk) and text chat interactions
+- **Multi-Agent System** - Specialized AI agents that collaborate and transfer conversations seamlessly
+- **Admin Dashboard** - Comprehensive web-based admin console for managing agents, tools, and settings
+- **Widget Embedding** - Easy-to-embed chat/voice widgets for websites
+- **Custom Tools Integration** - Support for custom APIs, MCP tools, and Gemini File Search
+- **Dynamic Agent Configuration** - Create and configure agents through the admin interface without code changes
+- **Real-time Monitoring** - Track active sessions and agent performance
+- **Multi-turn Conversations** - Continuous back-and-forth conversations with context retention
+- **Streaming Responses** - Real-time text and audio streaming for instant feedback
+- **Softnix Integration** - Built-in integration with Softnix GenAI knowledge base
 
-This app is meant to be used as a starting point to build a conversational assistant that you can customize to your needs.
+Servio is designed to be a production-ready customer support solution that you can customize and extend to meet your specific business needs.
 
 ## Table of Contents
 
+- [Key Features](#key-features)
 - [Multi-Agent Architecture](#multi-agent-architecture)
 - [File Store Agents](#file-store-agents)
+- [Widget Embedding](#widget-embedding)
 - [Requirements](#requirements)
 - [How to use](#how-to-use)
 - [Using the App](#using-the-app)
@@ -74,7 +80,7 @@ Softnix Sales Agent: → Transferred to Customer Support Agent
 - **Role**: Provides fashion advice and styling recommendations
 - **Special Tools**:
   - `WebSearchTool` - Searches the internet for fashion information
-  - Location: Tokyo (can find local stores and trends)
+  - Location: Bangkok (can find local stores and trends)
 - **Can transfer to**: Customer Support Agent (if order-related questions come up)
 
 **Example**:
@@ -162,6 +168,52 @@ Edit `server/app/agent_config.py` to:
 - Modify agent instructions and behavior
 - Configure handoff relationships
 - Add custom function tools
+
+## Widget Embedding
+
+Servio provides an easy-to-embed widget that you can add to any website, enabling instant access to your AI agents for your customers.
+
+### Quick Start
+
+1. **Generate Widget Code**: Navigate to Admin Console → Tools → Widget
+2. **Configure Widget**:
+   - Choose widget type: `voice` (with push-to-talk) or `chat` (text-only)
+   - Select position: `bottom-right` or `bottom-left`
+   - Set server URL (default: `http://localhost:3000`)
+3. **Copy & Embed**: Copy the generated code and paste it into your website's HTML
+
+### Widget Code Example
+
+```html
+<!-- Servio Chat Widget -->
+<script
+  src="http://localhost:3000/embed.js"
+  data-type="chat"
+  data-position="bottom-right"
+  data-server-url="http://localhost:3000">
+</script>
+```
+
+### Widget Types
+
+**Chat Widget** (`data-type="chat"`):
+- Text-based chat interface
+- No microphone permissions required
+- Perfect for desktop users or situations where voice isn't ideal
+
+**Voice Widget** (`data-type="voice"`):
+- Push-to-talk voice interaction
+- Requests microphone permission
+- Ideal for hands-free operation
+
+### Customization
+
+The widget automatically:
+- Adapts to your agent branding (displays agent name and logo)
+- Matches your theme (supports light/dark mode)
+- Responds to user interactions with visual feedback
+- Shows conversation history with proper formatting
+- Handles agent transfers seamlessly
 
 ## File Store Agents
 
@@ -308,8 +360,8 @@ To use File Store Agents, you need a Gemini API key:
 2. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/openai/openai-voice-agent-sdk-sample.git
-   cd openai-voice-agent-sdk-sample/ 
+   git clone https://github.com/rujirapongsn2/servio.git
+   cd servio/
    ```
 
 3. **Install dependencies:**
@@ -476,8 +528,8 @@ Transferred to Stylist Agent
 You: [Press & hold] "What should I wear for summer?"
 Stylist Agent: "I recommend breathable cotton t-shirts and linen shorts..."
 
-You: [Press & hold] "Show me some trendy styles in Tokyo"
-Stylist Agent: [Uses WebSearch] "Current trends in Tokyo include..."
+You: [Press & hold] "Show me some trendy styles in Bangkok"
+Stylist Agent: [Uses WebSearch] "Current trends in Bangkok include..."
 ```
 
 **Order Management**:
