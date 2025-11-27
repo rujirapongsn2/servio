@@ -108,7 +108,7 @@ export default function AdminLayout({
               active={pathname.startsWith("/admin/agents")}
               collapsed={collapsed}
             >
-              Agents
+              Manage Agents
             </NavLink>
             <NavLink
               href="/admin/monitor"
