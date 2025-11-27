@@ -112,7 +112,7 @@ class AnalyticsService:
         )
 
         # Trigger enrichment in background (Phase 2)
-        # await self.enqueue_enrichment()
+        await self.enqueue_enrichment()
 
         # Reset state
         self.session_id = None
@@ -169,16 +169,25 @@ class AnalyticsService:
             }
         }
 
-    # Enrichment methods (Phase 2 - placeholder)
+    # Enrichment methods (Phase 2)
     async def enqueue_enrichment(self):
-        """Queue conversation for LLM enrichment (Phase 2)"""
-        # TODO: Implement in Phase 2
-        pass
+        """Queue conversation for LLM enrichment"""
+        if not self.conversation_id:
+            return
+
+        # Run enrichment in background without blocking
+        asyncio.create_task(self.enrich_conversation(self.conversation_id))
 
     async def enrich_conversation(self, conversation_id: int):
-        """Enrich conversation with LLM analysis (Phase 2)"""
-        # TODO: Implement in Phase 2
-        pass
+        """Enrich conversation with LLM analysis"""
+        try:
+            from app.enrichment_service import get_enrichment_service
+
+            enrichment_service = get_enrichment_service()
+            await enrichment_service.enrich_conversation(conversation_id)
+
+        except Exception as e:
+            print(f"❌ Enrichment failed for conversation {conversation_id}: {e}")
 
 
 # Singleton instance for easy import
