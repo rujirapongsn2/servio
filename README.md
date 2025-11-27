@@ -407,8 +407,19 @@ The Admin Console provides two tabs for managing your AI agents:
 
 ## Screenshots & GIFs
 
+### Admin Dashboard
+The Servio admin dashboard provides a comprehensive overview of your voice agent system with real-time statistics and quick actions.
+
+![Admin Dashboard](dashboard-preview.png)
+
+**Key Features:**
+- **System Overview**: View total agents, tools, built-in tools, and custom tools at a glance
+- **Quick Actions**: Create new agents, manage existing agents, and add custom tools directly from the dashboard
+- **Clean Interface**: Modern, responsive design with easy navigation
+- **Agent Management**: Navigate between Dashboard, Agents, Online Agent monitoring, Tools, Widget configuration, and Settings
+
 ### Dtwin Transfer (expected)
-- Add your screenshot or GIF demonstrating: user asks about “DTWIN” → triage transfers to “Dtwin Agent” → agent responds.
+- Add your screenshot or GIF demonstrating: user asks about "DTWIN" → triage transfers to "Dtwin Agent" → agent responds.
 - Place files at:
   - `docs/images/dtwin-transfer.png`
   - `docs/images/dtwin-transfer.gif` (optional)
