@@ -111,12 +111,12 @@ class Workflow(VoiceWorkflowBase):
 async def websocket_endpoint(websocket: WebSocket):
     session_id = str(uuid.uuid4())
     await session_manager.connect(websocket, session_id)
-    
+
     try:
         with trace("Voice Agent Chat"):
             # Compose a fresh coordinator agent that includes DB-defined agents as handoffs
             dynamic_starting_agent = get_runtime_starting_agent()
-            connection = WebsocketHelper(websocket, [], dynamic_starting_agent)
+            connection = WebsocketHelper(websocket, [], dynamic_starting_agent, session_id)
             session_manager.register_helper(session_id, connection)
             audio_buffer = []
 
@@ -177,6 +177,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     audio_buffer = []  # reset the audio buffer
     finally:
+        # End analytics tracking
+        if 'connection' in locals():
+            await connection.end_conversation(outcome="completed")
         session_manager.disconnect(session_id)
 
 

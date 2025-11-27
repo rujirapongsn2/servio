@@ -12,6 +12,8 @@ from agents.voice import AudioInput, VoiceStreamEvent, VoiceStreamEventAudio
 from fastapi import WebSocket
 from openai.types.responses import ResponseTextDeltaEvent
 
+from app.analytics_service import get_analytics_service
+
 
 def transform_data_to_events(audio_np: np.ndarray) -> dict:
     return {
@@ -72,11 +74,16 @@ def concat_audio_chunks(chunks) -> AudioInput:
 
 
 class WebsocketHelper:
-    def __init__(self, websocket: WebSocket, history: list, initial_agent: Agent):
+    def __init__(self, websocket: WebSocket, history: list, initial_agent: Agent, session_id: str):
         self.websocket = websocket
         self.history = history or []
         self.latest_agent = initial_agent
         self.partial_response = ""
+        self.session_id = session_id
+
+        # Initialize analytics tracking
+        self.analytics = get_analytics_service()
+        self.conversation_id = self.analytics.start_conversation(session_id)
 
     async def show_user_input(self, user_input: str):
         self.history.append(
@@ -86,6 +93,14 @@ class WebsocketHelper:
                 "content": user_input,
             }
         )
+
+        # Track user message in analytics
+        self.analytics.track_message(
+            role="user",
+            content=user_input,
+            agent_name=None
+        )
+
         await self.websocket.send_text(
             json.dumps(
                 {
@@ -126,7 +141,18 @@ class WebsocketHelper:
         event: RawResponsesStreamEvent | RunItemStreamEvent | AgentUpdatedStreamEvent,
     ):
         if is_new_output_item(event):
-            self.history.append(event.item.to_input_item())  # type: ignore
+            item = event.item.to_input_item()  # type: ignore
+            self.history.append(item)
+
+            # Track tool calls in analytics
+            if item.get("type") == "function_call":
+                tool_name = item.get("name", "unknown")
+                try:
+                    arguments = json.loads(item.get("arguments", "{}"))
+                except:
+                    arguments = {}
+
+                self.analytics.track_tool_call(tool_name, arguments)
 
             await self.websocket.send_text(
                 json.dumps(
@@ -154,6 +180,14 @@ class WebsocketHelper:
                 )
             )
         else:
+            # Track agent response in analytics before clearing partial_response
+            if self.partial_response:
+                self.analytics.track_message(
+                    role="assistant",
+                    content=self.partial_response,
+                    agent_name=self.latest_agent.name
+                )
+
             self.partial_response = ""
             self.latest_agent = output.last_agent
             self.history = output.to_input_list()
@@ -176,6 +210,14 @@ class WebsocketHelper:
                 "content": content,
             }
         )
+
+        # Track admin message in analytics
+        self.analytics.track_message(
+            role="assistant",
+            content=content,
+            agent_name="Admin (Manual Mode)"
+        )
+
         await self.websocket.send_text(
             json.dumps(
                 {
@@ -195,3 +237,7 @@ class WebsocketHelper:
 
     async def send_audio_done(self):
         await self.websocket.send_text(json.dumps({"type": "audio.done"}))
+
+    async def end_conversation(self, outcome: str = "completed"):
+        """End conversation tracking and save to database"""
+        await self.analytics.end_conversation(outcome=outcome)
