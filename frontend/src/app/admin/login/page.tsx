@@ -48,11 +48,11 @@ export default function AdminLoginPage() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 md:grid-cols-2 bg-white dark:bg-gray-900">
-      {/* Left visual panel: blue background with Softnix logo */}
+      {/* Left visual panel: blue background with Servio logo */}
       <div className="hidden md:flex flex-col bg-[#2563eb] text-white p-8">
         <img
-          src="http://localhost:8000/assets/Softnix.png"
-          alt="Softnix"
+          src="/servio_logo.png"
+          alt="Servio"
           className="w-[160px] h-auto"
         />
       </div>

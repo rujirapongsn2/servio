@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Widget Test Page</h1>
+    <p>This page tests the embeddable widget.</p>
+    
+    <!-- Embed Code -->
+    <!-- Dynamic Embed Code -->
+    <script>
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const type = params.get('type') || 'voice';
+            const position = params.get('position') || 'bottom-right';
+            const serverUrl = window.location.origin;
+
+            const script = document.createElement('script');
+            script.src = `${serverUrl}/embed.js`;
+            script.setAttribute('data-position', position);
+            script.setAttribute('data-server-url', serverUrl);
+            script.setAttribute('data-type', type);
+            document.body.appendChild(script);
+        })();
+    </script>
+</body>
+</html>

@@ -41,7 +41,7 @@ export default function AdminLayout({
     try {
       const raw = localStorage.getItem("adminSidebarCollapsed");
       if (raw != null) setCollapsed(raw === "1" || raw === "true");
-    } catch {}
+    } catch { }
   }, [pathname, router]);
 
   const handleLogout = () => {
@@ -55,7 +55,7 @@ export default function AdminLayout({
       const nv = !v;
       try {
         localStorage.setItem("adminSidebarCollapsed", nv ? "1" : "0");
-      } catch {}
+      } catch { }
       return nv;
     });
   };
@@ -72,17 +72,17 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sidebar (blue, with Softnix logo) */}
+      {/* Sidebar (blue, with Servio logo) */}
       <div
         className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} bg-[#2563eb] text-white border-r border-blue-700 transition-all duration-200 z-20`}
       >
         <div className="flex flex-col h-full">
           {/* Header with logo */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-blue-600">
+          <div className="flex items-center justify-between h-20 px-4 border-b border-blue-600">
             <img
-              src="http://localhost:8000/assets/Softnix.png"
-              alt="Softnix"
-              className={`${collapsed ? "w-[32px]" : "w-[120px]"} h-auto transition-all`}
+              src="/servio_logo.png"
+              alt="Servio"
+              className={`${collapsed ? "w-[40px]" : "w-[140px]"} h-auto transition-all`}
             />
             <Button
               size="iconSmall"
@@ -111,11 +111,25 @@ export default function AdminLayout({
               Agents
             </NavLink>
             <NavLink
+              href="/admin/monitor"
+              active={pathname.startsWith("/admin/monitor")}
+              collapsed={collapsed}
+            >
+              Online Agent
+            </NavLink>
+            <NavLink
               href="/admin/tools"
-              active={pathname.startsWith("/admin/tools")}
+              active={pathname === "/admin/tools"}
               collapsed={collapsed}
             >
               Tools
+            </NavLink>
+            <NavLink
+              href="/admin/tools/widget"
+              active={pathname.startsWith("/admin/tools/widget")}
+              collapsed={collapsed}
+            >
+              Widget
             </NavLink>
             <NavLink
               href="/admin/settings"
@@ -171,11 +185,10 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`block px-3 py-2 rounded-md text-sm font-medium ${
-        active
-          ? "bg-white/20 text-white"
-          : "text-white/90 hover:bg-white/10 hover:text-white"
-      }`}
+      className={`block px-3 py-2 rounded-md text-sm font-medium ${active
+        ? "bg-white/20 text-white"
+        : "text-white/90 hover:bg-white/10 hover:text-white"
+        }`}
       title={label || undefined}
     >
       {collapsed ? (

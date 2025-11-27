@@ -38,7 +38,7 @@ export default function Home() {
   }
 
   return (
-    <div className="w-full h-dvh flex flex-col items-center">
+    <div className="w-full h-dvh flex flex-col items-center bg-gray-50 dark:bg-gray-900">
       <Header
         agentName={agentName ?? "Voice Agent"}
         playbackFrequencies={playbackFrequencies}
@@ -47,18 +47,26 @@ export default function Home() {
         collapsed={collapsed}
         onToggleCollapsed={toggle}
       />
-      <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} />
-      <Composer
-        audioChat={
-          <AudioChat
-            frequencies={frequencies}
-            isReady={websocketReady && audioIsReady}
-            startRecording={startRecording}
-            stopRecording={stopRecording}
-            sendAudioMessage={sendAudioMessage}
+      <div className="flex-1 w-full max-w-5xl mx-auto px-4 py-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 h-full flex flex-col overflow-hidden">
+          <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} />
+        </div>
+      </div>
+      <div className="w-full max-w-5xl mx-auto px-4 pb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <Composer
+            audioChat={
+              <AudioChat
+                frequencies={frequencies}
+                isReady={websocketReady && audioIsReady}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
+                sendAudioMessage={sendAudioMessage}
+              />
+            }
           />
-        }
-      />
+        </div>
+      </div>
     </div>
   );
 }

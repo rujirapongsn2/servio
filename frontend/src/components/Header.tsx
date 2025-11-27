@@ -27,14 +27,15 @@ export function Header({
   const showAudioPlayback = playbackFrequencies.length === 5;
 
   return (
-    <div className="flex flex-row gap-2 w-full relative justify-between items-center py-4 px-4 bg-white text-black border-b border-gray-100 dark:bg-gray-900 dark:text-white dark:border-gray-800">
-      <div className="flex flex-row gap-2 items-center px-5">
-        <Image src="/softnix.png" alt="Softnix Logo" width={120} height={32} />
+    <div className="flex flex-row gap-2 w-full relative justify-between items-center py-5 px-6 bg-white text-gray-900 border-b border-gray-200 shadow-sm dark:bg-gray-900 dark:text-white dark:border-gray-800 min-h-24">
+      <div className="flex flex-row gap-5 items-center">
+        <Image src="/servio_logo.png" alt="Servio Logo" width={80} height={80} className="rounded-lg" />
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Voice Agent</h1>
       </div>
       {agentName && (
         <div
           className={clsx(
-            "flex text-sm font-semibold border-2 border-gray-100 rounded-full py-3 items-center overflow-hidden dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-white"
+            "flex text-sm font-semibold border border-gray-200 rounded-xl py-3 px-2 items-center overflow-hidden dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-white shadow-sm"
           )}
         >
           <div className="ml-6 mr-4">
@@ -117,22 +118,24 @@ export function Header({
           </div>
         </div>
       )}
-      <div className="flex flex-row gap-2 px-5 items-center">
+      <div className="flex flex-row gap-3 items-center">
         <Button
           onClick={onToggleCollapsed}
           aria-label={collapsed ? "Expand messages" : "Collapse messages"}
           title={collapsed ? "แสดงบทสนทนา (Expand)" : "ซ่อนบทสนทนา (Collapse)"}
           size="sm"
           variant="outline"
+          className="text-gray-700 dark:text-gray-300"
         >
           {collapsed ? "Expand" : "Collapse"}
         </Button>
         <Button
           onClick={resetConversation}
           aria-label="Start new conversation"
-          size="icon"
+          size="iconSmall"
+          variant="primary"
         >
-          <WriteIcon width={24} height={24} />
+          <WriteIcon width={20} height={20} />
         </Button>
       </div>
     </div>

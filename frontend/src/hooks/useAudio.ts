@@ -3,7 +3,12 @@ import { WavRecorder, WavStreamPlayer } from "wavtools";
 
 import { normalizeArray } from "@/lib/utils";
 
-export function useAudio() {
+interface UseAudioOptions {
+  enabled?: boolean;
+}
+
+export function useAudio(options: UseAudioOptions = {}) {
+  const { enabled = true } = options;
   const wavRecorder = useRef<WavRecorder | null>(null);
   const wavPlayer = useRef<WavStreamPlayer | null>(null);
   const audioChunks = useRef<Int16Array[]>([]);
@@ -17,6 +22,13 @@ export function useAudio() {
   const stoppedManually = useRef(false);
 
   useEffect(() => {
+    if (!enabled) {
+      // If audio is not enabled, mark as ready without initialization
+      setAudioRecorderIsReady(true);
+      setAudioPlayerIsReady(true);
+      return;
+    }
+
     async function init() {
       wavRecorder.current = new WavRecorder({ sampleRate: 24000 });
       await wavRecorder.current.begin();
@@ -26,7 +38,7 @@ export function useAudio() {
       setAudioPlayerIsReady(true);
     }
     init();
-  }, []);
+  }, [enabled]);
 
   const getFrequencies = useCallback(async () => {
     if (wavPlayer.current) {

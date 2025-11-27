@@ -168,6 +168,25 @@ class WebsocketHelper:
                 )
             )
 
+    async def send_admin_message(self, content: str):
+        self.history.append(
+            {
+                "type": "message",
+                "role": "assistant", # Or "admin"? But "assistant" ensures it shows up on left side.
+                "content": content,
+            }
+        )
+        await self.websocket.send_text(
+            json.dumps(
+                {
+                    "type": "history.updated",
+                    "reason": "admin.message",
+                    "inputs": self.history,
+                    "agent_name": self.latest_agent.name,
+                }
+            )
+        )
+
     async def send_audio_chunk(self, event: VoiceStreamEvent):
         if isinstance(event, VoiceStreamEventAudio):
             await self.websocket.send_text(

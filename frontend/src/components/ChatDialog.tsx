@@ -46,11 +46,11 @@ export function ChatHistory({ messages, isLoading, collapsed = false }: ChatDial
   return (
     <div
       className={clsx(
-        "flex w-full flex-col gap-2 flex-1 overflow-y-auto relative max-w-2xl transition-all duration-300",
+        "flex w-full flex-col gap-3 flex-1 overflow-y-auto relative transition-all duration-300",
         messages.length === 0 && "flex-grow-0 basis-[calc(50%-72px-52px)]"
       )}
     >
-      <div className="flex flex-col gap-2 relative py-8 px-5 pb-12">
+      <div className="flex flex-col gap-3 relative py-6 px-6 pb-12">
         {displayMessages.map((message, index) => {
           // Check if next message is a function call (not transfer)
           const nextMessage = displayMessages[index + 1];

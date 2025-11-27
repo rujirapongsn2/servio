@@ -11,7 +11,7 @@ const CustomLink = ({ href, children, ...props }: CustomLinkProps) => (
   <a
     href={href}
     {...props}
-    className="bg-gray-200 rounded-full py-1 px-2 text-sm font-medium hover:text-white hover:bg-black dark:bg-gray-700 dark:hover:bg-white dark:hover:text-black"
+    className="text-blue-600 hover:text-blue-700 underline underline-offset-2 font-medium dark:text-blue-400 dark:hover:text-blue-300"
   >
     {children}
   </a>
@@ -26,17 +26,17 @@ type TextMessageProps = {
 export function TextMessage({ text, isUser, collapsed = false }: TextMessageProps) {
   return (
     <div
-      className={clsx("flex flex-row gap-2", {
-        "justify-end py-2": isUser,
+      className={clsx("flex flex-row gap-3", {
+        "justify-end": isUser,
       })}
     >
       <div
-        className={clsx("rounded-[20px]", {
-          "px-4 max-w-[90%] ml-4 text-stone-900 dark:text-stone-900 bg-[#ededed] dark:bg-gray-300": isUser, 
-          "px-4 max-w-[90%] mr-4 text-black bg-white dark:bg-gray-800 dark:text-white": !isUser, 
+        className={clsx("rounded-2xl py-3 px-4 shadow-sm", {
+          "max-w-[85%] text-white bg-blue-600 dark:bg-blue-600": isUser,
+          "max-w-[85%] text-gray-900 bg-gray-100 dark:bg-gray-700 dark:text-gray-100": !isUser,
         })}
       >
-        <div className={clsx({ "clamp-1": collapsed })}>
+        <div className={clsx("text-[15px] leading-relaxed", { "clamp-1": collapsed })}>
           <ReactMarkdown components={{ a: CustomLink }}>{text}</ReactMarkdown>
         </div>
       </div>
