@@ -735,3 +735,230 @@ async def test_file_store(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to test file store: {str(e)}"
         )
+
+
+# Analytics endpoints
+@router.get("/analytics/summary")
+async def get_analytics_summary(
+    period: str = "today",
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get analytics summary for dashboard
+
+    Args:
+        period: 'today', 'week', 'month', or 'all'
+    """
+    try:
+        summary = database.get_analytics_summary(period)
+        return summary
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get analytics summary: {str(e)}"
+        )
+
+
+@router.get("/analytics/conversations")
+async def get_conversations(
+    limit: int = 50,
+    offset: int = 0,
+    outcome: str = None,
+    sentiment: str = None,
+    topic: str = None,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get list of conversations with optional filters
+
+    Args:
+        limit: Maximum number of conversations to return (default: 50)
+        offset: Number of conversations to skip (default: 0)
+        outcome: Filter by outcome ('resolved', 'escalated', 'abandoned', 'ongoing')
+        sentiment: Filter by sentiment ('positive', 'neutral', 'negative')
+        topic: Filter by primary topic
+    """
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+
+        # Build query with filters
+        query = """
+            SELECT
+                c.id,
+                c.session_id,
+                c.started_at,
+                c.ended_at,
+                c.duration_seconds,
+                c.total_messages,
+                c.user_messages,
+                c.agent_messages,
+                c.agents_involved,
+                c.tools_used,
+                c.outcome,
+                ca.overall_sentiment,
+                ca.sentiment_score,
+                ca.primary_topic,
+                ca.resolution_quality,
+                ca.urgency_level
+            FROM conversations c
+            LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
+            WHERE 1=1
+        """
+        params = []
+
+        if outcome:
+            query += " AND c.outcome = ?"
+            params.append(outcome)
+
+        if sentiment:
+            query += " AND ca.overall_sentiment = ?"
+            params.append(sentiment)
+
+        if topic:
+            query += " AND ca.primary_topic = ?"
+            params.append(topic)
+
+        query += " ORDER BY c.started_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        # Convert to list of dicts
+        columns = [
+            'id', 'session_id', 'started_at', 'ended_at', 'duration_seconds',
+            'total_messages', 'user_messages', 'agent_messages',
+            'agents_involved', 'tools_used', 'outcome',
+            'overall_sentiment', 'sentiment_score', 'primary_topic',
+            'resolution_quality', 'urgency_level'
+        ]
+        conversations = []
+        for row in rows:
+            conv_dict = dict(zip(columns, row))
+            # Parse JSON fields
+            if conv_dict['agents_involved']:
+                conv_dict['agents_involved'] = json.loads(conv_dict['agents_involved'])
+            if conv_dict['tools_used']:
+                conv_dict['tools_used'] = json.loads(conv_dict['tools_used'])
+            conversations.append(conv_dict)
+
+        # Get total count for pagination
+        count_query = "SELECT COUNT(*) FROM conversations c LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id WHERE 1=1"
+        count_params = []
+        if outcome:
+            count_query += " AND c.outcome = ?"
+            count_params.append(outcome)
+        if sentiment:
+            count_query += " AND ca.overall_sentiment = ?"
+            count_params.append(sentiment)
+        if topic:
+            count_query += " AND ca.primary_topic = ?"
+            count_params.append(topic)
+
+        cursor.execute(count_query, count_params)
+        total = cursor.fetchone()[0]
+
+        conn.close()
+
+        return {
+            "conversations": conversations,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversations: {str(e)}"
+        )
+
+
+@router.get("/analytics/conversations/{conversation_id}")
+async def get_conversation_detail(
+    conversation_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get detailed conversation information including messages and analytics
+    """
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+
+        # Get conversation metadata
+        cursor.execute(
+            "SELECT * FROM conversations WHERE id = ?",
+            (conversation_id,)
+        )
+        conv_row = cursor.fetchone()
+
+        if not conv_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+
+        # Convert to dict
+        conv_columns = [
+            'id', 'session_id', 'started_at', 'ended_at', 'duration_seconds',
+            'total_messages', 'user_messages', 'agent_messages',
+            'agents_involved', 'tools_used', 'outcome', 'created_at'
+        ]
+        conversation = dict(zip(conv_columns, conv_row))
+
+        # Parse JSON fields
+        if conversation['agents_involved']:
+            conversation['agents_involved'] = json.loads(conversation['agents_involved'])
+        if conversation['tools_used']:
+            conversation['tools_used'] = json.loads(conversation['tools_used'])
+
+        # Get messages
+        messages = database.get_conversation_messages(conversation_id)
+
+        # Get analytics if available
+        cursor.execute(
+            "SELECT * FROM conversation_analytics WHERE conversation_id = ?",
+            (conversation_id,)
+        )
+        analytics_row = cursor.fetchone()
+
+        analytics = None
+        if analytics_row:
+            analytics_columns = [
+                'id', 'conversation_id', 'overall_sentiment', 'sentiment_score',
+                'sentiment_explanation', 'primary_topic', 'topics',
+                'resolution_quality', 'agent_performance_score',
+                'response_clarity_score', 'empathy_score',
+                'issues_identified', 'customer_pain_points', 'suggestions',
+                'customer_intent', 'urgency_level', 'follow_up_needed',
+                'follow_up_reason', 'analyzed_at', 'llm_model', 'analysis_version'
+            ]
+            analytics = dict(zip(analytics_columns, analytics_row))
+
+            # Parse JSON fields
+            if analytics['topics']:
+                analytics['topics'] = json.loads(analytics['topics'])
+            if analytics['issues_identified']:
+                analytics['issues_identified'] = json.loads(analytics['issues_identified'])
+            if analytics['customer_pain_points']:
+                analytics['customer_pain_points'] = json.loads(analytics['customer_pain_points'])
+            if analytics['suggestions']:
+                analytics['suggestions'] = json.loads(analytics['suggestions'])
+
+        conn.close()
+
+        return {
+            "conversation": conversation,
+            "messages": messages,
+            "analytics": analytics
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversation detail: {str(e)}"
+        )

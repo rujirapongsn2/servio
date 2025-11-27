@@ -118,6 +118,13 @@ export default function AdminLayout({
               Online Agent
             </NavLink>
             <NavLink
+              href="/admin/analytics"
+              active={pathname.startsWith("/admin/analytics")}
+              collapsed={collapsed}
+            >
+              Analytics
+            </NavLink>
+            <NavLink
               href="/admin/tools"
               active={pathname === "/admin/tools"}
               collapsed={collapsed}

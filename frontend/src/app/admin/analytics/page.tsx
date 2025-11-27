@@ -1,0 +1,508 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/Button";
+
+interface AnalyticsSummary {
+  total_conversations: number;
+  resolution_rate: number;
+  avg_messages: number;
+  avg_sentiment: number;
+  sentiment_breakdown?: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  topic_breakdown?: Record<string, number>;
+}
+
+interface Conversation {
+  id: number;
+  session_id: string;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  total_messages: number;
+  user_messages: number;
+  agent_messages: number;
+  agents_involved: string[];
+  outcome: string;
+  overall_sentiment?: string;
+  sentiment_score?: number;
+  primary_topic?: string;
+  resolution_quality?: string;
+  urgency_level?: string;
+}
+
+interface ConversationDetail {
+  conversation: any;
+  messages: any[];
+  analytics: any;
+}
+
+export default function AnalyticsPage() {
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<ConversationDetail | null>(null);
+  const [period, setPeriod] = useState<string>("today");
+  const [filterOutcome, setFilterOutcome] = useState<string>("");
+  const [filterSentiment, setFilterSentiment] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch analytics summary
+  useEffect(() => {
+    fetchSummary();
+  }, [period]);
+
+  // Fetch conversations
+  useEffect(() => {
+    fetchConversations();
+  }, [filterOutcome, filterSentiment]);
+
+  const fetchSummary = async () => {
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        `http://localhost:8000/api/admin/analytics/summary?period=${period}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch summary");
+
+      const data = await response.json();
+      setSummary(data);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const fetchConversations = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem("adminToken");
+
+      const params = new URLSearchParams({
+        limit: "50",
+        offset: "0",
+      });
+
+      if (filterOutcome) params.append("outcome", filterOutcome);
+      if (filterSentiment) params.append("sentiment", filterSentiment);
+
+      const response = await fetch(
+        `http://localhost:8000/api/admin/analytics/conversations?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch conversations");
+
+      const data = await response.json();
+      setConversations(data.conversations);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchConversationDetail = async (id: number) => {
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        `http://localhost:8000/api/admin/analytics/conversations/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch conversation detail");
+
+      const data = await response.json();
+      setSelectedConversation(data);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds) return "N/A";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleString();
+  };
+
+  const getSentimentColor = (sentiment?: string) => {
+    switch (sentiment) {
+      case "positive": return "text-green-600 bg-green-50";
+      case "negative": return "text-red-600 bg-red-50";
+      case "neutral": return "text-gray-600 bg-gray-50";
+      default: return "text-gray-400 bg-gray-50";
+    }
+  };
+
+  const getOutcomeColor = (outcome: string) => {
+    switch (outcome) {
+      case "resolved": return "text-green-600 bg-green-50";
+      case "escalated": return "text-orange-600 bg-orange-50";
+      case "abandoned": return "text-red-600 bg-red-50";
+      case "ongoing": return "text-blue-600 bg-blue-50";
+      default: return "text-gray-600 bg-gray-50";
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          Error: {error}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
+
+        {/* Period selector */}
+        <div className="flex gap-2">
+          {["today", "week", "month", "all"].map((p) => (
+            <Button
+              key={p}
+              size="small"
+              variant={period === p ? "primary" : "secondary"}
+              onClick={() => setPeriod(p)}
+            >
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="text-sm font-medium text-gray-600">Total Conversations</div>
+            <div className="text-3xl font-bold text-gray-900 mt-2">
+              {summary.total_conversations}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="text-sm font-medium text-gray-600">Resolution Rate</div>
+            <div className="text-3xl font-bold text-green-600 mt-2">
+              {summary.resolution_rate}%
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="text-sm font-medium text-gray-600">Avg Messages</div>
+            <div className="text-3xl font-bold text-blue-600 mt-2">
+              {summary.avg_messages}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="text-sm font-medium text-gray-600">Avg Sentiment</div>
+            <div className="text-3xl font-bold text-purple-600 mt-2">
+              {summary.avg_sentiment >= 0 ? "+" : ""}{summary.avg_sentiment.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Outcome
+            </label>
+            <select
+              value={filterOutcome}
+              onChange={(e) => setFilterOutcome(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All</option>
+              <option value="resolved">Resolved</option>
+              <option value="escalated">Escalated</option>
+              <option value="abandoned">Abandoned</option>
+              <option value="ongoing">Ongoing</option>
+            </select>
+          </div>
+
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sentiment
+            </label>
+            <select
+              value={filterSentiment}
+              onChange={(e) => setFilterSentiment(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All</option>
+              <option value="positive">Positive</option>
+              <option value="neutral">Neutral</option>
+              <option value="negative">Negative</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Conversations Table */}
+      <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">Conversations</h2>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Loading conversations...</div>
+        ) : conversations.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No conversations found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Started
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Messages
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Topic
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Sentiment
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Outcome
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {conversations.map((conv) => (
+                  <tr key={conv.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatDate(conv.started_at)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {formatDuration(conv.duration_seconds)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {conv.total_messages}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {conv.primary_topic ? (
+                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
+                          {conv.primary_topic.replace(/_/g, " ")}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">N/A</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {conv.overall_sentiment ? (
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSentimentColor(conv.overall_sentiment)}`}>
+                          {conv.overall_sentiment}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">N/A</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getOutcomeColor(conv.outcome)}`}>
+                        {conv.outcome}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => fetchConversationDetail(conv.id)}
+                      >
+                        View Details
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Detail Modal */}
+      {selectedConversation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900">
+                Conversation Details
+              </h2>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => setSelectedConversation(null)}
+              >
+                Close
+              </Button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Conversation Info */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Overview</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm text-gray-600">Started:</span>
+                    <div className="text-sm font-medium">{formatDate(selectedConversation.conversation.started_at)}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Ended:</span>
+                    <div className="text-sm font-medium">{formatDate(selectedConversation.conversation.ended_at)}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Duration:</span>
+                    <div className="text-sm font-medium">{formatDuration(selectedConversation.conversation.duration_seconds)}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-600">Messages:</span>
+                    <div className="text-sm font-medium">{selectedConversation.conversation.total_messages}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Analytics */}
+              {selectedConversation.analytics && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">AI Analysis</h3>
+
+                  {/* Sentiment */}
+                  <div className="mb-4">
+                    <div className="text-sm text-gray-600 mb-1">Sentiment</div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1 text-sm font-medium rounded-full ${getSentimentColor(selectedConversation.analytics.overall_sentiment)}`}>
+                        {selectedConversation.analytics.overall_sentiment}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        Score: {selectedConversation.analytics.sentiment_score}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700 mt-2">{selectedConversation.analytics.sentiment_explanation}</p>
+                  </div>
+
+                  {/* Topics */}
+                  <div className="mb-4">
+                    <div className="text-sm text-gray-600 mb-1">Topics</div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedConversation.analytics.topics?.map((topic: string, i: number) => (
+                        <span key={i} className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
+                          {topic.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Quality */}
+                  <div className="mb-4">
+                    <div className="text-sm text-gray-600 mb-2">Quality Metrics</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-xs text-gray-500">Resolution:</span>
+                        <div className="text-sm font-medium">{selectedConversation.analytics.resolution_quality}</div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500">Agent Performance:</span>
+                        <div className="text-sm font-medium">{(selectedConversation.analytics.agent_performance_score * 100).toFixed(0)}%</div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500">Clarity:</span>
+                        <div className="text-sm font-medium">{(selectedConversation.analytics.response_clarity_score * 100).toFixed(0)}%</div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500">Empathy:</span>
+                        <div className="text-sm font-medium">{(selectedConversation.analytics.empathy_score * 100).toFixed(0)}%</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Issues & Suggestions */}
+                  {selectedConversation.analytics.issues_identified?.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-600 mb-1">Issues Identified</div>
+                      <ul className="list-disc list-inside text-sm text-gray-700">
+                        {selectedConversation.analytics.issues_identified.map((issue: string, i: number) => (
+                          <li key={i}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedConversation.analytics.suggestions?.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm text-gray-600 mb-1">Suggestions</div>
+                      <ul className="list-disc list-inside text-sm text-gray-700">
+                        {selectedConversation.analytics.suggestions.map((suggestion: string, i: number) => (
+                          <li key={i}>{suggestion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Messages */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Messages</h3>
+                <div className="space-y-3">
+                  {selectedConversation.messages.map((msg: any, i: number) => (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-lg ${
+                        msg.role === "user"
+                          ? "bg-gray-100 ml-8"
+                          : "bg-blue-50 mr-8"
+                      }`}
+                    >
+                      <div className="text-xs text-gray-600 mb-1">
+                        {msg.role === "user" ? "User" : msg.agent_name || "Agent"}
+                      </div>
+                      <div className="text-sm text-gray-900">{msg.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
