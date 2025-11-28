@@ -2,7 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Legend,
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  LineChart,
+  Line,
+} from "recharts";
 
 interface AnalyticsSummary {
   total_conversations: number;
@@ -38,11 +52,26 @@ interface ConversationDetail {
   analytics: any;
 }
 
+interface TrendsData {
+  daily_volume: Array<{ date: string; count: number }>;
+  daily_sentiment: Array<{ date: string; sentiment: number }>;
+  agent_performance: Array<{
+    agent: string;
+    conversations: number;
+    performance: number;
+    empathy: number;
+    clarity: number;
+    resolution_rate: number;
+  }>;
+}
+
 export default function AnalyticsPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [trends, setTrends] = useState<TrendsData | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<ConversationDetail | null>(null);
   const [period, setPeriod] = useState<string>("today");
+  const [trendPeriod, setTrendPeriod] = useState<string>("week");
   const [filterOutcome, setFilterOutcome] = useState<string>("");
   const [filterSentiment, setFilterSentiment] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -52,6 +81,11 @@ export default function AnalyticsPage() {
   useEffect(() => {
     fetchSummary();
   }, [period]);
+
+  // Fetch trends
+  useEffect(() => {
+    fetchTrends();
+  }, [trendPeriod]);
 
   // Fetch conversations
   useEffect(() => {
@@ -74,6 +108,27 @@ export default function AnalyticsPage() {
 
       const data = await response.json();
       setSummary(data);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const fetchTrends = async () => {
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        `http://localhost:8000/api/admin/analytics/trends?period=${trendPeriod}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch trends");
+
+      const data = await response.json();
+      setTrends(data);
     } catch (err: any) {
       setError(err.message);
     }
@@ -298,6 +353,140 @@ export default function AnalyticsPage() {
                   <Tooltip />
                   <Legend />
                 </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Topic Distribution Bar Chart */}
+      {summary && summary.topic_breakdown && Object.keys(summary.topic_breakdown).length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Topics</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart
+              data={Object.entries(summary.topic_breakdown)
+                .sort(([, a], [, b]) => (b as number) - (a as number))
+                .slice(0, 10)
+                .map(([name, value]) => ({
+                  topic: name.replace(/_/g, " ").charAt(0).toUpperCase() + name.replace(/_/g, " ").slice(1),
+                  count: value,
+                }))}
+              margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="topic" angle={-45} textAnchor="end" height={100} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="count" fill="#3b82f6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Trend Charts */}
+      {trends && (
+        <div className="space-y-6">
+          {/* Trend Period Selector */}
+          <div className="flex justify-end gap-2">
+            <span className="text-sm text-gray-600 self-center mr-2">Trend Period:</span>
+            {["week", "month"].map((p) => (
+              <Button
+                key={p}
+                size="small"
+                variant={trendPeriod === p ? "primary" : "secondary"}
+                onClick={() => setTrendPeriod(p)}
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </Button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Conversation Volume Trend */}
+            {trends.daily_volume && trends.daily_volume.length > 0 && (
+              <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Conversation Volume Trend</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={trends.daily_volume}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(value) => {
+                        const date = new Date(value);
+                        return `${date.getMonth() + 1}/${date.getDate()}`;
+                      }}
+                    />
+                    <YAxis />
+                    <Tooltip
+                      labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      name="Conversations"
+                      dot={{ fill: "#3b82f6" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Sentiment Trend */}
+            {trends.daily_sentiment && trends.daily_sentiment.length > 0 && (
+              <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Sentiment Trend</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={trends.daily_sentiment}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(value) => {
+                        const date = new Date(value);
+                        return `${date.getMonth() + 1}/${date.getDate()}`;
+                      }}
+                    />
+                    <YAxis domain={[-1, 1]} />
+                    <Tooltip
+                      labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="sentiment"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      name="Avg Sentiment"
+                      dot={{ fill: "#10b981" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Agent Performance */}
+          {trends.agent_performance && trends.agent_performance.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Agent Performance</h3>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart
+                  data={trends.agent_performance}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="agent" angle={-45} textAnchor="end" height={100} />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="performance" fill="#3b82f6" name="Performance %" />
+                  <Bar dataKey="empathy" fill="#10b981" name="Empathy %" />
+                  <Bar dataKey="clarity" fill="#f59e0b" name="Clarity %" />
+                  <Bar dataKey="resolution_rate" fill="#8b5cf6" name="Resolution %" />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )}

@@ -962,3 +962,100 @@ async def get_conversation_detail(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get conversation detail: {str(e)}"
         )
+
+
+@router.get("/analytics/trends")
+async def get_analytics_trends(
+    period: str = "week",
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get analytics trends over time for charts
+
+    Args:
+        period: 'week' or 'month'
+    """
+    try:
+        conn = database.get_db_connection()
+        cursor = conn.cursor()
+
+        # Determine number of days
+        days = 7 if period == "week" else 30
+
+        # Daily conversation volume
+        cursor.execute(
+            f"""
+            SELECT DATE(started_at) as date, COUNT(*) as count
+            FROM conversations
+            WHERE DATE(started_at) >= DATE('now', '-{days} days')
+            GROUP BY DATE(started_at)
+            ORDER BY date ASC
+            """
+        )
+        volume_rows = cursor.fetchall()
+        daily_volume = [{"date": row[0], "count": row[1]} for row in volume_rows]
+
+        # Daily sentiment trend
+        cursor.execute(
+            f"""
+            SELECT DATE(c.started_at) as date, AVG(ca.sentiment_score) as avg_sentiment
+            FROM conversation_analytics ca
+            JOIN conversations c ON ca.conversation_id = c.id
+            WHERE DATE(c.started_at) >= DATE('now', '-{days} days')
+            AND ca.sentiment_score IS NOT NULL
+            GROUP BY DATE(c.started_at)
+            ORDER BY date ASC
+            """
+        )
+        sentiment_rows = cursor.fetchall()
+        daily_sentiment = [{"date": row[0], "sentiment": round(row[1], 2) if row[1] else 0} for row in sentiment_rows]
+
+        # Agent performance
+        cursor.execute(
+            """
+            SELECT
+                json_extract(c.agents_involved, '$[0]') as agent_name,
+                COUNT(*) as total_conversations,
+                AVG(ca.agent_performance_score) as avg_performance,
+                AVG(ca.empathy_score) as avg_empathy,
+                AVG(ca.response_clarity_score) as avg_clarity,
+                COUNT(CASE WHEN c.outcome = 'resolved' THEN 1 END) * 100.0 / COUNT(*) as resolution_rate
+            FROM conversations c
+            LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
+            WHERE c.agents_involved IS NOT NULL
+            AND c.agents_involved != '[]'
+            GROUP BY agent_name
+            HAVING total_conversations >= 1
+            ORDER BY total_conversations DESC
+            LIMIT 10
+            """
+        )
+        agent_rows = cursor.fetchall()
+        agent_performance = []
+        for row in agent_rows:
+            agent_name = row[0]
+            if agent_name:
+                # Remove quotes if present
+                agent_name = agent_name.strip('"')
+                agent_performance.append({
+                    "agent": agent_name,
+                    "conversations": row[1],
+                    "performance": round(row[2] * 100, 1) if row[2] else 0,
+                    "empathy": round(row[3] * 100, 1) if row[3] else 0,
+                    "clarity": round(row[4] * 100, 1) if row[4] else 0,
+                    "resolution_rate": round(row[5], 1) if row[5] else 0
+                })
+
+        conn.close()
+
+        return {
+            "daily_volume": daily_volume,
+            "daily_sentiment": daily_sentiment,
+            "agent_performance": agent_performance
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get analytics trends: {str(e)}"
+        )
