@@ -837,13 +837,50 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
     )
     avg_sentiment = cursor.fetchone()[0] or 0
 
+    # Outcome breakdown
+    cursor.execute(
+        f"""SELECT outcome, COUNT(*) as count
+            FROM conversations
+            WHERE {date_filter}
+            GROUP BY outcome"""
+    )
+    outcome_rows = cursor.fetchall()
+    outcome_breakdown = {row[0]: row[1] for row in outcome_rows}
+
+    # Sentiment breakdown
+    cursor.execute(
+        f"""SELECT ca.overall_sentiment, COUNT(*) as count
+            FROM conversation_analytics ca
+            JOIN conversations c ON ca.conversation_id = c.id
+            WHERE {date_filter} AND ca.overall_sentiment IS NOT NULL
+            GROUP BY ca.overall_sentiment"""
+    )
+    sentiment_rows = cursor.fetchall()
+    sentiment_breakdown = {row[0]: row[1] for row in sentiment_rows}
+
+    # Topic breakdown
+    cursor.execute(
+        f"""SELECT ca.primary_topic, COUNT(*) as count
+            FROM conversation_analytics ca
+            JOIN conversations c ON ca.conversation_id = c.id
+            WHERE {date_filter} AND ca.primary_topic IS NOT NULL
+            GROUP BY ca.primary_topic
+            ORDER BY count DESC
+            LIMIT 10"""
+    )
+    topic_rows = cursor.fetchall()
+    topic_breakdown = {row[0]: row[1] for row in topic_rows}
+
     conn.close()
 
     return {
         'total_conversations': total_conversations,
         'resolution_rate': round(resolution_rate, 1),
         'avg_messages': round(avg_messages, 1),
-        'avg_sentiment': round(avg_sentiment, 2)
+        'avg_sentiment': round(avg_sentiment, 2),
+        'outcome_breakdown': outcome_breakdown,
+        'sentiment_breakdown': sentiment_breakdown,
+        'topic_breakdown': topic_breakdown
     }
 
 

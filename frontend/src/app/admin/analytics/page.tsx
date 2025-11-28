@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 
 interface AnalyticsSummary {
   total_conversations: number;
   resolution_rate: number;
   avg_messages: number;
   avg_sentiment: number;
-  sentiment_breakdown?: {
-    positive: number;
-    neutral: number;
-    negative: number;
-  };
+  outcome_breakdown?: Record<string, number>;
+  sentiment_breakdown?: Record<string, number>;
   topic_breakdown?: Record<string, number>;
 }
 
@@ -226,6 +224,83 @@ export default function AnalyticsPage() {
               {summary.avg_sentiment >= 0 ? "+" : ""}{summary.avg_sentiment.toFixed(2)}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Pie Charts */}
+      {summary && (summary.outcome_breakdown || summary.sentiment_breakdown) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Outcome Distribution */}
+          {summary.outcome_breakdown && Object.keys(summary.outcome_breakdown).length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Outcome Distribution</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={Object.entries(summary.outcome_breakdown).map(([name, value]) => ({
+                      name: name.charAt(0).toUpperCase() + name.slice(1),
+                      value,
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {Object.entries(summary.outcome_breakdown).map(([name], index) => {
+                      const colors: Record<string, string> = {
+                        resolved: "#10b981",
+                        escalated: "#f59e0b",
+                        abandoned: "#ef4444",
+                        ongoing: "#3b82f6",
+                        completed: "#8b5cf6",
+                      };
+                      return <Cell key={`cell-${index}`} fill={colors[name] || "#6b7280"} />;
+                    })}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Sentiment Distribution */}
+          {summary.sentiment_breakdown && Object.keys(summary.sentiment_breakdown).length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Sentiment Distribution</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={Object.entries(summary.sentiment_breakdown).map(([name, value]) => ({
+                      name: name.charAt(0).toUpperCase() + name.slice(1),
+                      value,
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {Object.entries(summary.sentiment_breakdown).map(([name], index) => {
+                      const colors: Record<string, string> = {
+                        positive: "#10b981",
+                        neutral: "#6b7280",
+                        negative: "#ef4444",
+                      };
+                      return <Cell key={`cell-${index}`} fill={colors[name] || "#6b7280"} />;
+                    })}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 
