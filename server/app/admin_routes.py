@@ -669,6 +669,9 @@ async def upload_file(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Upload error: {error_trace}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload file: {str(e)}"
@@ -782,7 +785,7 @@ async def get_conversations(
         conn = database.get_db_connection()
         cursor = conn.cursor()
 
-        # Build query with filters
+        # Build query with filters (PostgreSQL syntax with %s)
         query = """
             SELECT
                 c.id,
@@ -808,56 +811,50 @@ async def get_conversations(
         params = []
 
         if outcome:
-            query += " AND c.outcome = ?"
+            query += " AND c.outcome = %s"
             params.append(outcome)
 
         if sentiment:
-            query += " AND ca.overall_sentiment = ?"
+            query += " AND ca.overall_sentiment = %s"
             params.append(sentiment)
 
         if topic:
-            query += " AND ca.primary_topic = ?"
+            query += " AND ca.primary_topic = %s"
             params.append(topic)
 
-        query += " ORDER BY c.started_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY c.started_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
 
-        # Convert to list of dicts
-        columns = [
-            'id', 'session_id', 'started_at', 'ended_at', 'duration_seconds',
-            'total_messages', 'user_messages', 'agent_messages',
-            'agents_involved', 'tools_used', 'outcome',
-            'overall_sentiment', 'sentiment_score', 'primary_topic',
-            'resolution_quality', 'urgency_level'
-        ]
+        # RealDictCursor returns dict-like rows, convert to regular dicts
         conversations = []
         for row in rows:
-            conv_dict = dict(zip(columns, row))
-            # Parse JSON fields
-            if conv_dict['agents_involved']:
-                conv_dict['agents_involved'] = json.loads(conv_dict['agents_involved'])
-            if conv_dict['tools_used']:
-                conv_dict['tools_used'] = json.loads(conv_dict['tools_used'])
+            conv_dict = dict(row)
+            # Convert datetime to ISO format string
+            if conv_dict.get('started_at'):
+                conv_dict['started_at'] = conv_dict['started_at'].isoformat()
+            if conv_dict.get('ended_at'):
+                conv_dict['ended_at'] = conv_dict['ended_at'].isoformat()
+            # agents_involved and tools_used are already Python lists from JSONB
             conversations.append(conv_dict)
 
-        # Get total count for pagination
+        # Get total count for pagination (PostgreSQL syntax)
         count_query = "SELECT COUNT(*) FROM conversations c LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id WHERE 1=1"
         count_params = []
         if outcome:
-            count_query += " AND c.outcome = ?"
+            count_query += " AND c.outcome = %s"
             count_params.append(outcome)
         if sentiment:
-            count_query += " AND ca.overall_sentiment = ?"
+            count_query += " AND ca.overall_sentiment = %s"
             count_params.append(sentiment)
         if topic:
-            count_query += " AND ca.primary_topic = ?"
+            count_query += " AND ca.primary_topic = %s"
             count_params.append(topic)
 
         cursor.execute(count_query, count_params)
-        total = cursor.fetchone()[0]
+        total = cursor.fetchone()["count"]
 
         conn.close()
 
@@ -869,6 +866,9 @@ async def get_conversations(
         }
 
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Get conversations error: {error_trace}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get conversations: {str(e)}"
@@ -887,9 +887,9 @@ async def get_conversation_detail(
         conn = database.get_db_connection()
         cursor = conn.cursor()
 
-        # Get conversation metadata
+        # Get conversation metadata (PostgreSQL syntax)
         cursor.execute(
-            "SELECT * FROM conversations WHERE id = ?",
+            "SELECT * FROM conversations WHERE id = %s",
             (conversation_id,)
         )
         conv_row = cursor.fetchone()
@@ -900,52 +900,38 @@ async def get_conversation_detail(
                 detail="Conversation not found"
             )
 
-        # Convert to dict
-        conv_columns = [
-            'id', 'session_id', 'started_at', 'ended_at', 'duration_seconds',
-            'total_messages', 'user_messages', 'agent_messages',
-            'agents_involved', 'tools_used', 'outcome', 'created_at'
-        ]
-        conversation = dict(zip(conv_columns, conv_row))
+        # RealDictCursor returns dict-like rows
+        conversation = dict(conv_row)
 
-        # Parse JSON fields
-        if conversation['agents_involved']:
-            conversation['agents_involved'] = json.loads(conversation['agents_involved'])
-        if conversation['tools_used']:
-            conversation['tools_used'] = json.loads(conversation['tools_used'])
+        # Convert datetime to ISO format string
+        if conversation.get('started_at'):
+            conversation['started_at'] = conversation['started_at'].isoformat()
+        if conversation.get('ended_at'):
+            conversation['ended_at'] = conversation['ended_at'].isoformat()
+        if conversation.get('created_at'):
+            conversation['created_at'] = conversation['created_at'].isoformat()
+        # agents_involved and tools_used are already Python lists from JSONB
 
         # Get messages
         messages = database.get_conversation_messages(conversation_id)
 
-        # Get analytics if available
+        # Get analytics if available (PostgreSQL syntax)
         cursor.execute(
-            "SELECT * FROM conversation_analytics WHERE conversation_id = ?",
+            "SELECT * FROM conversation_analytics WHERE conversation_id = %s",
             (conversation_id,)
         )
         analytics_row = cursor.fetchone()
 
         analytics = None
         if analytics_row:
-            analytics_columns = [
-                'id', 'conversation_id', 'overall_sentiment', 'sentiment_score',
-                'sentiment_explanation', 'primary_topic', 'topics',
-                'resolution_quality', 'agent_performance_score',
-                'response_clarity_score', 'empathy_score',
-                'issues_identified', 'customer_pain_points', 'suggestions',
-                'customer_intent', 'urgency_level', 'follow_up_needed',
-                'follow_up_reason', 'analyzed_at', 'llm_model', 'analysis_version'
-            ]
-            analytics = dict(zip(analytics_columns, analytics_row))
+            # RealDictCursor returns dict-like rows
+            analytics = dict(analytics_row)
 
-            # Parse JSON fields
-            if analytics['topics']:
-                analytics['topics'] = json.loads(analytics['topics'])
-            if analytics['issues_identified']:
-                analytics['issues_identified'] = json.loads(analytics['issues_identified'])
-            if analytics['customer_pain_points']:
-                analytics['customer_pain_points'] = json.loads(analytics['customer_pain_points'])
-            if analytics['suggestions']:
-                analytics['suggestions'] = json.loads(analytics['suggestions'])
+            # Convert datetime to ISO format string
+            if analytics.get('analyzed_at'):
+                analytics['analyzed_at'] = analytics['analyzed_at'].isoformat()
+            # JSON fields (topics, issues_identified, customer_pain_points, suggestions)
+            # are already Python lists from JSONB, no need to parse
 
         conn.close()
 
@@ -982,39 +968,39 @@ async def get_analytics_trends(
         # Determine number of days
         days = 7 if period == "week" else 30
 
-        # Daily conversation volume
+        # Daily conversation volume (PostgreSQL syntax)
         cursor.execute(
             f"""
             SELECT DATE(started_at) as date, COUNT(*) as count
             FROM conversations
-            WHERE DATE(started_at) >= DATE('now', '-{days} days')
+            WHERE DATE(started_at) >= CURRENT_DATE - INTERVAL '{days} days'
             GROUP BY DATE(started_at)
             ORDER BY date ASC
             """
         )
         volume_rows = cursor.fetchall()
-        daily_volume = [{"date": row[0], "count": row[1]} for row in volume_rows]
+        daily_volume = [{"date": str(row["date"]) if row["date"] else None, "count": row["count"]} for row in volume_rows]
 
-        # Daily sentiment trend
+        # Daily sentiment trend (PostgreSQL syntax)
         cursor.execute(
             f"""
             SELECT DATE(c.started_at) as date, AVG(ca.sentiment_score) as avg_sentiment
             FROM conversation_analytics ca
             JOIN conversations c ON ca.conversation_id = c.id
-            WHERE DATE(c.started_at) >= DATE('now', '-{days} days')
+            WHERE DATE(c.started_at) >= CURRENT_DATE - INTERVAL '{days} days'
             AND ca.sentiment_score IS NOT NULL
             GROUP BY DATE(c.started_at)
             ORDER BY date ASC
             """
         )
         sentiment_rows = cursor.fetchall()
-        daily_sentiment = [{"date": row[0], "sentiment": round(row[1], 2) if row[1] else 0} for row in sentiment_rows]
+        daily_sentiment = [{"date": str(row["date"]) if row["date"] else None, "sentiment": round(row["avg_sentiment"], 2) if row["avg_sentiment"] else 0} for row in sentiment_rows]
 
-        # Agent performance
+        # Agent performance (PostgreSQL JSON array access)
         cursor.execute(
             """
             SELECT
-                json_extract(c.agents_involved, '$[0]') as agent_name,
+                c.agents_involved->>0 as agent_name,
                 COUNT(*) as total_conversations,
                 AVG(ca.agent_performance_score) as avg_performance,
                 AVG(ca.empathy_score) as avg_empathy,
@@ -1023,9 +1009,9 @@ async def get_analytics_trends(
             FROM conversations c
             LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
             WHERE c.agents_involved IS NOT NULL
-            AND c.agents_involved != '[]'
-            GROUP BY agent_name
-            HAVING total_conversations >= 1
+            AND c.agents_involved::text != '[]'
+            GROUP BY c.agents_involved->>0
+            HAVING COUNT(*) >= 1
             ORDER BY total_conversations DESC
             LIMIT 10
             """
@@ -1033,17 +1019,18 @@ async def get_analytics_trends(
         agent_rows = cursor.fetchall()
         agent_performance = []
         for row in agent_rows:
-            agent_name = row[0]
+            agent_name = row["agent_name"]
             if agent_name:
-                # Remove quotes if present
-                agent_name = agent_name.strip('"')
+                # Remove quotes if present (JSON string value)
+                if isinstance(agent_name, str):
+                    agent_name = agent_name.strip('"')
                 agent_performance.append({
                     "agent": agent_name,
-                    "conversations": row[1],
-                    "performance": round(row[2] * 100, 1) if row[2] else 0,
-                    "empathy": round(row[3] * 100, 1) if row[3] else 0,
-                    "clarity": round(row[4] * 100, 1) if row[4] else 0,
-                    "resolution_rate": round(row[5], 1) if row[5] else 0
+                    "conversations": row["total_conversations"],
+                    "performance": round(row["avg_performance"] * 100, 1) if row["avg_performance"] else 0,
+                    "empathy": round(row["avg_empathy"] * 100, 1) if row["avg_empathy"] else 0,
+                    "clarity": round(row["avg_clarity"] * 100, 1) if row["avg_clarity"] else 0,
+                    "resolution_rate": round(row["resolution_rate"], 1) if row["resolution_rate"] else 0
                 })
 
         conn.close()
@@ -1055,6 +1042,9 @@ async def get_analytics_trends(
         }
 
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Analytics trends error: {error_trace}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get analytics trends: {str(e)}"

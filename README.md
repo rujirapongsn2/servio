@@ -30,6 +30,9 @@ Servio is designed to be a production-ready customer support solution that you c
 - [Widget Embedding](#widget-embedding)
 - [Requirements](#requirements)
 - [How to use](#how-to-use)
+  - [Quick Start with Docker (Recommended)](#quick-start-with-docker-recommended-)
+  - [Manual Installation (Development)](#manual-installation-development)
+- [Docker Deployment](#docker-deployment)
 - [Using the App](#using-the-app)
 - [Admin & Agents](#admin--agents)
 - [Screenshots & GIFs](#screenshots--gifs)
@@ -343,6 +346,72 @@ To use File Store Agents, you need a Gemini API key:
 
 ## How to use
 
+### Quick Start with Docker (Recommended) 🐳
+
+The easiest way to get started is using Docker. No need to install Node.js, Python, or uv!
+
+1. **Prerequisites:**
+   - Install [Docker Desktop](https://docs.docker.com/get-docker/)
+   - Make sure Docker is running
+
+2. **Set the API keys:**
+
+   Create a `.env` file at the root of the project:
+
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your API keys:
+   # OPENAI_API_KEY=your_openai_api_key
+   # SOFTNIX_API_KEY=your_softnix_api_key (optional)
+   # GEMINI_API_KEY=your_gemini_api_key (optional)
+   ```
+
+3. **Clone the Repository:**
+
+   ```bash
+   git clone https://github.com/rujirapongsn2/servio.git
+   cd servio/
+   ```
+
+4. **Run with Docker:**
+
+   ```bash
+   # Start the Docker management script
+   ./start.sh
+
+   # Then select option 2 (Start services in background)
+   # Or select option 1 to see logs in real-time
+   ```
+
+   The interactive script provides:
+   - ✅ Start/Stop services
+   - ✅ View logs (all, backend only, or frontend only)
+   - ✅ Check container status
+   - ✅ Build/Rebuild images
+   - ✅ Clean up containers and volumes
+
+   **Access your application:**
+   - Frontend: [`http://localhost:3000`](http://localhost:3000)
+   - Backend API: [`http://localhost:8000`](http://localhost:8000)
+   - Admin Console: [`http://localhost:3000/admin`](http://localhost:3000/admin)
+   - WebSocket: `ws://localhost:8000/ws`
+
+   **Direct Docker Commands** (if you prefer):
+   ```bash
+   # Build and start services
+   docker-compose up -d
+
+   # View logs
+   docker-compose logs -f
+
+   # Stop services
+   docker-compose down
+   ```
+
+### Manual Installation (Development)
+
+If you prefer to run without Docker:
+
 1. **Set the API keys:**
 
    Create a `.env` file at the root of the project (see `.env.example` for reference):
@@ -350,6 +419,9 @@ To use File Store Agents, you need a Gemini API key:
    ```bash
    # Required: OpenAI API key for voice agents
    OPENAI_API_KEY=<your_openai_api_key>
+
+   # Optional: Softnix API key
+   SOFTNIX_API_KEY=<your_softnix_api_key>
 
    # Optional: Gemini API key for File Store Agents
    GEMINI_API_KEY=<your_gemini_api_key>
@@ -376,19 +448,13 @@ To use File Store Agents, you need a Gemini API key:
 
    You have multiple options to start the application:
 
-   **Option 1: Quick Start (Recommended)**
-   ```bash
-   ./start.sh
-   ```
-   This will start both frontend and backend in development mode with hot reload.
-
-   **Option 2: Using Make (Production Mode)**
+   **Option 1: Using Make (Production Mode)**
    ```bash
    make serve
    ```
    Starts the app in production mode at [`http://localhost:3000`](http://localhost:3000).
 
-   **Option 3: Development Mode with Hot Reload**
+   **Option 2: Development Mode with Hot Reload**
    ```bash
    cd frontend && npm run dev
    ```
@@ -396,7 +462,7 @@ To use File Store Agents, you need a Gemini API key:
    - Backend: [`http://localhost:8000`](http://localhost:8000)
    - WebSocket: `ws://localhost:8000/ws`
 
-   **Option 4: Run Separately**
+   **Option 3: Run Separately**
    ```bash
    # Terminal 1 - Frontend only
    cd frontend && npm run dev:next
@@ -409,6 +475,221 @@ To use File Store Agents, you need a Gemini API key:
    - Frontend: `3000` (production) or `3001+` (development, auto-increments if busy)
    - Backend: `8000`
    - Admin Console: [`http://localhost:3001/admin`](http://localhost:3001/admin)
+
+## Docker Deployment
+
+Servio includes production-ready Docker deployment with multi-container architecture.
+
+### Architecture
+
+The Docker setup uses **docker-compose** to orchestrate two services:
+
+- **Backend Container** (Python 3.11 + FastAPI + uvicorn)
+  - Port: 8000
+  - Auto-installs dependencies using `uv`
+  - SQLite database persisted via volume mount
+  - Health checks on `/api/admin/sessions` endpoint
+
+- **Frontend Container** (Node.js 20 + Next.js)
+  - Port: 3000
+  - Multi-stage build for optimized image size
+  - Runs as non-root user for security
+  - Health checks on HTTP root endpoint
+
+- **Shared Network** (`voice-agent-network`)
+  - Allows backend and frontend to communicate
+  - Internal DNS resolution (backend can reach frontend and vice versa)
+
+### Docker Files Structure
+
+```
+CSAgent/
+├── docker-compose.yml          # Service orchestration
+├── .env                        # Environment variables (create from .env.example)
+├── .env.example               # Template for environment variables
+├── start.sh                   # Interactive Docker management script
+├── server/
+│   ├── Dockerfile            # Backend container definition
+│   ├── .dockerignore        # Exclude unnecessary files
+│   └── data/                # SQLite database volume (auto-created)
+└── frontend/
+    ├── Dockerfile           # Frontend container definition (multi-stage)
+    └── .dockerignore       # Exclude node_modules, .next, etc.
+```
+
+### Environment Variables
+
+Required variables in `.env`:
+
+```bash
+# Required
+OPENAI_API_KEY=your_openai_api_key
+
+# Optional
+SOFTNIX_API_KEY=your_softnix_api_key
+GEMINI_API_KEY=your_gemini_api_key
+
+# Docker Configuration (optional, defaults provided)
+BACKEND_PORT=8000
+FRONTEND_PORT=3000
+DATABASE_PATH=/app/data/agents.db
+NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
+
+# Production CORS (comma-separated domains)
+ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+```
+
+### Database Persistence
+
+The SQLite database is persisted using Docker volumes:
+
+- **Volume Mount**: `./server/data:/app/data`
+- **Database File**: `./server/data/agents.db`
+- **Persistence**: Data survives container restarts and rebuilds
+- **Backup**: Simply copy `./server/data/agents.db` to back up
+
+### Using the Docker Management Script
+
+The `start.sh` script provides an interactive menu for managing Docker services:
+
+```bash
+./start.sh
+```
+
+**Menu Options:**
+
+1. **Start services (foreground)** - See logs in real-time, Ctrl+C to stop
+2. **Start services (background)** - Run in background, use logs option to view output
+3. **Stop services** - Stop all containers (data is preserved)
+4. **Restart services** - Restart both frontend and backend
+5. **Build/Rebuild images** - Rebuild Docker images (use after code changes)
+6. **View logs** - View logs for all services, backend only, or frontend only
+7. **Check status** - See container status and access URLs
+8. **Clean up** - Remove containers and volumes (⚠️ deletes database!)
+0. **Exit** - Quit the script
+
+### Production Deployment
+
+For production deployment:
+
+1. **Set production environment variables:**
+   ```bash
+   # In .env file
+   ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+   NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
+   ```
+
+2. **Build optimized images:**
+   ```bash
+   docker-compose build --no-cache
+   ```
+
+3. **Start services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Optional: Add Nginx reverse proxy for SSL/TLS:**
+   ```nginx
+   server {
+       listen 80;
+       server_name yourdomain.com;
+
+       location / {
+           proxy_pass http://localhost:3000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+       }
+
+       location /api/ {
+           proxy_pass http://localhost:8000;
+       }
+
+       location /ws {
+           proxy_pass http://localhost:8000/ws;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+       }
+   }
+   ```
+
+### Troubleshooting
+
+**Port already in use:**
+```bash
+# Find process using port 3000
+lsof -ti :3000 | xargs kill -9
+
+# Or change port in .env
+FRONTEND_PORT=3001
+```
+
+**Database not persisting:**
+```bash
+# Check volume mount
+docker-compose exec backend ls -la /app/data/
+
+# Verify DATABASE_PATH environment variable
+docker-compose exec backend env | grep DATABASE_PATH
+```
+
+**Frontend can't reach backend:**
+```bash
+# Check network
+docker network inspect csagent_voice-agent-network
+
+# Test connection from frontend container
+docker-compose exec frontend ping backend
+```
+
+**View container logs:**
+```bash
+# All services
+docker-compose logs -f
+
+# Backend only
+docker-compose logs -f backend
+
+# Frontend only
+docker-compose logs -f frontend
+
+# Last 100 lines
+docker-compose logs --tail=100
+```
+
+### Docker Commands Quick Reference
+
+```bash
+# Build images
+docker-compose build
+docker-compose build --no-cache  # Rebuild from scratch
+
+# Start services
+docker-compose up                # Foreground (see logs)
+docker-compose up -d            # Background (detached)
+
+# Stop services
+docker-compose down             # Stop and remove containers
+docker-compose down -v          # Also remove volumes (⚠️ deletes data!)
+
+# View status
+docker-compose ps               # Container status
+docker-compose top              # Running processes
+
+# Restart
+docker-compose restart          # Restart all services
+docker-compose restart backend  # Restart specific service
+
+# Execute commands in containers
+docker-compose exec backend bash    # Open bash in backend
+docker-compose exec frontend sh     # Open sh in frontend (Alpine)
+
+# View resource usage
+docker stats                    # Real-time stats
+```
 
 ## Admin & Agents
 

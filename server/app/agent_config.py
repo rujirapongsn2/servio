@@ -8,7 +8,6 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from agents import Agent, WebSearchTool, function_tool
 from agents.tool import UserLocation
-import app.mock_api as mock_api
 from app.softnix_api import query_softnix_genai, SoftnixAPIError
 
 # MCP SDK imports
@@ -53,82 +52,11 @@ def get_tool_citations() -> List[str]:
     return citations
 
 
-@function_tool
-def get_past_orders():
-    log_tool_call("get_past_orders", {})
-    return json.dumps(mock_api.get_past_orders())
-
-
-@function_tool
-def submit_refund_request(order_number: str):
-    """Confirm with the user first"""
-    log_tool_call("submit_refund_request", {"order_number": order_number})
-    return mock_api.submit_refund_request(order_number)
-
-
-@function_tool
-def get_softnix_info(question: str):
-    """
-    Get information about Softnix products, services, or company from the Softnix GenAI knowledge base.
-
-    Use this tool when the user asks about:
-    - Softnix products or services
-    - Company information
-    - Pricing or packages
-    - Technical specifications
-    - How to use Softnix services
-
-    Args:
-        question: The user's question about Softnix
-
-    Returns:
-        Answer from Softnix GenAI knowledge base
-    """
-    try:
-        log_tool_call("get_softnix_info", {"question": question})
-        q = question.strip()
-
-        # Heuristics: ensure the knowledge base sees canonical brand keyword and language hint
-        contains_thai = any('\u0e00' <= ch <= '\u0e7f' for ch in q)
-        brand_hints = ["Softnix", "ซอฟนิค"]
-        has_brand = any(h.lower() in q.lower() for h in brand_hints)
-
-        enriched_q = q
-        if contains_thai and "softnix" not in q.lower():
-            # Add canonical English brand keyword to help KB retrieval
-            enriched_q = f"{q} (Softnix)"
-
-        if contains_thai:
-            # Add a polite language instruction for Thai responses
-            enriched_q = f"กรุณาตอบเป็นภาษาไทย: {enriched_q}"
-
-        return query_softnix_genai(enriched_q)
-    except SoftnixAPIError as e:
-        return f"I apologize, but I'm having trouble accessing the Softnix information system right now. Error: {str(e)}"
-
-
 customer_support_agent = Agent(
     name="Customer Support Agent",
     instructions=f"You are a customer support assistant. {STYLE_INSTRUCTIONS}",
     model="gpt-4o-mini",
-    tools=[get_past_orders, submit_refund_request],
-)
-
-softnix_sales_agent = Agent(
-    name="Softnix Sales Agent",
-    model="gpt-4o-mini",
-    instructions=f"""You are a Softnix sales representative assistant.
-    You help customers understand Softnix products and services by answering their questions.
-
-    When a customer asks about Softnix products, services, pricing, or company information,
-    use the get_softnix_info tool to retrieve accurate information from the knowledge base.
-
-    Be helpful, professional, and informative. If a customer wants to place an order or
-    needs customer support after purchase, you can transfer them to the Customer Support Agent.
-
-    {STYLE_INSTRUCTIONS}""",
-    tools=[get_softnix_info],
-    handoffs=[customer_support_agent],
+    tools=[],
 )
 
 stylist_agent = Agent(
@@ -145,12 +73,11 @@ triage_agent = Agent(
     instructions=f"""Route the user to the appropriate agent based on their request.
 
     Transfer to:
-    - Softnix Sales Agent: Questions about Softnix products, services, or company information
     - Stylist Agent: Fashion advice, clothing recommendations, style questions
-    - Customer Support Agent: Order history, refunds, purchase issues
+    - Customer Support Agent: General customer support and assistance
 
     {STYLE_INSTRUCTIONS}""",
-    handoffs=[softnix_sales_agent, stylist_agent, customer_support_agent],
+    handoffs=[stylist_agent, customer_support_agent],
 )
 
 starting_agent = triage_agent
@@ -159,17 +86,14 @@ starting_agent = triage_agent
 # Dynamic agent loading from database
 def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
     """Get a tool instance by name"""
-    if tool_name == "get_past_orders":
-        return get_past_orders
-    elif tool_name == "submit_refund_request":
-        return submit_refund_request
-    elif tool_name == "get_softnix_info":
-        return get_softnix_info
-    elif tool_name == "WebSearchTool":
+    if tool_name == "WebSearchTool":
         location = tool_config.get("location", {"type": "approximate", "city": "Bangkok"}) if tool_config else {"type": "approximate", "city": "Bangkok"}
         return WebSearchTool(user_location=UserLocation(**location))
     elif tool_config and tool_config.get("type") == "custom_api":
-        # Create a dynamic function tool for custom API
+        # Check if this is a Softnix API tool
+        if tool_name == "get_softnix_info" or tool_config.get("api_type") == "softnix":
+            return create_softnix_tool(tool_name, tool_config)
+        # Otherwise, create a generic custom API tool
         return create_custom_api_tool(tool_name, tool_config)
     elif tool_config and tool_config.get("type") == "gemini_file_search":
         # Create a dynamic function tool for Gemini File Search
@@ -341,6 +265,40 @@ def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
 
     # Apply the decorator
     return function_tool(dynamic_gemini_tool)
+
+
+def create_softnix_tool(tool_name: str, config: Dict[str, Any]):
+    """Create a Softnix GenAI tool with Thai language enrichment"""
+    description = config.get("description", "Get information about Softnix products and services")
+
+    def dynamic_softnix_tool(question: str):
+        """Query Softnix GenAI knowledge base with Thai language support"""
+        try:
+            log_tool_call(tool_name, {"question": question})
+            q = question.strip()
+
+            # Thai language detection and enrichment
+            contains_thai = any('\u0e00' <= ch <= '\u0e7f' for ch in q)
+
+            enriched_q = q
+            if contains_thai and "softnix" not in q.lower():
+                # Add canonical English brand keyword to help KB retrieval
+                enriched_q = f"{q} (Softnix)"
+
+            if contains_thai:
+                # Add polite language instruction for Thai responses
+                enriched_q = f"กรุณาตอบเป็นภาษาไทย: {enriched_q}"
+
+            return query_softnix_genai(enriched_q)
+        except SoftnixAPIError as e:
+            return f"I apologize, but I'm having trouble accessing the Softnix information system right now. Error: {str(e)}"
+
+    # Set function name and docstring BEFORE applying decorator
+    dynamic_softnix_tool.__name__ = tool_name
+    dynamic_softnix_tool.__doc__ = description
+
+    # Apply the decorator
+    return function_tool(dynamic_softnix_tool)
 
 
 def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
@@ -679,7 +637,7 @@ def get_runtime_starting_agent() -> Agent:
             continue
 
     # Base triage
-    base_handoffs = [softnix_sales_agent, stylist_agent, customer_support_agent]
+    base_handoffs = [stylist_agent, customer_support_agent]
     combined_handoffs = base_handoffs + db_agents
 
     # Enrich instructions with dynamic agent list and routing hints

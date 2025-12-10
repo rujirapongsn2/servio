@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import type { LucideIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  Bot,
+  Activity,
+  LineChart,
+  Wrench,
+  Puzzle,
+  Settings,
+} from "lucide-react";
 
 export default function AdminLayout({
   children,
@@ -100,13 +110,19 @@ export default function AdminLayout({
 
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-            <NavLink href="/admin" active={pathname === "/admin"} collapsed={collapsed}>
+            <NavLink
+              href="/admin"
+              active={pathname === "/admin"}
+              collapsed={collapsed}
+              icon={LayoutDashboard}
+            >
               Dashboard
             </NavLink>
             <NavLink
               href="/admin/agents"
               active={pathname.startsWith("/admin/agents")}
               collapsed={collapsed}
+              icon={Bot}
             >
               Manage Agents
             </NavLink>
@@ -114,6 +130,7 @@ export default function AdminLayout({
               href="/admin/monitor"
               active={pathname.startsWith("/admin/monitor")}
               collapsed={collapsed}
+              icon={Activity}
             >
               Online Agent
             </NavLink>
@@ -121,6 +138,7 @@ export default function AdminLayout({
               href="/admin/analytics"
               active={pathname.startsWith("/admin/analytics")}
               collapsed={collapsed}
+              icon={LineChart}
             >
               Analytics
             </NavLink>
@@ -128,6 +146,7 @@ export default function AdminLayout({
               href="/admin/tools"
               active={pathname === "/admin/tools"}
               collapsed={collapsed}
+              icon={Wrench}
             >
               Tools
             </NavLink>
@@ -135,6 +154,7 @@ export default function AdminLayout({
               href="/admin/tools/widget"
               active={pathname.startsWith("/admin/tools/widget")}
               collapsed={collapsed}
+              icon={Puzzle}
             >
               Widget
             </NavLink>
@@ -142,6 +162,7 @@ export default function AdminLayout({
               href="/admin/settings"
               active={pathname.startsWith("/admin/settings")}
               collapsed={collapsed}
+              icon={Settings}
             >
               Settings
             </NavLink>
@@ -182,11 +203,13 @@ function NavLink({
   active,
   children,
   collapsed = false,
+  icon: Icon,
 }: {
   href: string;
   active: boolean;
   children: React.ReactNode;
   collapsed?: boolean;
+  icon?: LucideIcon;
 }) {
   const label = typeof children === "string" ? (children as string) : "";
   return (
@@ -200,10 +223,13 @@ function NavLink({
     >
       {collapsed ? (
         <span className="inline-flex w-full justify-center font-semibold">
-          {label ? label.charAt(0) : "·"}
+          {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : label ? label.charAt(0) : "·"}
         </span>
       ) : (
-        <span className="inline-block whitespace-nowrap">{children}</span>
+        <span className="inline-flex items-center space-x-3 whitespace-nowrap">
+          {Icon && <Icon className="h-5 w-5" aria-hidden="true" />}
+          <span className="inline-block">{children}</span>
+        </span>
       )}
     </Link>
   );

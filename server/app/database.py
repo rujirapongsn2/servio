@@ -1,325 +1,172 @@
-import sqlite3
+"""
+Database Operations Module (SQLAlchemy ORM)
+
+This module provides database CRUD operations using SQLAlchemy ORM
+for the Voice Agents SDK application. Refactored from raw SQL to ORM.
+"""
+
 import json
-from datetime import datetime
-from typing import List, Optional, Dict, Any
 import bcrypt
+from datetime import datetime, date, timedelta
+from typing import List, Optional, Dict, Any
+from sqlalchemy import select, update as sql_update, delete as sql_delete, func, and_, or_
+from sqlalchemy.orm import selectinload
+
+from app.db_config import get_db
+from app.orm_models import (
+    Admin, Agent, Tool, AgentTool, AgentHandoff,
+    FileStore, FileStoreFile,
+    Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary
+)
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
 
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt"""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+
 def verify_password(password: str, hashed: str) -> bool:
     """Verify a password against its hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-DATABASE_PATH = "agents.db"
-
 
 def get_db_connection():
-    """Get a database connection with row factory"""
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """
+    Get a raw database connection (for compatibility with legacy code).
+    Returns a connection with dict-like row factory.
+    """
+    import psycopg2
+    import psycopg2.extras
+    import os
+
+    # Create connection directly with psycopg2 for RealDictCursor support
+    connection = psycopg2.connect(
+        dbname=os.getenv("POSTGRES_DB", "voice_agents"),
+        user=os.getenv("POSTGRES_USER", "postgres"),
+        password=os.getenv("POSTGRES_PASSWORD", "postgres123"),
+        host=os.getenv("POSTGRES_HOST", "postgres"),
+        port=os.getenv("POSTGRES_PORT", "5432"),
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
+    return connection
 
 
 def init_database():
-    """Initialize the database with schema and default admin user"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Create admins table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create agents table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS agents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            instructions TEXT NOT NULL,
-            model TEXT NOT NULL DEFAULT 'gpt-4o-mini',
-            is_starting_agent BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create tools table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tools (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            type TEXT NOT NULL,
-            config TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create agent_tools junction table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS agent_tools (
-            agent_id INTEGER,
-            tool_id INTEGER,
-            FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-            FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE,
-            PRIMARY KEY (agent_id, tool_id)
-        )
-    """)
-
-    # Create agent_handoffs junction table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS agent_handoffs (
-            from_agent_id INTEGER,
-            to_agent_id INTEGER,
-            FOREIGN KEY (from_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-            FOREIGN KEY (to_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-            PRIMARY KEY (from_agent_id, to_agent_id)
-        )
-    """)
-
-    # Create file_stores table for Gemini File Search
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS file_stores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            gemini_store_id TEXT UNIQUE NOT NULL,
-            display_name TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            file_count INTEGER DEFAULT 0
-        )
-    """)
-
-    # Create file_store_files table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS file_store_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_store_id INTEGER NOT NULL,
-            filename TEXT NOT NULL,
-            original_filename TEXT NOT NULL,
-            file_size INTEGER,
-            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (file_store_id) REFERENCES file_stores(id) ON DELETE CASCADE
-        )
-    """)
-
-    # Create analytics tables
-    # Conversations Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT UNIQUE NOT NULL,
-            started_at TIMESTAMP NOT NULL,
-            ended_at TIMESTAMP,
-            duration_seconds INTEGER,
-            total_messages INTEGER DEFAULT 0,
-            user_messages INTEGER DEFAULT 0,
-            agent_messages INTEGER DEFAULT 0,
-            agents_involved TEXT,
-            tools_used TEXT,
-            outcome TEXT DEFAULT 'ongoing',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session_id ON conversations(session_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_started_at ON conversations(started_at)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversations_outcome ON conversations(outcome)")
-
-    # Messages Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS conversation_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
-            role TEXT NOT NULL,
-            agent_name TEXT,
-            content TEXT NOT NULL,
-            timestamp TIMESTAMP NOT NULL,
-            tool_calls TEXT,
-            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON conversation_messages(conversation_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON conversation_messages(timestamp)")
-
-    # Enriched Analytics Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS conversation_analytics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER UNIQUE NOT NULL,
-            overall_sentiment TEXT,
-            sentiment_score REAL,
-            sentiment_explanation TEXT,
-            primary_topic TEXT,
-            topics TEXT,
-            resolution_quality TEXT,
-            agent_performance_score REAL,
-            response_clarity_score REAL,
-            empathy_score REAL,
-            issues_identified TEXT,
-            customer_pain_points TEXT,
-            suggestions TEXT,
-            customer_intent TEXT,
-            urgency_level TEXT,
-            follow_up_needed BOOLEAN DEFAULT 0,
-            follow_up_reason TEXT,
-            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            llm_model TEXT,
-            analysis_version TEXT DEFAULT 'v1.0',
-            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-        )
-    """)
-
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_conversation_id ON conversation_analytics(conversation_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_sentiment ON conversation_analytics(overall_sentiment)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_topic ON conversation_analytics(primary_topic)")
-
-    # Daily Summary Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS analytics_daily_summary (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date DATE UNIQUE NOT NULL,
-            total_conversations INTEGER DEFAULT 0,
-            avg_duration_seconds INTEGER DEFAULT 0,
-            avg_messages_per_conversation REAL DEFAULT 0,
-            resolution_rate REAL DEFAULT 0,
-            avg_sentiment_score REAL DEFAULT 0,
-            positive_sentiment_count INTEGER DEFAULT 0,
-            neutral_sentiment_count INTEGER DEFAULT 0,
-            negative_sentiment_count INTEGER DEFAULT 0,
-            top_topics TEXT,
-            top_agents TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_summary_date ON analytics_daily_summary(date)")
-
-    # Insert default admin user if not exists
-    cursor.execute("SELECT COUNT(*) FROM admins WHERE username = 'admin'")
-    if cursor.fetchone()[0] == 0:
-        password_hash = hash_password("admin123")
-        cursor.execute(
-            "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
-            ("admin", password_hash)
-        )
-
-    # Insert built-in tools if not exists
-    builtin_tools = [
-        ("get_past_orders", "builtin", json.dumps({"description": "Get past orders from the system"})),
-        ("submit_refund_request", "builtin", json.dumps({"description": "Submit a refund request for an order"})),
-        ("WebSearchTool", "builtin", json.dumps({"description": "Search the web for information"})),
-        ("get_softnix_info", "builtin", json.dumps({"description": "Get information about Softnix products and services"})),
-    ]
-
-    for tool_name, tool_type, config in builtin_tools:
-        cursor.execute("SELECT COUNT(*) FROM tools WHERE name = ?", (tool_name,))
-        if cursor.fetchone()[0] == 0:
-            cursor.execute(
-                "INSERT INTO tools (name, type, config) VALUES (?, ?, ?)",
-                (tool_name, tool_type, config)
-            )
-
-    conn.commit()
-    conn.close()
+    """Initialize the database with schema and default data"""
+    from app.db_config import init_database as db_init
+    db_init()
 
 
-# Admin operations
+# ============================================================================
+# Admin Operations
+# ============================================================================
+
 def get_admin_by_username(username: str) -> Optional[Dict[str, Any]]:
     """Get admin user by username"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM admins WHERE username = ?", (username,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin:
+            return None
+        return {
+            "id": admin.id,
+            "username": admin.username,
+            "password_hash": admin.password_hash,
+            "created_at": admin.created_at.isoformat() if admin.created_at else None
+        }
 
 
 def update_admin_password(username: str, new_password: str) -> bool:
     """Update admin password"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    password_hash = hash_password(new_password)
-    cursor.execute(
-        "UPDATE admins SET password_hash = ? WHERE username = ?",
-        (password_hash, username)
-    )
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin:
+            return False
+        admin.password_hash = hash_password(new_password)
+        return True
 
 
-# Agent operations
+# ============================================================================
+# Agent Operations
+# ============================================================================
+
 def get_all_agents() -> List[Dict[str, Any]]:
     """Get all agents with their tools and handoffs"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM agents ORDER BY created_at DESC")
-    agents = [dict(row) for row in cursor.fetchall()]
+    with get_db() as db:
+        agents = db.query(Agent).options(
+            selectinload(Agent.tools),
+            selectinload(Agent.handoff_to)
+        ).order_by(Agent.created_at.desc()).all()
 
-    for agent in agents:
-        # Get tools
-        cursor.execute("""
-            SELECT t.id, t.name, t.type, t.config
-            FROM tools t
-            JOIN agent_tools at ON t.id = at.tool_id
-            WHERE at.agent_id = ?
-        """, (agent["id"],))
-        agent["tools"] = [dict(row) for row in cursor.fetchall()]
-
-        # Get handoffs
-        cursor.execute("""
-            SELECT a.id, a.name
-            FROM agents a
-            JOIN agent_handoffs ah ON a.id = ah.to_agent_id
-            WHERE ah.from_agent_id = ?
-        """, (agent["id"],))
-        agent["handoffs"] = [dict(row) for row in cursor.fetchall()]
-
-    conn.close()
-    return agents
+        return [
+            {
+                "id": agent.id,
+                "name": agent.name,
+                "instructions": agent.instructions,
+                "model": agent.model,
+                "is_starting_agent": agent.is_starting_agent,
+                "created_at": agent.created_at.isoformat() if agent.created_at else None,
+                "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
+                "tools": [
+                    {
+                        "id": tool.id,
+                        "name": tool.name,
+                        "type": tool.type,
+                        "config": json.dumps(tool.config) if tool.config else None
+                    }
+                    for tool in agent.tools
+                ],
+                "handoffs": [
+                    {
+                        "id": h.id,
+                        "name": h.name
+                    }
+                    for h in agent.handoff_to
+                ]
+            }
+            for agent in agents
+        ]
 
 
 def get_agent_by_id(agent_id: int) -> Optional[Dict[str, Any]]:
     """Get a single agent by ID with tools and handoffs"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
-    row = cursor.fetchone()
+    with get_db() as db:
+        agent = db.query(Agent).options(
+            selectinload(Agent.tools),
+            selectinload(Agent.handoff_to)
+        ).filter_by(id=agent_id).first()
 
-    if not row:
-        conn.close()
-        return None
+        if not agent:
+            return None
 
-    agent = dict(row)
-
-    # Get tools
-    cursor.execute("""
-        SELECT t.id, t.name, t.type, t.config
-        FROM tools t
-        JOIN agent_tools at ON t.id = at.tool_id
-        WHERE at.agent_id = ?
-    """, (agent_id,))
-    agent["tools"] = [dict(row) for row in cursor.fetchall()]
-
-    # Get handoffs
-    cursor.execute("""
-        SELECT a.id, a.name
-        FROM agents a
-        JOIN agent_handoffs ah ON a.id = ah.to_agent_id
-        WHERE ah.from_agent_id = ?
-    """, (agent_id,))
-    agent["handoffs"] = [dict(row) for row in cursor.fetchall()]
-
-    conn.close()
-    return agent
+        return {
+            "id": agent.id,
+            "name": agent.name,
+            "instructions": agent.instructions,
+            "model": agent.model,
+            "is_starting_agent": agent.is_starting_agent,
+            "created_at": agent.created_at.isoformat() if agent.created_at else None,
+            "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
+            "tools": [
+                {
+                    "id": tool.id,
+                    "name": tool.name,
+                    "type": tool.type,
+                    "config": json.dumps(tool.config) if tool.config else None
+                }
+                for tool in agent.tools
+            ],
+            "handoffs": [
+                {
+                    "id": h.id,
+                    "name": h.name
+                }
+                for h in agent.handoff_to
+            ]
+        }
 
 
 def create_agent(
@@ -331,37 +178,33 @@ def create_agent(
     is_starting_agent: bool = False
 ) -> int:
     """Create a new agent"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        # If this is a starting agent, unset other starting agents
+        if is_starting_agent:
+            db.query(Agent).update({"is_starting_agent": False})
 
-    # If this is a starting agent, unset other starting agents
-    if is_starting_agent:
-        cursor.execute("UPDATE agents SET is_starting_agent = FALSE")
-
-    cursor.execute(
-        """INSERT INTO agents (name, instructions, model, is_starting_agent, updated_at)
-           VALUES (?, ?, ?, ?, ?)""",
-        (name, instructions, model, is_starting_agent, datetime.now())
-    )
-    agent_id = cursor.lastrowid
-
-    # Add tools
-    for tool_id in tool_ids:
-        cursor.execute(
-            "INSERT INTO agent_tools (agent_id, tool_id) VALUES (?, ?)",
-            (agent_id, tool_id)
+        # Create agent
+        agent = Agent(
+            name=name,
+            instructions=instructions,
+            model=model,
+            is_starting_agent=is_starting_agent,
+            updated_at=datetime.utcnow()
         )
+        db.add(agent)
+        db.flush()  # Get ID without committing
 
-    # Add handoffs
-    for handoff_id in handoff_agent_ids:
-        cursor.execute(
-            "INSERT INTO agent_handoffs (from_agent_id, to_agent_id) VALUES (?, ?)",
-            (agent_id, handoff_id)
-        )
+        # Add tools
+        for tool_id in tool_ids:
+            agent_tool = AgentTool(agent_id=agent.id, tool_id=tool_id)
+            db.add(agent_tool)
 
-    conn.commit()
-    conn.close()
-    return agent_id
+        # Add handoffs
+        for handoff_id in handoff_agent_ids:
+            handoff = AgentHandoff(from_agent_id=agent.id, to_agent_id=handoff_id)
+            db.add(handoff)
+
+        return agent.id
 
 
 def update_agent(
@@ -374,178 +217,205 @@ def update_agent(
     is_starting_agent: bool = False
 ) -> bool:
     """Update an existing agent"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        agent = db.query(Agent).filter_by(id=agent_id).first()
+        if not agent:
+            return False
 
-    # If this is a starting agent, unset other starting agents
-    if is_starting_agent:
-        cursor.execute("UPDATE agents SET is_starting_agent = FALSE WHERE id != ?", (agent_id,))
+        # If this is a starting agent, unset other starting agents
+        if is_starting_agent:
+            db.query(Agent).filter(Agent.id != agent_id).update({"is_starting_agent": False})
 
-    cursor.execute(
-        """UPDATE agents
-           SET name = ?, instructions = ?, model = ?, is_starting_agent = ?, updated_at = ?
-           WHERE id = ?""",
-        (name, instructions, model, is_starting_agent, datetime.now(), agent_id)
-    )
+        # Update agent
+        agent.name = name
+        agent.instructions = instructions
+        agent.model = model
+        agent.is_starting_agent = is_starting_agent
+        agent.updated_at = datetime.utcnow()
 
-    # Remove old tools and handoffs
-    cursor.execute("DELETE FROM agent_tools WHERE agent_id = ?", (agent_id,))
-    cursor.execute("DELETE FROM agent_handoffs WHERE from_agent_id = ?", (agent_id,))
+        # Remove old tools and handoffs
+        db.query(AgentTool).filter_by(agent_id=agent_id).delete()
+        db.query(AgentHandoff).filter_by(from_agent_id=agent_id).delete()
 
-    # Add new tools
-    for tool_id in tool_ids:
-        cursor.execute(
-            "INSERT INTO agent_tools (agent_id, tool_id) VALUES (?, ?)",
-            (agent_id, tool_id)
-        )
+        # Add new tools
+        for tool_id in tool_ids:
+            agent_tool = AgentTool(agent_id=agent.id, tool_id=tool_id)
+            db.add(agent_tool)
 
-    # Add new handoffs
-    for handoff_id in handoff_agent_ids:
-        cursor.execute(
-            "INSERT INTO agent_handoffs (from_agent_id, to_agent_id) VALUES (?, ?)",
-            (agent_id, handoff_id)
-        )
+        # Add new handoffs
+        for handoff_id in handoff_agent_ids:
+            handoff = AgentHandoff(from_agent_id=agent.id, to_agent_id=handoff_id)
+            db.add(handoff)
 
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+        return True
 
 
 def delete_agent(agent_id: int) -> bool:
     """Delete an agent"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+    with get_db() as db:
+        agent = db.query(Agent).filter_by(id=agent_id).first()
+        if not agent:
+            return False
+        db.delete(agent)
+        return True
 
 
-# Tool operations
+# ============================================================================
+# Tool Operations
+# ============================================================================
+
 def get_all_tools() -> List[Dict[str, Any]]:
     """Get all tools"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tools ORDER BY type, name")
-    tools = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return tools
+    with get_db() as db:
+        tools = db.query(Tool).order_by(Tool.type, Tool.name).all()
+        return [
+            {
+                "id": tool.id,
+                "name": tool.name,
+                "type": tool.type,
+                "config": json.dumps(tool.config) if tool.config else None,
+                "created_at": tool.created_at.isoformat() if tool.created_at else None
+            }
+            for tool in tools
+        ]
 
 
 def get_tool_by_id(tool_id: int) -> Optional[Dict[str, Any]]:
     """Get a single tool by ID"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tools WHERE id = ?", (tool_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with get_db() as db:
+        tool = db.query(Tool).filter_by(id=tool_id).first()
+        if not tool:
+            return None
+        return {
+            "id": tool.id,
+            "name": tool.name,
+            "type": tool.type,
+            "config": json.dumps(tool.config) if tool.config else None,
+            "created_at": tool.created_at.isoformat() if tool.created_at else None
+        }
 
 
 def create_custom_tool(name: str, config: Dict[str, Any], icon: str = "Wrench") -> int:
     """Create a custom API tool or MCP tool"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        # Determine tool type from config
+        tool_type = config.get("type", "custom_api")
 
-    # Determine tool type from config
-    tool_type = config.get("type", "custom_api")
-
-    cursor.execute(
-        "INSERT INTO tools (name, type, config, icon) VALUES (?, ?, ?, ?)",
-        (name, tool_type, json.dumps(config), icon)
-    )
-    tool_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return tool_id
+        tool = Tool(
+            name=name,
+            type=tool_type,
+            config=config
+        )
+        db.add(tool)
+        db.flush()
+        return tool.id
 
 
 def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: str = "Wrench") -> bool:
     """Update a custom API tool, MCP tool, or Gemini File Search tool"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        tool = db.query(Tool).filter(
+            Tool.id == tool_id,
+            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search"])
+        ).first()
 
-    # Determine tool type from config
-    tool_type = config.get("type", "custom_api")
+        if not tool:
+            return False
 
-    cursor.execute(
-        "UPDATE tools SET name = ?, type = ?, config = ?, icon = ? WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http', 'gemini_file_search')",
-        (name, tool_type, json.dumps(config), icon, tool_id)
-    )
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+        # Determine tool type from config
+        tool_type = config.get("type", "custom_api")
+
+        tool.name = name
+        tool.type = tool_type
+        tool.config = config
+
+        return True
 
 
 def delete_custom_tool(tool_id: int) -> bool:
     """Delete a custom API tool, MCP tool, or Gemini File Search tool"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM tools WHERE id = ? AND type IN ('custom_api', 'mcp_streamable_http', 'gemini_file_search')", (tool_id,))
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+    with get_db() as db:
+        result = db.query(Tool).filter(
+            Tool.id == tool_id,
+            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search"])
+        ).delete()
+        return result > 0
 
 
-# File Store operations
+# ============================================================================
+# File Store Operations
+# ============================================================================
+
 def get_all_file_stores() -> List[Dict[str, Any]]:
     """Get all file stores"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM file_stores ORDER BY created_at DESC")
-    stores = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return stores
+    with get_db() as db:
+        stores = db.query(FileStore).order_by(FileStore.created_at.desc()).all()
+        return [
+            {
+                "id": store.id,
+                "name": store.name,
+                "gemini_store_id": store.gemini_store_id,
+                "display_name": store.display_name,
+                "file_count": store.file_count,
+                "created_at": store.created_at.isoformat() if store.created_at else None
+            }
+            for store in stores
+        ]
 
 
 def get_file_store_by_id(store_id: int) -> Optional[Dict[str, Any]]:
     """Get a single file store by ID"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM file_stores WHERE id = ?", (store_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with get_db() as db:
+        store = db.query(FileStore).filter_by(id=store_id).first()
+        if not store:
+            return None
+        return {
+            "id": store.id,
+            "name": store.name,
+            "gemini_store_id": store.gemini_store_id,
+            "display_name": store.display_name,
+            "file_count": store.file_count,
+            "created_at": store.created_at.isoformat() if store.created_at else None
+        }
 
 
 def get_file_store_by_gemini_id(gemini_store_id: str) -> Optional[Dict[str, Any]]:
     """Get a file store by Gemini store ID"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM file_stores WHERE gemini_store_id = ?", (gemini_store_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with get_db() as db:
+        store = db.query(FileStore).filter_by(gemini_store_id=gemini_store_id).first()
+        if not store:
+            return None
+        return {
+            "id": store.id,
+            "name": store.name,
+            "gemini_store_id": store.gemini_store_id,
+            "display_name": store.display_name,
+            "file_count": store.file_count,
+            "created_at": store.created_at.isoformat() if store.created_at else None
+        }
 
 
 def create_file_store(name: str, gemini_store_id: str, display_name: str = None) -> int:
     """Create a new file store"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO file_stores (name, gemini_store_id, display_name)
-           VALUES (?, ?, ?)""",
-        (name, gemini_store_id, display_name)
-    )
-    store_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return store_id
+    with get_db() as db:
+        store = FileStore(
+            name=name,
+            gemini_store_id=gemini_store_id,
+            display_name=display_name
+        )
+        db.add(store)
+        db.flush()
+        return store.id
 
 
 def delete_file_store(store_id: int) -> bool:
     """Delete a file store (cascades to files)"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM file_stores WHERE id = ?", (store_id,))
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+    with get_db() as db:
+        store = db.query(FileStore).filter_by(id=store_id).first()
+        if not store:
+            return False
+        db.delete(store)
+        return True
 
 
 def add_file_to_store(
@@ -555,112 +425,109 @@ def add_file_to_store(
     file_size: int
 ) -> int:
     """Add a file record to a store"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO file_store_files (file_store_id, filename, original_filename, file_size)
-           VALUES (?, ?, ?, ?)""",
-        (file_store_id, filename, original_filename, file_size)
-    )
-    file_id = cursor.lastrowid
+    with get_db() as db:
+        file_record = FileStoreFile(
+            file_store_id=file_store_id,
+            filename=filename,
+            original_filename=original_filename,
+            file_size=file_size
+        )
+        db.add(file_record)
+        db.flush()
 
-    # Update file count
-    cursor.execute(
-        """UPDATE file_stores
-           SET file_count = (SELECT COUNT(*) FROM file_store_files WHERE file_store_id = ?)
-           WHERE id = ?""",
-        (file_store_id, file_store_id)
-    )
+        # Update file count
+        store = db.query(FileStore).filter_by(id=file_store_id).first()
+        if store:
+            store.file_count = db.query(FileStoreFile).filter_by(file_store_id=file_store_id).count()
 
-    conn.commit()
-    conn.close()
-    return file_id
+        return file_record.id
 
 
 def get_files_by_store(file_store_id: int) -> List[Dict[str, Any]]:
     """Get all files in a store"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM file_store_files WHERE file_store_id = ? ORDER BY uploaded_at DESC",
-        (file_store_id,)
-    )
-    files = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return files
+    with get_db() as db:
+        files = db.query(FileStoreFile).filter_by(file_store_id=file_store_id).order_by(
+            FileStoreFile.uploaded_at.desc()
+        ).all()
+
+        return [
+            {
+                "id": file.id,
+                "file_store_id": file.file_store_id,
+                "filename": file.filename,
+                "original_filename": file.original_filename,
+                "file_size": file.file_size,
+                "uploaded_at": file.uploaded_at.isoformat() if file.uploaded_at else None
+            }
+            for file in files
+        ]
 
 
 def delete_file(file_id: int) -> bool:
     """Delete a file from a store"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        file_record = db.query(FileStoreFile).filter_by(id=file_id).first()
+        if not file_record:
+            return False
 
-    # Get file_store_id before deleting
-    cursor.execute("SELECT file_store_id FROM file_store_files WHERE id = ?", (file_id,))
-    row = cursor.fetchone()
+        file_store_id = file_record.file_store_id
+        db.delete(file_record)
 
-    if not row:
-        conn.close()
-        return False
+        # Update file count
+        store = db.query(FileStore).filter_by(id=file_store_id).first()
+        if store:
+            store.file_count = db.query(FileStoreFile).filter_by(file_store_id=file_store_id).count()
 
-    file_store_id = row["file_store_id"]
-
-    # Delete file
-    cursor.execute("DELETE FROM file_store_files WHERE id = ?", (file_id,))
-
-    # Update file count
-    cursor.execute(
-        """UPDATE file_stores
-           SET file_count = (SELECT COUNT(*) FROM file_store_files WHERE file_store_id = ?)
-           WHERE id = ?""",
-        (file_store_id, file_store_id)
-    )
-
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+        return True
 
 
 def update_file_count(file_store_id: int) -> bool:
     """Update file count for a store"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """UPDATE file_stores
-           SET file_count = (SELECT COUNT(*) FROM file_store_files WHERE file_store_id = ?)
-           WHERE id = ?""",
-        (file_store_id, file_store_id)
-    )
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+    with get_db() as db:
+        store = db.query(FileStore).filter_by(id=file_store_id).first()
+        if not store:
+            return False
+        store.file_count = db.query(FileStoreFile).filter_by(file_store_id=file_store_id).count()
+        return True
 
 
-# Analytics operations
+# ============================================================================
+# Analytics Operations
+# ============================================================================
+
 def create_conversation(session_id: str, started_at: str) -> int:
     """Create a new conversation record"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO conversations (session_id, started_at) VALUES (?, ?)",
-        (session_id, started_at)
-    )
-    conversation_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return conversation_id
+    with get_db() as db:
+        conversation = Conversation(
+            session_id=session_id,
+            started_at=datetime.fromisoformat(started_at) if isinstance(started_at, str) else started_at
+        )
+        db.add(conversation)
+        db.flush()
+        return conversation.id
 
 
 def get_conversation_by_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Get conversation by session ID"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM conversations WHERE session_id = ?", (session_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with get_db() as db:
+        conversation = db.query(Conversation).filter_by(session_id=session_id).first()
+        if not conversation:
+            return None
+
+        return {
+            "id": conversation.id,
+            "session_id": conversation.session_id,
+            "started_at": conversation.started_at.isoformat() if conversation.started_at else None,
+            "ended_at": conversation.ended_at.isoformat() if conversation.ended_at else None,
+            "duration_seconds": conversation.duration_seconds,
+            "total_messages": conversation.total_messages,
+            "user_messages": conversation.user_messages,
+            "agent_messages": conversation.agent_messages,
+            "agents_involved": json.dumps(conversation.agents_involved) if conversation.agents_involved else None,
+            "tools_used": json.dumps(conversation.tools_used) if conversation.tools_used else None,
+            "outcome": conversation.outcome,
+            "created_at": conversation.created_at.isoformat() if conversation.created_at else None
+        }
 
 
 def update_conversation(
@@ -675,49 +542,29 @@ def update_conversation(
     outcome: Optional[str] = None
 ) -> bool:
     """Update conversation with metadata"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        conversation = db.query(Conversation).filter_by(id=conversation_id).first()
+        if not conversation:
+            return False
 
-    update_fields = []
-    values = []
+        if ended_at is not None:
+            conversation.ended_at = datetime.fromisoformat(ended_at) if isinstance(ended_at, str) else ended_at
+        if duration_seconds is not None:
+            conversation.duration_seconds = duration_seconds
+        if total_messages is not None:
+            conversation.total_messages = total_messages
+        if user_messages is not None:
+            conversation.user_messages = user_messages
+        if agent_messages is not None:
+            conversation.agent_messages = agent_messages
+        if agents_involved is not None:
+            conversation.agents_involved = json.loads(agents_involved) if isinstance(agents_involved, str) else agents_involved
+        if tools_used is not None:
+            conversation.tools_used = json.loads(tools_used) if isinstance(tools_used, str) else tools_used
+        if outcome is not None:
+            conversation.outcome = outcome
 
-    if ended_at is not None:
-        update_fields.append("ended_at = ?")
-        values.append(ended_at)
-    if duration_seconds is not None:
-        update_fields.append("duration_seconds = ?")
-        values.append(duration_seconds)
-    if total_messages is not None:
-        update_fields.append("total_messages = ?")
-        values.append(total_messages)
-    if user_messages is not None:
-        update_fields.append("user_messages = ?")
-        values.append(user_messages)
-    if agent_messages is not None:
-        update_fields.append("agent_messages = ?")
-        values.append(agent_messages)
-    if agents_involved is not None:
-        update_fields.append("agents_involved = ?")
-        values.append(agents_involved)
-    if tools_used is not None:
-        update_fields.append("tools_used = ?")
-        values.append(tools_used)
-    if outcome is not None:
-        update_fields.append("outcome = ?")
-        values.append(outcome)
-
-    if not update_fields:
-        conn.close()
-        return False
-
-    values.append(conversation_id)
-    query = f"UPDATE conversations SET {', '.join(update_fields)} WHERE id = ?"
-
-    cursor.execute(query, values)
-    conn.commit()
-    success = cursor.rowcount > 0
-    conn.close()
-    return success
+        return True
 
 
 def add_conversation_message(
@@ -729,159 +576,165 @@ def add_conversation_message(
     tool_calls: Optional[str] = None
 ) -> int:
     """Add a message to a conversation"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """INSERT INTO conversation_messages
-           (conversation_id, role, content, timestamp, agent_name, tool_calls)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (conversation_id, role, content, timestamp, agent_name, tool_calls)
-    )
-    message_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return message_id
+    with get_db() as db:
+        message = ConversationMessage(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            timestamp=datetime.fromisoformat(timestamp) if isinstance(timestamp, str) else timestamp,
+            agent_name=agent_name,
+            tool_calls=json.loads(tool_calls) if tool_calls and isinstance(tool_calls, str) else tool_calls
+        )
+        db.add(message)
+        db.flush()
+        return message.id
 
 
 def get_conversation_messages(conversation_id: int) -> List[Dict[str, Any]]:
     """Get all messages for a conversation"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY timestamp ASC",
-        (conversation_id,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    with get_db() as db:
+        messages = db.query(ConversationMessage).filter_by(conversation_id=conversation_id).order_by(
+            ConversationMessage.timestamp.asc()
+        ).all()
+
+        return [
+            {
+                "id": message.id,
+                "conversation_id": message.conversation_id,
+                "role": message.role,
+                "agent_name": message.agent_name,
+                "content": message.content,
+                "timestamp": message.timestamp.isoformat() if message.timestamp else None,
+                "tool_calls": json.dumps(message.tool_calls) if message.tool_calls else None
+            }
+            for message in messages
+        ]
 
 
 def save_conversation_analytics(conversation_id: int, analytics_data: Dict[str, Any]) -> int:
     """Save LLM-generated analytics for a conversation"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """INSERT INTO conversation_analytics (
-            conversation_id, overall_sentiment, sentiment_score, sentiment_explanation,
-            primary_topic, topics, resolution_quality, agent_performance_score,
-            response_clarity_score, empathy_score, issues_identified,
-            customer_pain_points, suggestions, customer_intent, urgency_level,
-            follow_up_needed, follow_up_reason, llm_model, analysis_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            conversation_id,
-            analytics_data.get('overall_sentiment'),
-            analytics_data.get('sentiment_score'),
-            analytics_data.get('sentiment_explanation'),
-            analytics_data.get('primary_topic'),
-            analytics_data.get('topics'),
-            analytics_data.get('resolution_quality'),
-            analytics_data.get('agent_performance_score'),
-            analytics_data.get('response_clarity_score'),
-            analytics_data.get('empathy_score'),
-            analytics_data.get('issues_identified'),
-            analytics_data.get('customer_pain_points'),
-            analytics_data.get('suggestions'),
-            analytics_data.get('customer_intent'),
-            analytics_data.get('urgency_level'),
-            analytics_data.get('follow_up_needed', False),
-            analytics_data.get('follow_up_reason'),
-            analytics_data.get('llm_model'),
-            analytics_data.get('analysis_version', 'v1.0')
+    with get_db() as db:
+        analytics = ConversationAnalytics(
+            conversation_id=conversation_id,
+            overall_sentiment=analytics_data.get('overall_sentiment'),
+            sentiment_score=analytics_data.get('sentiment_score'),
+            sentiment_explanation=analytics_data.get('sentiment_explanation'),
+            primary_topic=analytics_data.get('primary_topic'),
+            topics=analytics_data.get('topics'),
+            resolution_quality=analytics_data.get('resolution_quality'),
+            agent_performance_score=analytics_data.get('agent_performance_score'),
+            response_clarity_score=analytics_data.get('response_clarity_score'),
+            empathy_score=analytics_data.get('empathy_score'),
+            issues_identified=analytics_data.get('issues_identified'),
+            customer_pain_points=analytics_data.get('customer_pain_points'),
+            suggestions=analytics_data.get('suggestions'),
+            customer_intent=analytics_data.get('customer_intent'),
+            urgency_level=analytics_data.get('urgency_level'),
+            follow_up_needed=analytics_data.get('follow_up_needed', False),
+            follow_up_reason=analytics_data.get('follow_up_reason'),
+            llm_model=analytics_data.get('llm_model'),
+            analysis_version=analytics_data.get('analysis_version', 'v1.0')
         )
-    )
-    analytics_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return analytics_id
+        db.add(analytics)
+        db.flush()
+        return analytics.id
 
 
 def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
     """Get analytics summary for dashboard"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db() as db:
+        # Determine date filter based on period
+        now = datetime.utcnow()
+        if period == 'today':
+            start_date = datetime(now.year, now.month, now.day)
+        elif period == 'week':
+            start_date = now - timedelta(days=7)
+        elif period == 'month':
+            start_date = now - timedelta(days=30)
+        else:
+            start_date = datetime(1970, 1, 1)  # All time
 
-    # Determine date filter based on period
-    if period == 'today':
-        date_filter = "DATE(started_at) = DATE('now')"
-    elif period == 'week':
-        date_filter = "DATE(started_at) >= DATE('now', '-7 days')"
-    elif period == 'month':
-        date_filter = "DATE(started_at) >= DATE('now', '-30 days')"
-    else:
-        date_filter = "1=1"  # All time
+        # Total conversations
+        total_conversations = db.query(Conversation).filter(
+            Conversation.started_at >= start_date
+        ).count()
 
-    # Total conversations
-    cursor.execute(f"SELECT COUNT(*) FROM conversations WHERE {date_filter}")
-    total_conversations = cursor.fetchone()[0]
+        # Resolution rate
+        total_with_outcome = db.query(Conversation).filter(
+            Conversation.started_at >= start_date
+        ).count()
+        resolved_count = db.query(Conversation).filter(
+            and_(
+                Conversation.started_at >= start_date,
+                Conversation.outcome == 'resolved'
+            )
+        ).count()
+        resolution_rate = (resolved_count * 100.0 / total_with_outcome) if total_with_outcome > 0 else 0
 
-    # Resolution rate
-    cursor.execute(
-        f"SELECT COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM conversations WHERE {date_filter}), 0) FROM conversations WHERE {date_filter} AND outcome = 'resolved'"
-    )
-    resolution_rate = cursor.fetchone()[0] or 0
+        # Average messages per conversation
+        avg_messages_result = db.query(func.avg(Conversation.total_messages)).filter(
+            and_(
+                Conversation.started_at >= start_date,
+                Conversation.total_messages > 0
+            )
+        ).scalar()
+        avg_messages = float(avg_messages_result) if avg_messages_result else 0
 
-    # Average messages per conversation
-    cursor.execute(
-        f"SELECT AVG(total_messages) FROM conversations WHERE {date_filter} AND total_messages > 0"
-    )
-    avg_messages = cursor.fetchone()[0] or 0
+        # Average sentiment score
+        avg_sentiment_result = db.query(func.avg(ConversationAnalytics.sentiment_score)).join(
+            Conversation
+        ).filter(
+            and_(
+                Conversation.started_at >= start_date,
+                ConversationAnalytics.sentiment_score.isnot(None)
+            )
+        ).scalar()
+        avg_sentiment = float(avg_sentiment_result) if avg_sentiment_result else 0
 
-    # Average sentiment score
-    cursor.execute(
-        f"""SELECT AVG(ca.sentiment_score)
-            FROM conversation_analytics ca
-            JOIN conversations c ON ca.conversation_id = c.id
-            WHERE {date_filter} AND ca.sentiment_score IS NOT NULL"""
-    )
-    avg_sentiment = cursor.fetchone()[0] or 0
+        # Outcome breakdown
+        outcome_results = db.query(
+            Conversation.outcome,
+            func.count(Conversation.id).label('count')
+        ).filter(
+            Conversation.started_at >= start_date
+        ).group_by(Conversation.outcome).all()
+        outcome_breakdown = {row.outcome: row.count for row in outcome_results}
 
-    # Outcome breakdown
-    cursor.execute(
-        f"""SELECT outcome, COUNT(*) as count
-            FROM conversations
-            WHERE {date_filter}
-            GROUP BY outcome"""
-    )
-    outcome_rows = cursor.fetchall()
-    outcome_breakdown = {row[0]: row[1] for row in outcome_rows}
+        # Sentiment breakdown
+        sentiment_results = db.query(
+            ConversationAnalytics.overall_sentiment,
+            func.count(ConversationAnalytics.id).label('count')
+        ).join(Conversation).filter(
+            and_(
+                Conversation.started_at >= start_date,
+                ConversationAnalytics.overall_sentiment.isnot(None)
+            )
+        ).group_by(ConversationAnalytics.overall_sentiment).all()
+        sentiment_breakdown = {row.overall_sentiment: row.count for row in sentiment_results}
 
-    # Sentiment breakdown
-    cursor.execute(
-        f"""SELECT ca.overall_sentiment, COUNT(*) as count
-            FROM conversation_analytics ca
-            JOIN conversations c ON ca.conversation_id = c.id
-            WHERE {date_filter} AND ca.overall_sentiment IS NOT NULL
-            GROUP BY ca.overall_sentiment"""
-    )
-    sentiment_rows = cursor.fetchall()
-    sentiment_breakdown = {row[0]: row[1] for row in sentiment_rows}
+        # Topic breakdown
+        topic_results = db.query(
+            ConversationAnalytics.primary_topic,
+            func.count(ConversationAnalytics.id).label('count')
+        ).join(Conversation).filter(
+            and_(
+                Conversation.started_at >= start_date,
+                ConversationAnalytics.primary_topic.isnot(None)
+            )
+        ).group_by(ConversationAnalytics.primary_topic).order_by(
+            func.count(ConversationAnalytics.id).desc()
+        ).limit(10).all()
+        topic_breakdown = {row.primary_topic: row.count for row in topic_results}
 
-    # Topic breakdown
-    cursor.execute(
-        f"""SELECT ca.primary_topic, COUNT(*) as count
-            FROM conversation_analytics ca
-            JOIN conversations c ON ca.conversation_id = c.id
-            WHERE {date_filter} AND ca.primary_topic IS NOT NULL
-            GROUP BY ca.primary_topic
-            ORDER BY count DESC
-            LIMIT 10"""
-    )
-    topic_rows = cursor.fetchall()
-    topic_breakdown = {row[0]: row[1] for row in topic_rows}
-
-    conn.close()
-
-    return {
-        'total_conversations': total_conversations,
-        'resolution_rate': round(resolution_rate, 1),
-        'avg_messages': round(avg_messages, 1),
-        'avg_sentiment': round(avg_sentiment, 2),
-        'outcome_breakdown': outcome_breakdown,
-        'sentiment_breakdown': sentiment_breakdown,
-        'topic_breakdown': topic_breakdown
-    }
+        return {
+            'total_conversations': total_conversations,
+            'resolution_rate': round(resolution_rate, 1),
+            'avg_messages': round(avg_messages, 1),
+            'avg_sentiment': round(avg_sentiment, 2),
+            'outcome_breakdown': outcome_breakdown,
+            'sentiment_breakdown': sentiment_breakdown,
+            'topic_breakdown': topic_breakdown
+        }
 
 
 # Initialize database on module import

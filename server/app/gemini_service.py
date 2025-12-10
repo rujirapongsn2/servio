@@ -16,6 +16,55 @@ from google import genai
 from google.genai import types
 
 
+# MIME type mappings for common file extensions
+MIME_TYPES = {
+    # Documents
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.md': 'text/markdown',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.odt': 'application/vnd.oasis.opendocument.text',
+    '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+    '.odp': 'application/vnd.oasis.opendocument.presentation',
+    # Text formats
+    '.rtf': 'application/rtf',
+    '.csv': 'text/csv',
+    '.json': 'application/json',
+    '.xml': 'application/xml',
+    '.html': 'text/html',
+    '.htm': 'text/html',
+    # Code files
+    '.py': 'text/x-python',
+    '.js': 'text/javascript',
+    '.ts': 'text/typescript',
+    '.java': 'text/x-java',
+    '.cpp': 'text/x-c++src',
+    '.c': 'text/x-c',
+    '.h': 'text/x-c',
+    '.go': 'text/x-go',
+    '.rs': 'text/x-rust',
+}
+
+
+def get_mime_type(file_path: str) -> str:
+    """
+    Get MIME type for a file based on its extension.
+
+    Args:
+        file_path: Path to the file
+
+    Returns:
+        MIME type string, defaults to 'application/octet-stream' if unknown
+    """
+    extension = Path(file_path).suffix.lower()
+    return MIME_TYPES.get(extension, 'application/octet-stream')
+
+
 class GeminiFileSearchService:
     """Service for managing Gemini File Search operations"""
 
@@ -103,6 +152,7 @@ class GeminiFileSearchService:
 
         try:
             # Start upload operation
+            # Note: mime_type is auto-detected by the SDK from file extension
             upload_op = self.client.file_search_stores.upload_to_file_search_store(
                 file_search_store_name=store_id,
                 file=str(upload_path)

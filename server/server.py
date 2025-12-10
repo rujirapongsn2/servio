@@ -31,9 +31,12 @@ import os
 
 
 from dotenv import load_dotenv
+from pathlib import Path
 
-# When .env file is present, it will override the environment variables
-load_dotenv(dotenv_path="../.env", override=True)
+# Try Docker environment first, then local .env
+if not os.getenv("OPENAI_API_KEY"):
+    env_path = Path(__file__).parent.parent / ".env"
+    load_dotenv(dotenv_path=env_path, override=True)
 
 app = FastAPI()
 
@@ -43,16 +46,20 @@ app.include_router(admin_router)
 
 logger = getLogger(__name__)
 
+# Configure CORS with environment variable support for production
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    "http://frontend:3000",  # Docker internal network
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        "http://127.0.0.1:3002",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

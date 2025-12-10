@@ -13,9 +13,15 @@ import {
   Info,
   Zap,
   Code,
-  Cloud
+  Cloud,
+  Database,
+  Upload,
+  Play
 } from "lucide-react";
 import { AVAILABLE_ICONS } from "@/components/IconPicker";
+import CreateFileStoreModal from "@/components/CreateFileStoreModal";
+import FileStoreDetailModal from "@/components/FileStoreDetailModal";
+import TestFileStoreModal from "@/components/TestFileStoreModal";
 
 interface Tool {
   id: number;
@@ -47,6 +53,10 @@ const getToolIcon = (toolName: string, toolType: string) => {
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showFileStoreModal, setShowFileStoreModal] = useState(false);
+  const [selectedFileStore, setSelectedFileStore] = useState<any>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
 
   useEffect(() => {
     fetchTools();
@@ -94,7 +104,64 @@ export default function ToolsPage() {
   };
 
   const builtinTools = tools.filter((t) => t.type === "builtin");
+  const fileStoreTools = tools.filter((t) => t.type === "gemini_file_search");
   const customTools = tools.filter((t) => t.type === "custom_api" || t.type === "mcp_streamable_http");
+
+  const handleManageFiles = async (tool: Tool) => {
+    try {
+      const config = tool.config ? JSON.parse(tool.config) : {};
+      const geminiStoreId = config.gemini_store_id;
+
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        `http://localhost:8000/api/admin/file-stores?gemini_id=${geminiStoreId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch file store");
+
+      const stores = await response.json();
+      const store = stores.find((s: any) => s.gemini_store_id === geminiStoreId);
+
+      if (store) {
+        setSelectedFileStore(store);
+        setShowDetailModal(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch file store:", error);
+      alert("Failed to open file store details");
+    }
+  };
+
+  const handleTestStore = async (tool: Tool) => {
+    try {
+      const config = tool.config ? JSON.parse(tool.config) : {};
+      const geminiStoreId = config.gemini_store_id;
+
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        `http://localhost:8000/api/admin/file-stores?gemini_id=${geminiStoreId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch file store");
+
+      const stores = await response.json();
+      const store = stores.find((s: any) => s.gemini_store_id === geminiStoreId);
+
+      if (store) {
+        setSelectedFileStore(store);
+        setShowTestModal(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch file store:", error);
+      alert("Failed to open file store test");
+    }
+  };
 
   if (loading) {
     return (
@@ -110,7 +177,7 @@ export default function ToolsPage() {
             Tools
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Manage built-in, custom API, and MCP tools
+            Manage built-in tools, file store tools, custom API tools, and MCP tools
           </p>
         </div>
         <Link
@@ -157,6 +224,97 @@ export default function ToolsPage() {
               );
             })}
           </div>
+        </div>
+      </div>
+
+      {/* File Store Tools */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            File Store Tools
+          </h2>
+          <button
+            onClick={() => setShowFileStoreModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
+          >
+            <Plus className="w-4 h-4" />
+            New File Store
+          </button>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          {fileStoreTools.length === 0 ? (
+            <div className="p-8 text-center">
+              <Database className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                No file store tools found. Create a file store to enable document search capabilities.
+              </p>
+              <button
+                onClick={() => setShowFileStoreModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700"
+              >
+                <Plus className="w-4 h-4" />
+                Create File Store
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {fileStoreTools.map((tool) => {
+                const config = tool.config ? JSON.parse(tool.config) : {};
+                return (
+                  <div
+                    key={tool.id}
+                    className="p-4 flex items-start gap-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                  >
+                    {/* Icon */}
+                    <div className="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-lg flex items-center justify-center">
+                      <Database className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-medium text-gray-900 dark:text-white truncate">
+                          {tool.name}
+                        </h3>
+                        <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-300 text-xs font-medium rounded">
+                          File Search
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                        {config.description || "No description"}
+                      </p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex-shrink-0 flex gap-2">
+                      <button
+                        onClick={() => handleManageFiles(tool)}
+                        className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                        title="Manage files"
+                      >
+                        <Upload className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleTestStore(tool)}
+                        className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                        title="Test file store"
+                      >
+                        <Play className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(tool.id)}
+                        className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-md transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -246,6 +404,36 @@ export default function ToolsPage() {
           </div>
         )}
       </div>
+
+      {/* File Store Modals */}
+      {showFileStoreModal && (
+        <CreateFileStoreModal
+          onClose={() => {
+            setShowFileStoreModal(false);
+            fetchTools(); // Refresh tool list after creation
+          }}
+        />
+      )}
+
+      {showDetailModal && selectedFileStore && (
+        <FileStoreDetailModal
+          store={selectedFileStore}
+          onClose={() => {
+            setShowDetailModal(false);
+            setSelectedFileStore(null);
+          }}
+        />
+      )}
+
+      {showTestModal && selectedFileStore && (
+        <TestFileStoreModal
+          store={selectedFileStore}
+          onClose={() => {
+            setShowTestModal(false);
+            setSelectedFileStore(null);
+          }}
+        />
+      )}
     </div>
   );
 }

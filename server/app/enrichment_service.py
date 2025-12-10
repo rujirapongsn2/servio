@@ -96,11 +96,11 @@ class EnrichmentService:
                 print(f"No messages found for conversation {conversation_id}")
                 return None
 
-            # Get conversation metadata directly from conversations table
+            # Get conversation metadata directly from conversations table (PostgreSQL)
             conn = database.get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM conversations WHERE id = ?",
+                "SELECT * FROM conversations WHERE id = %s",
                 (conversation_id,)
             )
             row = cursor.fetchone()
@@ -110,13 +110,8 @@ class EnrichmentService:
                 print(f"No conversation found for ID {conversation_id}")
                 return None
 
-            # Convert to dict
-            columns = [
-                'id', 'session_id', 'started_at', 'ended_at', 'duration_seconds',
-                'total_messages', 'user_messages', 'agent_messages',
-                'agents_involved', 'tools_used', 'outcome', 'created_at'
-            ]
-            conversation = dict(zip(columns, row))
+            # RealDictCursor returns dict-like rows
+            conversation = dict(row)
 
             # Format conversation for analysis
             formatted_conversation = self._format_conversation(conversation_data)
