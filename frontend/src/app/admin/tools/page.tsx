@@ -410,6 +410,9 @@ export default function ToolsPage() {
         <CreateFileStoreModal
           onClose={() => {
             setShowFileStoreModal(false);
+          }}
+          onSuccess={() => {
+            setShowFileStoreModal(false);
             fetchTools(); // Refresh tool list after creation
           }}
         />

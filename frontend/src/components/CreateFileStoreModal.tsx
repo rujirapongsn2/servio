@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Loader2, AlertCircle } from "lucide-react";
 import MultiFileUploader from "./MultiFileUploader";
 
 interface CreateFileStoreModalProps {
   onClose: () => void;
   onSuccess: () => void;
+}
+
+interface ExistingFileStore {
+  id: number;
+  display_name: string;
 }
 
 export default function CreateFileStoreModal({
@@ -19,12 +24,54 @@ export default function CreateFileStoreModal({
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [existingStores, setExistingStores] = useState<ExistingFileStore[]>([]);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  // Fetch existing file stores on mount
+  useEffect(() => {
+    const fetchExistingStores = async () => {
+      try {
+        const token = localStorage.getItem("adminToken");
+        const response = await fetch("http://localhost:8000/api/admin/file-stores", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setExistingStores(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch existing stores:", error);
+      }
+    };
+    fetchExistingStores();
+  }, []);
+
+  // Validate name when it changes
+  useEffect(() => {
+    if (displayName.trim()) {
+      const isDuplicate = existingStores.some(
+        (store) => store.display_name.toLowerCase() === displayName.trim().toLowerCase()
+      );
+      if (isDuplicate) {
+        setNameError("A File Store with this name already exists");
+      } else {
+        setNameError(null);
+      }
+    } else {
+      setNameError(null);
+    }
+  }, [displayName, existingStores]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!displayName.trim()) {
       alert("Please enter a display name");
+      return;
+    }
+
+    if (nameError) {
+      alert(nameError);
       return;
     }
 
@@ -131,13 +178,24 @@ export default function CreateFileStoreModal({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               disabled={isProcessing}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50"
+              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50 ${
+                nameError
+                  ? "border-red-500 dark:border-red-500"
+                  : "border-gray-300 dark:border-gray-600"
+              }`}
               placeholder="e.g., Product Documentation"
               required
             />
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              A descriptive name for your file store
-            </p>
+            {nameError ? (
+              <div className="mt-1 flex items-center gap-1 text-sm text-red-600 dark:text-red-400">
+                <AlertCircle className="w-4 h-4" />
+                <span>{nameError}</span>
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                A descriptive name for your file store
+              </p>
+            )}
           </div>
 
           {/* Create Tool Checkbox */}
@@ -212,7 +270,7 @@ export default function CreateFileStoreModal({
             </button>
             <button
               type="submit"
-              disabled={isProcessing || !displayName.trim() || files.length === 0}
+              disabled={isProcessing || !displayName.trim() || files.length === 0 || !!nameError}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isProcessing && <Loader2 className="w-4 h-4 animate-spin" />}

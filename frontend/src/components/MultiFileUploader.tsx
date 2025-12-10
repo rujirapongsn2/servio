@@ -1,7 +1,11 @@
 "use client";
 
 import { useRef } from "react";
-import { Upload, X, FileText } from "lucide-react";
+import { Upload, X, FileText, AlertCircle } from "lucide-react";
+
+// Currently only PDF is supported by Gemini File Store
+const ALLOWED_EXTENSIONS = [".pdf"];
+const ALLOWED_MIME_TYPES = ["application/pdf"];
 
 interface MultiFileUploaderProps {
   files: File[];
@@ -16,10 +20,26 @@ export default function MultiFileUploader({
 }: MultiFileUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isValidFile = (file: File): boolean => {
+    const extension = "." + file.name.split(".").pop()?.toLowerCase();
+    return ALLOWED_EXTENSIONS.includes(extension) || ALLOWED_MIME_TYPES.includes(file.type);
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      onFilesChange([...files, ...newFiles]);
+      const validFiles = newFiles.filter(isValidFile);
+      const invalidFiles = newFiles.filter((f) => !isValidFile(f));
+
+      if (invalidFiles.length > 0) {
+        alert(
+          `The following files are not supported and were skipped:\n${invalidFiles.map((f) => f.name).join("\n")}\n\nCurrently only PDF files are supported by Gemini File Store.`
+        );
+      }
+
+      if (validFiles.length > 0) {
+        onFilesChange([...files, ...validFiles]);
+      }
     }
   };
 
@@ -29,7 +49,18 @@ export default function MultiFileUploader({
 
     if (e.dataTransfer.files) {
       const newFiles = Array.from(e.dataTransfer.files);
-      onFilesChange([...files, ...newFiles]);
+      const validFiles = newFiles.filter(isValidFile);
+      const invalidFiles = newFiles.filter((f) => !isValidFile(f));
+
+      if (invalidFiles.length > 0) {
+        alert(
+          `The following files are not supported and were skipped:\n${invalidFiles.map((f) => f.name).join("\n")}\n\nCurrently only PDF files are supported by Gemini File Store.`
+        );
+      }
+
+      if (validFiles.length > 0) {
+        onFilesChange([...files, ...validFiles]);
+      }
     }
   };
 
@@ -70,7 +101,7 @@ export default function MultiFileUploader({
           onChange={handleFileSelect}
           disabled={disabled}
           className="hidden"
-          accept=".pdf,.txt,.md,.doc,.docx"
+          accept=".pdf"
         />
         <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
@@ -80,7 +111,7 @@ export default function MultiFileUploader({
           or drag and drop
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-500">
-          PDF, TXT, MD, DOC, DOCX (max 10MB per file)
+          PDF files only (max 10MB per file)
         </p>
       </div>
 
