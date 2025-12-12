@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Response
 import json
 import os
 import time
@@ -34,6 +34,11 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 # Authentication endpoints
+@router.options("/auth/login")
+async def login_options():
+    """Handle CORS preflight for login endpoint"""
+    return Response(status_code=200)
+
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """Login endpoint that returns JWT token"""
