@@ -33,6 +33,7 @@ Servio is designed to be a production-ready customer support solution that you c
   - [Quick Start with Docker (Recommended)](#quick-start-with-docker-recommended-)
   - [Manual Installation (Development)](#manual-installation-development)
 - [Docker Deployment](#docker-deployment)
+  - [Production Deployment Guide](#production-deployment-guide)
 - [Using the App](#using-the-app)
 - [Admin & Agents](#admin--agents)
 - [Screenshots & GIFs](#screenshots--gifs)
@@ -568,53 +569,393 @@ The `start.sh` script provides an interactive menu for managing Docker services:
 8. **Clean up** - Remove containers and volumes (⚠️ deletes database!)
 0. **Exit** - Quit the script
 
-### Production Deployment
+### Production Deployment Guide
 
-For production deployment:
+This guide covers deploying Servio to production servers with SSL/HTTPS support.
 
-1. **Set production environment variables:**
+#### Prerequisites
+
+- A server with a domain name (e.g., `yourdomain.com`)
+- DNS records pointing to your server's IP address
+- Ports 80 and 443 open on your firewall
+
+#### Step 1: Configure Environment Variables
+
+Create or update `.env` file with production settings:
+
+```bash
+# API Keys (Required)
+OPENAI_API_KEY=your_openai_api_key
+SOFTNIX_API_KEY=your_softnix_api_key  # Optional
+GEMINI_API_KEY=your_gemini_api_key    # Optional
+
+# Database Configuration
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_secure_password_here
+POSTGRES_DB=voice_agents
+POSTGRES_PORT=5432
+DATABASE_URL=postgresql://postgres:your_secure_password_here@postgres:5432/voice_agents
+
+# Server Ports
+BACKEND_PORT=8000
+FRONTEND_PORT=3000
+
+# Production Environment
+ENVIRONMENT=production
+
+# ⚠️ CRITICAL: Production WebSocket URL
+# For HTTPS deployment, use wss:// (secure WebSocket)
+# Replace yourdomain.com with your actual domain
+NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
+
+# CORS Origins (comma-separated)
+ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+```
+
+**Important Notes:**
+- `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` must use `wss://` (not `ws://`) for HTTPS sites
+- This variable is baked into the frontend build - **rebuild required** after changes
+- Microphone access requires HTTPS in production (browsers block HTTP microphone access)
+
+#### Step 2: Create Frontend Build-time Configuration
+
+Next.js requires `NEXT_PUBLIC_*` variables at **build time**. Create `.env.production` in the `frontend/` directory:
+
+```bash
+cd /path/to/servio/frontend
+echo "NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws" > .env.production
+cd ..
+```
+
+#### Step 3: Set Up SSL/HTTPS with Caddy (Recommended)
+
+Caddy automatically generates and renews SSL certificates using Let's Encrypt.
+
+##### For Debian/Ubuntu:
+```bash
+sudo apt update
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+```
+
+##### For AlmaLinux/RHEL/CentOS:
+```bash
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://copr.fedorainfracloud.org/coprs/g/caddy/caddy/repo/epel-9/group_caddy-caddy-epel-9.repo
+sudo dnf install -y caddy
+```
+
+##### Create Caddyfile:
+```bash
+sudo nano /etc/caddy/Caddyfile
+```
+
+Add this configuration (replace `yourdomain.com` with your domain):
+
+```caddy
+yourdomain.com {
+    # Caddy automatically handles SSL certificates
+
+    # Frontend (Next.js)
+    reverse_proxy localhost:3000
+
+    # WebSocket endpoint for voice agent
+    handle /ws {
+        reverse_proxy localhost:8000 {
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
+        }
+    }
+
+    # Backend API endpoints
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    # Static assets
+    handle /assets/* {
+        reverse_proxy localhost:8000
+    }
+}
+```
+
+Validate and start Caddy:
+
+```bash
+# Validate configuration
+sudo caddy validate --config /etc/caddy/Caddyfile
+
+# Format Caddyfile (optional but recommended)
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+
+# Enable and start Caddy
+sudo systemctl enable caddy
+sudo systemctl start caddy
+sudo systemctl status caddy
+```
+
+##### Configure Firewall:
+
+**For Debian/Ubuntu (ufw):**
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw reload
+```
+
+**For AlmaLinux/RHEL/CentOS (firewalld):**
+```bash
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+```
+
+**For AlmaLinux with SELinux:**
+```bash
+# Allow Caddy to make network connections
+sudo setsebool -P httpd_can_network_connect 1
+```
+
+#### Step 4: Build and Deploy Application
+
+```bash
+# Navigate to project directory
+cd /path/to/servio
+
+# Build frontend with production environment variables
+docker compose build --no-cache frontend
+
+# Build backend
+docker compose build backend
+
+# Start all services
+docker compose up -d
+
+# Verify services are running
+docker compose ps
+```
+
+#### Step 5: Verify Deployment
+
+1. **Check SSL Certificate:**
    ```bash
-   # In .env file
-   ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
-   NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
+   curl -I https://yourdomain.com
    ```
+   Should return `HTTP/2 200` with SSL headers
 
-2. **Build optimized images:**
-   ```bash
-   docker-compose build --no-cache
-   ```
+2. **Test WebSocket Connection:**
+   Open browser Developer Console (F12) and check for:
+   - No "Mixed Content" errors
+   - WebSocket connects to `wss://yourdomain.com/ws`
+   - No connection errors
 
-3. **Start services:**
-   ```bash
-   docker-compose up -d
-   ```
+3. **Test Microphone Access:**
+   - Visit `https://yourdomain.com`
+   - Click "Press to call" button
+   - Browser should request microphone permission
+   - Button should become enabled (green)
 
-4. **Optional: Add Nginx reverse proxy for SSL/TLS:**
-   ```nginx
-   server {
-       listen 80;
-       server_name yourdomain.com;
+#### Common Issues and Solutions
 
-       location / {
-           proxy_pass http://localhost:3000;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-       }
+##### Issue 1: "Press to call" button is disabled
 
-       location /api/ {
-           proxy_pass http://localhost:8000;
-       }
+**Symptoms:**
+- Button appears grayed out
+- Console shows: `WebSocket connection failed` or `Mixed Content` error
 
-       location /ws {
-           proxy_pass http://localhost:8000/ws;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection "upgrade";
-       }
-   }
-   ```
+**Solution:**
+```bash
+# Check if frontend has correct WebSocket URL
+cd /path/to/servio/frontend
+cat .env.production
+
+# Should show:
+# NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
+
+# If missing or wrong, recreate it:
+echo "NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws" > .env.production
+
+# Rebuild frontend
+cd ..
+docker compose build --no-cache frontend
+docker compose up -d frontend
+
+# Wait 1-2 minutes for build to complete, then refresh browser
+```
+
+##### Issue 2: Microphone blocked on HTTP
+
+**Error:** `NotAllowedError: Permission denied` or no microphone prompt
+
+**Cause:** Browsers require HTTPS for microphone access (except localhost)
+
+**Solution:**
+- Ensure you're accessing via `https://yourdomain.com` (not `http://`)
+- Verify SSL certificate is valid (no browser warnings)
+- Check Caddy logs: `sudo journalctl -u caddy -f`
+
+##### Issue 3: WebSocket connection fails
+
+**Console Error:**
+```
+[blocked] The page at https://yourdomain.com/ requested insecure content from ws://localhost:8000/ws
+```
+
+**Cause:** Frontend is using default WebSocket URL instead of production URL
+
+**Solution:**
+1. Verify `.env` has: `NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws`
+2. Create `frontend/.env.production` with same value
+3. Rebuild frontend: `docker compose build --no-cache frontend`
+4. Restart: `docker compose up -d frontend`
+
+##### Issue 4: Caddy SSL certificate fails
+
+**Error:** `acme: error: 400`
+
+**Possible causes:**
+- DNS not pointing to server IP
+- Ports 80/443 not accessible from internet
+- Domain already has SSL certificate from another service
+
+**Solution:**
+```bash
+# Check DNS resolution
+nslookup yourdomain.com
+
+# Test port accessibility from outside (use online tool like https://www.yougetsignal.com/tools/open-ports/)
+# Or from another machine:
+telnet yourdomain.com 80
+telnet yourdomain.com 443
+
+# Check Caddy logs
+sudo journalctl -u caddy -n 100 --no-pager
+
+# Try manual certificate issuance
+sudo caddy trust
+sudo systemctl restart caddy
+```
+
+#### Step 6: Monitor and Maintain
+
+```bash
+# View application logs
+docker compose logs -f
+
+# View Caddy logs
+sudo journalctl -u caddy -f
+
+# Check SSL certificate expiry
+curl -vI https://yourdomain.com 2>&1 | grep -i expire
+
+# Restart services
+docker compose restart
+
+# Update application
+git pull
+docker compose build --no-cache
+docker compose up -d
+```
+
+#### Alternative: Using Nginx Instead of Caddy
+
+If you prefer Nginx:
+
+```bash
+# Install Nginx and Certbot
+sudo apt install -y nginx certbot python3-certbot-nginx  # Debian/Ubuntu
+# OR
+sudo dnf install -y nginx certbot python3-certbot-nginx  # AlmaLinux
+
+# Create Nginx config
+sudo nano /etc/nginx/sites-available/servio  # Debian/Ubuntu
+# OR
+sudo nano /etc/nginx/conf.d/servio.conf      # AlmaLinux
+```
+
+Add this configuration:
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /ws {
+        proxy_pass http://localhost:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+
+    location /api {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+    }
+
+    location /assets {
+        proxy_pass http://localhost:8000;
+    }
+}
+```
+
+Enable and get SSL certificate:
+
+```bash
+# Debian/Ubuntu
+sudo ln -s /etc/nginx/sites-available/servio /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+
+# AlmaLinux (config already in conf.d/)
+sudo nginx -t
+sudo systemctl restart nginx
+
+# Get SSL certificate (both)
+sudo certbot --nginx -d yourdomain.com
+
+# Enable auto-renewal
+sudo systemctl enable certbot.timer
+```
+
+#### Environment Variables Quick Reference
+
+| Variable | Example | Required | Notes |
+|----------|---------|----------|-------|
+| `OPENAI_API_KEY` | `sk-...` | Yes | OpenAI API key |
+| `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` | `wss://yourdomain.com/ws` | Yes | **Must use `wss://` for HTTPS!** |
+| `ALLOWED_ORIGINS` | `https://yourdomain.com` | Yes | Comma-separated CORS origins |
+| `POSTGRES_PASSWORD` | `your_secure_password` | Yes | Database password |
+| `DATABASE_URL` | `postgresql://postgres:pass@postgres:5432/db` | Yes | Full database connection URL |
+| `ENVIRONMENT` | `production` | Recommended | Set to `production` |
+| `SOFTNIX_API_KEY` | `eyJ...` | Optional | For Softnix integration |
+| `GEMINI_API_KEY` | `AIza...` | Optional | For File Store Agents |
+
+#### Security Checklist
+
+- [ ] Use strong database passwords
+- [ ] Enable HTTPS/SSL (Caddy or Certbot)
+- [ ] Set `ENVIRONMENT=production` in `.env`
+- [ ] Configure `ALLOWED_ORIGINS` with your domain only
+- [ ] Use `wss://` (not `ws://`) for WebSocket URL
+- [ ] Rebuild frontend after environment variable changes
+- [ ] Keep Docker images updated
+- [ ] Regularly backup database: `cp server/data/agents.db backup/`
+- [ ] Monitor logs for errors
+- [ ] Test SSL certificate renewal
 
 ### Troubleshooting
 
