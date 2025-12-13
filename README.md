@@ -1,139 +1,138 @@
-# Servio - Customer Support Agent
+# Servio - ระบบผู้ช่วยบริการลูกค้า (Customer Support Agent)
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![FastAPI](https://img.shields.io/badge/Built_with-FastAPI-yellow)
 ![NextJS](https://img.shields.io/badge/Built_with-NextJS-blue)
 ![OpenAI API](https://img.shields.io/badge/Powered_by-OpenAI_API-orange)
 
-Servio is a powerful voice-enabled customer support agent system built with OpenAI's [Agents SDK](https://openai.github.io/openai-agents-python) and Python. The backend uses FastAPI with WebSocket support, while the frontend is built with Next.js, providing a seamless voice and chat interface for customer interactions.
+Servio คือระบบผู้ช่วยบริการลูกค้าที่รองรับการสั่งงานด้วยเสียงอันทรงพลัง สร้างขึ้นด้วย [Agents SDK](https://openai.github.io/openai-agents-python) ของ OpenAI และ Python ส่วน Backend ใช้ FastAPI ที่รองรับ WebSocket ในขณะที่ Frontend สร้างด้วย Next.js เพื่อมอบประสบการณ์การใช้งานที่ลื่นไหลทั้งในรูปแบบเสียงและข้อความ
 
-## Key Features
+## คุณสมบัติหลัก
 
-- **Voice & Chat Interface** - Dual-mode support for voice (push-to-talk) and text chat interactions
-- **Multi-Agent System** - Specialized AI agents that collaborate and transfer conversations seamlessly
-- **Admin Dashboard** - Comprehensive web-based admin console for managing agents, tools, and settings
-- **Widget Embedding** - Easy-to-embed chat/voice widgets for websites
-- **Custom Tools Integration** - Support for custom APIs, MCP tools, and Gemini File Search
-- **Dynamic Agent Configuration** - Create and configure agents through the admin interface without code changes
-- **Real-time Monitoring** - Track active sessions and agent performance
-- **Multi-turn Conversations** - Continuous back-and-forth conversations with context retention
-- **Streaming Responses** - Real-time text and audio streaming for instant feedback
-- **Softnix Integration** - Built-in integration with Softnix GenAI knowledge base
+- **ระบบสั่งงานด้วยเสียงและแชท** - รองรับทั้งการสนทนาด้วยเสียง (Push-to-talk) และการพิมพ์ข้อความ
+- **ระบบ Multi-Agent** - มี AI Agent เฉพาะทางหลายตัวที่ทำงานร่วมกันและส่งต่อการสนทนาได้อย่างราบรื่น
+- **Admin Dashboard** - แผงควบคุมสำหรับผู้ดูแลระบบเพื่อจัดการ Agent เครื่องมือ และการตั้งค่าต่างๆ ครบจบในที่เดียว
+- **Widget Embedding** - โค้ด Widget สำหรับนำไปติดหน้าเว็บไซต์ได้ง่าย รองรับทั้ง Chat และ Voice
+- **Custom Tools Integration** - รองรับการเชื่อมต่อกับ API ภายนอก, MCP tools และ Gemini File Search
+- **Dynamic Agent Configuration** - สร้างและตั้งค่า Agent ผ่านหน้า Admin ได้ทันทีโดยไม่ต้องแก้โค้ด
+- **Real-time Monitoring** - ติดตามสถานะเซสชันและการทำงานของ Agent ได้แบบเรียลไทม์
+- **Multi-turn Conversations** - รองรับการสนทนาโต้ตอบต่อเนื่อง โดยระบบจะจำบริบทก่อนหน้าได้
+- **Streaming Responses** - แสดงผลข้อความและเสียงแบบ Streaming เพื่อการตอบสนองที่รวดเร็ว
+- **Softnix Integration** - มีระบบเชื่อมต่อกับ Softnix GenAI knowledge base ในตัว
 
-Servio is designed to be a production-ready customer support solution that you can customize and extend to meet your specific business needs.
+Servio ถูกออกแบบมาให้เป็นโซลูชัน Customer Support ที่พร้อมใช้งานในระดับ Production (Production-Ready) และสามารถปรับแต่งหรือต่อยอดให้เข้ากับความต้องการของธุรกิจคุณได้
 
-## Table of Contents
+## สารบัญ
 
-- [Key Features](#key-features)
-- [Multi-Agent Architecture](#multi-agent-architecture)
+- [คุณสมบัติหลัก](#คุณสมบัติหลัก)
+- [สถาปัตยกรรม Multi-Agent](#สถาปัตยกรรม-multi-agent)
 - [File Store Agents](#file-store-agents)
-- [Widget Embedding](#widget-embedding)
-- [Requirements](#requirements)
-- [How to use](#how-to-use)
-  - [Quick Start with Docker (Recommended)](#quick-start-with-docker-recommended-)
-  - [Manual Installation (Development)](#manual-installation-development)
-- [Docker Deployment](#docker-deployment)
-  - [Production Deployment Guide](#production-deployment-guide)
-- [Using the App](#using-the-app)
-- [Admin & Agents](#admin--agents)
+- [การนำ Widget ไปใช้งาน](#การนำ-widget-ไปใช้งาน)
+- [ความต้องการของระบบ](#ความต้องการของระบบ)
+- [เริ่มต้นใช้งาน](#เริ่มต้นใช้งาน)
+  - [การใช้งานผ่าน Docker (แนะนำ)](#การใช้งานผ่าน-docker-แนะนำ-)
+  - [การติดตั้งแบบ Manual (สำหรับนักพัฒนา)](#การติดตั้งแบบ-manual-สำหรับนักพัฒนา)
+- [การ Deploy ด้วย Docker](#การ-deploy-ด้วย-docker)
+  - [คู่มือ Production Deployment](#คู่มือ-production-deployment)
+- [การใช้งาน Admin & Agents](#การใช้งาน-admin--agents)
 - [Screenshots & GIFs](#screenshots--gifs)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Multi-Agent Architecture
+## สถาปัตยกรรม Multi-Agent
 
-This sample app demonstrates a **multi-agent system** where multiple AI agents work together, each specialized in different domains. Think of it like calling a customer service center with different departments!
+ตัวอย่างแอปพลิเคชันนี้แสดงถึง **ระบบ Multi-Agent** ที่มี AI หลายตัวทำงานร่วมกัน โดยแต่ละตัวจะมีความเชี่ยวชาญเฉพาะด้าน เปรียบเสมือนการโทรหา Call Center ที่มีแผนกต่างๆ คอยให้บริการ!
 
-### The Four Agents
+### ตัวอย่าง 4 Agents หลัก
 
-#### 1. **Coordinator Agent** (Main Router) 🎯
-- **Role**: First point of contact that routes conversations to the appropriate specialist
-- **Instructions**: "Route the user to the appropriate agent based on their request"
-- **Starting Point**: Every conversation begins here
-- **Can transfer to**: Softnix Sales Agent, Stylist Agent, Customer Support Agent, and any agents you create in Admin (e.g., Dtwin Agent)
+#### 1. **Coordinator Agent** (ตัวประสานงานหลัก) 🎯
+- **บทบาท**: เป็นจุดแรกรับที่คอยต้อนรับลูกค้าและส่งต่อเรื่องไปยังแผนกที่เกี่ยวข้อง
+- **คำสั่ง**: "ส่งต่อผู้ใช้งานไปยัง Agent ที่เหมาะสมกับคำขอของเขา"
+- **เริ่มต้น**: ทุกการสนทนาจะเริ่มที่นี่เสมอ
+- **ส่งต่อให้**: Softnix Sales Agent, Stylist Agent, Customer Support Agent และ Agent อื่นๆ ที่คุณสร้างเพิ่มใน Admin (เช่น Dtwin Agent)
 
-**Example**:
+**ตัวอย่าง**:
 ```
-You: "Hello, I need help"
-Coordinator Agent: Greets you and waits for more context
+คุณ: "สวัสดี ขอความช่วยเหลือหน่อย"
+Coordinator Agent: ทักทายและรอฟังรายละเอียดเพิ่มเติม
 
-You: "What products does Softnix offer?"
-Coordinator Agent: → Transferred to Softnix Sales Agent
-```
-
-#### 2. **Softnix Sales Agent** (Product Information) 💼
-- **Role**: Provides information about Softnix products and services
-- **Special Tools**:
-  - `get_softnix_info(question)` - Queries Softnix GenAI knowledge base API
-  - Connects to: https://genai.softnix.ai/external/api/chat-messages
-- **Can transfer to**: Customer Support Agent (if purchase-related questions come up)
-
-**Example**:
-```
-You: "What is Softnix GenAI?"
-Softnix Sales Agent: Uses get_softnix_info() → Returns detailed product information
-
-You: "How much does it cost?"
-Softnix Sales Agent: Uses get_softnix_info() → Provides pricing details
-
-You: "I want to place an order"
-Softnix Sales Agent: → Transferred to Customer Support Agent
+คุณ: "Softnix มีสินค้าอะไรขายบ้าง?"
+Coordinator Agent: → ส่งต่อไปยัง Softnix Sales Agent
 ```
 
-#### 3. **Stylist Agent** (Fashion Consultant) 👔
-- **Role**: Provides fashion advice and styling recommendations
-- **Special Tools**:
-  - `WebSearchTool` - Searches the internet for fashion information
-  - Location: Bangkok (can find local stores and trends)
-- **Can transfer to**: Customer Support Agent (if order-related questions come up)
+#### 2. **Softnix Sales Agent** (ข้อมูลผลิตภัณฑ์) 💼
+- **บทบาท**: ให้ข้อมูลเกี่ยวกับสินค้าและบริการของ Softnix
+- **เครื่องมือพิเศษ**:
+  - `get_softnix_info(question)` - ดึงข้อมูลจาก Softnix GenAI knowledge base
+  - เชื่อมต่อกับ: https://genai.softnix.ai/external/api/chat-messages
+- **ส่งต่อให้**: Customer Support Agent (หากลูกค้าต้องการซื้อสินค้า)
 
-**Example**:
+**ตัวอย่าง**:
 ```
-You: "Recommend summer outfits"
-Stylist Agent: Uses WebSearch → Suggests breathable clothing
+คุณ: "Softnix GenAI คืออะไร?"
+Softnix Sales Agent: ใช้ get_softnix_info() → ตอบข้อมูลผลิตภัณฑ์อย่างละเอียด
 
-You: "I want to check my order"
-Stylist Agent: → Transferred to Customer Support Agent
-```
+คุณ: "ราคาเท่าไหร่?"
+Softnix Sales Agent: ใช้ get_softnix_info() → ให้ข้อมูลราคา
 
-#### 3. **Customer Support Agent** (Customer Service) 🛍️
-- **Role**: Handles orders, refunds, and purchase information
-- **Special Tools**:
-  - `get_past_orders()` - Retrieves order history
-  - `submit_refund_request(order_number)` - Processes refund requests
-- **Cannot transfer**: This is the final agent (no handoffs)
-
-**Example**:
-```
-You: "Check my orders"
-Customer Support: Uses get_past_orders() → Shows all orders
-
-You: "Refund order AB472"
-Customer Support: Uses submit_refund_request("AB472") → Processes refund
+คุณ: "ฉันต้องการสั่งซื้อ"
+Softnix Sales Agent: → ส่งต่อไปยัง Customer Support Agent
 ```
 
-### How Agent Handoffs Work
+#### 3. **Stylist Agent** (ที่ปรึกษาแฟชั่น) 👔
+- **บทบาท**: ให้คำแนะนำด้านแฟชั่นและการแต่งกาย
+- **เครื่องมือพิเศษ**:
+  - `WebSearchTool` - ค้นหาข้อมูลแฟชั่นจากอินเทอร์เน็ต
+  - สถานที่: กรุงเทพฯ (สามารถหาร้านค้าและเทรนด์ในพื้นที่ได้)
+- **ส่งต่อให้**: Customer Support Agent (เมื่อต้องการตรวจสอบคำสั่งซื้อ)
 
-When you see "**Transferred to [Agent Name]**" in the conversation, it means:
+**ตัวอย่าง**:
+```
+คุณ: "แนะนำชุดสำหรับหน้าร้อนหน่อย"
+Stylist Agent: ใช้ WebSearch → แนะนำเสื้อผ้าที่ระบายอากาศได้ดี
 
-> The AI has determined that a different specialist would better serve your needs and has seamlessly transferred the conversation.
+คุณ: "ขอเช็คคำสั่งซื้อหน่อย"
+Stylist Agent: → ส่งต่อไปยัง Customer Support Agent
+```
 
-**Technical Flow**:
-1. Current agent decides to transfer → `output.last_agent` changes
-2. Backend updates `self.latest_agent = output.last_agent`
-3. WebSocket sends message with new `agent_name`
-4. Frontend displays "Transferred to [Agent Name]"
-5. The runtime coordinator agent automatically includes DB-defined agents as handoffs; if you’ve created “Dtwin Agent”, the coordinator can route to it when users mention DTWIN
+#### 4. **Customer Support Agent** (บริการลูกค้า) 🛍️
+- **บทบาท**: จัดการคำสั่งซื้อ การคืนเงิน และข้อมูลการซื้อสินค้า
+- **เครื่องมือพิเศษ**:
+  - `get_past_orders()` - ดูประวัติการสั่งซื้อ
+  - `submit_refund_request(order_number)` - ดำเนินการขอคืนเงิน
+- **ไม่สามารถส่งต่อได้**: เป็น Agent ปลายทางสุดท้าย (ไม่มีการส่งต่อต่อ)
 
-### Conversation Flow Diagram
+**ตัวอย่าง**:
+```
+คุณ: "เช็ครายการสั่งซื้อของฉัน"
+Customer Support: ใช้ get_past_orders() → แสดงรายการทั้งหมดออกมา
+
+คุณ: "ขอคืนเงินรายการ AB472"
+Customer Support: ใช้ submit_refund_request("AB472") → ดำเนินการคืนเงิน
+```
+
+### การทำงานของระบบส่งต่อ Agent (Handoffs)
+
+เมื่อคุณเห็นข้อความ "**Transferred to [Agent Name]**" ในการสนทนา นั่นหมายความว่า:
+
+> AI ตัดสินใจแล้วว่ามีผู้เชี่ยวชาญอื่นที่ตอบโจทย์คุณได้ดีกว่า จึงทำการโอนสายการสนทนาไปให้อย่างราบรื่น
+
+**ขั้นตอนทางเทคนิค**:
+1. Agent ปัจจุบันตัดสินใจโอนสาย → `output.last_agent` เปลี่ยนค่า
+2. Backend อัปเดต `self.latest_agent = output.last_agent`
+3. WebSocket ส่งข้อความแจ้งชื่อ `agent_name` ใหม่
+4. Frontend แสดงข้อความ "Transferred to [Agent Name]"
+5. Coordinator agent จะรวม Agent ใน Database เข้ามาเป็นปลายทางได้อัตโนมัติ; ถ้าคุณสร้าง "Dtwin Agent" ไว้ ก็จะส่งต่อได้เมื่อ User พูดถึง DTWIN
+
+### แผนผังการทำงาน (Flow Diagram)
 
 ```
                     ┌─────────────────────┐
-                    │  Start Conversation │
+                    │  เริ่มการสนทนา        │
                     │ (Coordinator Agent) │
                     └──────────┬──────────┘
                                │
-                        What did you say?
+                        ลูกค้าพูดว่าอะไร?
                                │
         ┌───────────────┬─────────────┬───────────────┬───────────────┐
         ▼               ▼             ▼               ▼
@@ -142,7 +141,7 @@ When you see "**Transferred to [Agent Name]**" in the conversation, it means:
 │    Agent      │  │ Agent   │  │ Support Agent│  │     (DB)      │
 └───────┬───────┘  └────┬────┘  └──────────────┘  └───────────────┘
         │               │
-        │               │ (If order mentioned)
+        │               │ (เมื่อพูดถึงคำสั่งซื้อ)
         │               │
         │               ▼
         │       ┌──────────────┐
@@ -150,43 +149,43 @@ When you see "**Transferred to [Agent Name]**" in the conversation, it means:
                 │ Support Agent│
                 └──────────────┘
 
-Routes:
-• Softnix questions → Softnix Sales Agent
-• Fashion advice → Stylist Agent
-• Order/refund issues → Customer Support Agent
-• DTWIN questions → Dtwin Agent (from database)
-• Additional DB agents appear as extra branches as configured in Admin
+เส้นทาง:
+• คำถาม Softnix → Softnix Sales Agent
+• คำแนะนำแฟชั่น → Stylist Agent
+• ปัญหาคำสั่งซื้อ/คืนเงิน → Customer Support Agent
+• คำถาม DTWIN → Dtwin Agent (จาก Database)
+• Agent อื่นๆ ใน DB จะปรากฏเป็นเส้นทางเพิ่มเติมตามที่ตั้งค่าใน Admin
 ```
 
-### Why Multi-Agent?
+### ทำไมต้อง Multi-Agent?
 
-✅ **Specialized Expertise** - Each agent excels in their domain
-✅ **More Accurate Responses** - Uses domain-specific tools
-✅ **Flexible Routing** - Transfers based on context
-✅ **Easy to Extend** - Add new agents anytime
+✅ **ความเชี่ยวชาญเฉพาะด้าน** - แต่ละ Agent เก่งในเรื่องของตัวเอง
+✅ **คำตอบแม่นยำขึ้น** - ใช้เครื่องมือที่ตรงจุด
+✅ **การส่งต่อที่ยืดหยุ่น** - ส่งงานต่อตามบริบทการคุย
+✅ **ขยายงานง่าย** - เพิ่ม Agent ใหม่ได้ตลอดเวลา
 
-### Customizing Agents
+### การปรับแต่ง Agent
 
-Edit `server/app/agent_config.py` to:
-- Add new agents with specialized tools
-- Modify agent instructions and behavior
-- Configure handoff relationships
-- Add custom function tools
+แก้ไขไฟล์ `server/app/agent_config.py` เพื่อ:
+- เพิ่ม Agent ใหม่พร้อมเครื่องมือพิเศษ
+- แก้ไขคำสั่งและพฤติกรรมของ Agent
+- ตั้งค่าความสัมพันธ์การส่งต่องาน
+- เพิ่ม Custom Function Tools
 
-## Widget Embedding
+## การนำ Widget ไปใช้งาน
 
-Servio provides an easy-to-embed widget that you can add to any website, enabling instant access to your AI agents for your customers.
+Servio มี Widget ที่คุณสามารถนำไปแปะหน้าเว็บไซต์ได้ทันที เพื่อให้ลูกค้าเข้าถึง AI Agent ของคุณได้ง่ายๆ
 
-### Quick Start
+### วิธีติดตั้งด่วน (Quick Start)
 
-1. **Generate Widget Code**: Navigate to Admin Console → Tools → Widget
-2. **Configure Widget**:
-   - Choose widget type: `voice` (with push-to-talk) or `chat` (text-only)
-   - Select position: `bottom-right` or `bottom-left`
-   - Set server URL (default: `http://localhost:3000`)
-3. **Copy & Embed**: Copy the generated code and paste it into your website's HTML
+1. **สร้างโค้ด Widget**: ไปที่ Admin Console → Tools → Widget
+2. **ตั้งค่า Widget**:
+   - เลือกประเภท: `voice` (พร้อมปุ่ม Push-to-talk) หรือ `chat` (พิมพ์คุยอย่างเดียว)
+   - เลือกตำแหน่ง: ขวาล่าง (`bottom-right`) หรือ ซ้ายล่าง (`bottom-left`)
+   - ตั้งค่า Server URL (ค่าเริ่มต้น: `http://localhost:3000`)
+3. **คัดลอกและนำไปใช้**: นำโค้ดที่ได้ไปวางใน HTML ของเว็บไซต์คุณ
 
-### Widget Code Example
+### ตัวอย่างโค้ด Widget
 
 ```html
 <!-- Servio Chat Widget -->
@@ -198,272 +197,267 @@ Servio provides an easy-to-embed widget that you can add to any website, enablin
 </script>
 ```
 
-### Widget Types
+### ประเภทของ Widget
 
 **Chat Widget** (`data-type="chat"`):
-- Text-based chat interface
-- No microphone permissions required
-- Perfect for desktop users or situations where voice isn't ideal
+- อินเทอร์เฟซแบบแชทข้อความ
+- ไม่ต้องขอสิทธิ์ไมโครโฟน
+- เหมาะสำหรับผู้ใช้ Desktop หรือสถานการณ์ที่ไม่สะดวกใช้เสียง
 
 **Voice Widget** (`data-type="voice"`):
-- Push-to-talk voice interaction
-- Requests microphone permission
-- Ideal for hands-free operation
+- คุยด้วยเสียงแบบ Push-to-talk
+- จะขอสิทธิ์เข้าถึงไมโครโฟน
+- เหมาะสำหรับการใช้งานแบบ Hands-free
 
-### Customization
+### การปรับแต่ง
 
-The widget automatically:
-- Adapts to your agent branding (displays agent name and logo)
-- Matches your theme (supports light/dark mode)
-- Responds to user interactions with visual feedback
-- Shows conversation history with proper formatting
-- Handles agent transfers seamlessly
+ตัว Widget จะทำสิ่งเหล่านี้ให้อัตโนมัติ:
+- ปรับ Branding ตาม Agent (แสดงชื่อและโลโก้)
+- เข้ากับธีมของคุณ (รองรับ Light/Dark mode)
+- ตอบสนองต่อการสัมผัสด้วย Visual Feedback
+- แสดงประวัติการสนทนาพร้อมจัดรูปแบบสวยงาม
+- จัดการเรื่องการส่งต่อ Agent ให้เนียนไปกับการคุย
 
 ## File Store Agents
 
-The app includes a **File Store Agent** system that allows you to create document search agents powered by Google's Gemini File Search API. This enables your AI agents to answer questions based on your uploaded documents.
+แอปฯ นี้มาพร้อมระบบ **File Store Agent** ที่ช่วยให้คุณสร้าง Agent ค้นหาเอกสารได้ โดยใช้พลังของ Google Gemini File Search API ทำให้ AI ตอบคำถามจากเอกสารที่คุณอัปโหลดได้
 
-### What are File Store Agents?
+### File Store Agents คืออะไร?
 
-File Store Agents are specialized agents that can search and retrieve information from a collection of documents you upload. They use Gemini's advanced RAG (Retrieval-Augmented Generation) capabilities to provide accurate answers with source citations.
+คือ Agent พิเศษที่สามารถค้นหาและดึงข้อมูลจากชุดเอกสารที่คุณอัปโหลด โดยใช้ความสามารถ RAG (Retrieval-Augmented Generation) ของ Gemini เพื่อให้คำตอบที่ถูกต้องพร้อมอ้างอิงแหล่งที่มา
 
-### Key Features
+### คุณสมบัติเด่น
 
-✅ **Multi-File Upload** - Upload multiple documents at once (PDF, TXT, MD, DOC, DOCX)
-✅ **Drag-and-Drop Interface** - Easy file upload with visual feedback
-✅ **Auto-Tool Creation** - Automatically creates a search tool when you create a file store
-✅ **File Management** - Add or remove files from stores at any time
-✅ **Detailed Testing** - Test queries with grounding sources and metadata
-✅ **Thai Filename Support** - Handles non-ASCII characters automatically
-✅ **Progress Tracking** - Visual progress bars during file uploads
+✅ **Multi-File Upload** - อัปโหลดทีละหลายไฟล์ได้ (PDF, TXT, MD, DOC, DOCX)
+✅ **Drag-and-Drop Interface** - ลากไฟล์มาวางเพื่ออัปโหลดได้ง่ายๆ
+✅ **Auto-Tool Creation** - สร้างเครื่องมือค้นหาให้อัตโนมัติทันทีที่สร้าง File Store
+✅ **File Management** - เพิ่มหรือลบไฟล์ได้ตลอดเวลา
+✅ **Detailed Testing** - ทดสอบการค้นหาพร้อมดูแหล่งอ้างอิงและ Metadata
+✅ **Thai Filename Support** - รองรับชื่อไฟล์ภาษาไทยอัตโนมัติ
+✅ **Progress Tracking** - มีแถบแสดงความคืบหน้าขณะอัปโหลด
 
-### How to Create a File Store Agent
+### วิธีสร้าง File Store Agent
 
-1. **Navigate to Admin Console**
-   - Go to `http://localhost:3001/admin` (or your configured port)
-   - Click "Agents" in the sidebar
-   - Switch to the "File Store Agents" tab
+1. **ไปที่ Admin Console**
+   - เข้าไปที่ `http://localhost:3001/admin` (หรือพอร์ตที่คุณตั้งไว้)
+   - คลิกเมนู "Agents" ด้านข้าง
+   - เลือกแท็บ "File Store Agents"
 
-2. **Create a New File Store**
-   - Click "New File Store" button
-   - Enter a descriptive display name (e.g., "Product Documentation")
-   - Upload your documents (supports multiple files)
-   - Check "Create Tool Automatically" (default: enabled)
-   - Click "Create File Store"
+2. **สร้าง File Store ใหม่**
+   - คลิกปุ่ม "New File Store"
+   - ตั้งชื่อที่สื่อความหมาย (เช่น "Product Documentation")
+   - อัปโหลดเอกสาร (รองรับหลายไฟล์)
+   - ติ๊กถูก "Create Tool Automatically" (ค่าเริ่มต้น: เปิด)
+   - คลิก "Create File Store"
 
-3. **The Tool is Auto-Created**
-   - When "Create Tool Automatically" is enabled, a search tool is automatically created
-   - Tool name: `{store_name}_search`
-   - This tool becomes available to all agents in your system
-   - Agents can use it to search the documents in that store
+3. **Tool จะถูกสร้างให้อัตโนมัติ**
+   - ชื่อ Tool: `{store_name}_search`
+   - Tool นี้จะพร้อมให้ทุก Agent ในระบบเลือกใช้ได้
+   - Agent จะใช้ Tool นี้ค้นหาข้อมูลในเอกสารชุดนั้น
 
-4. **Test Your File Store**
-   - Click the green "Play" button next to your file store
-   - Enter a question about your documents
-   - See the AI response with:
-     - Answer based on document content
-     - Grounding sources (which documents were referenced)
-     - Response time and metadata
+4. **ทดสอบ File Store ของคุณ**
+   - คลิกปุ่มสีเขียว "Play" ข้างๆ File Store
+   - พิมพ์คำถามเกี่ยวกับเอกสาร
+   - ดูคำตอบของ AI ซึ่งจะประกอบด้วย:
+     - คำตอบจากเนื้อหาในเอกสาร
+     - แหล่งอ้างอิง (Grounding sources) ว่าเอามาจากไฟล์ไหน
+     - เวลาที่ใช้ตอบและ Metadata
 
-5. **Manage Files**
-   - Click the blue "Upload" button to manage files
-   - View all files in the store
-   - Upload additional files
-   - Delete individual files
+5. **จัดการไฟล์**
+   - คลิกปุ่มสีฟ้า "Upload" เพื่อจัดการไฟล์
+   - ดูรายชื่อไฟล์ทั้งหมด
+   - อัปโหลดเพิ่ม หรือลบไฟล์บางตัวออก
 
-### Example Use Cases
+### ตัวอย่างการใช้งาน (Use Cases)
 
-**Product Documentation**
+**Product Documentation** (คู่มือสินค้า)
 ```
 Store: "Product Manuals"
 Files: product_guide.pdf, faq.pdf, specifications.pdf
-Use case: Customer support agents can answer technical questions
+Use case: ให้ Customer support agent ตอบคำถามเชิงเทคนิค
 ```
 
-**HR Knowledge Base**
+**HR Knowledge Base** (ฝ่ายบุคคล)
 ```
 Store: "HR Policies"
 Files: employee_handbook.pdf, leave_policy.pdf, benefits.pdf
-Use case: HR chatbot can answer employee policy questions
+Use case: ให้ HR Chatbot ตอบคำถามเรื่องสวัสดิการพนักงาน
 ```
 
-**Legal Documents**
+**Legal Documents** (กฎหมาย)
 ```
 Store: "Legal Contracts"
 Files: contract_template.pdf, terms.pdf, privacy_policy.pdf
-Use case: Legal assistant can help with contract questions
+Use case: ให้ผู้ช่วยกฎหมายช่วยดูเงื่อนไขในสัญญา
 ```
 
-### Using File Store Tools in Agents
+### การนำ Tool ไปใช้กับ Agent
 
-Once a file store is created with auto-tool enabled, you can assign the tool to any agent:
+เมื่อสร้าง File Store แบบเปิด auto-tool แล้ว คุณสามารถนำ Tool ไปใส่ให้ Agent ตัวไหนก็ได้:
 
-1. Go to "Agents" tab in Admin
-2. Create or edit an agent
-3. In the "Tools" section, select the auto-created tool (e.g., "product_docs_search")
-4. Save the agent
+1. ไปที่แท็บ "Agents" ใน Admin
+2. สร้างหรือแก้ไข Agent
+3. ในส่วน "Tools" ให้เลือก Tool ที่ถูกสร้างขึ้น (เช่น "product_docs_search")
+4. กด Save Agent
 
-Now when users talk to that agent, it can search your documents to answer questions!
+เพียงเท่านี้ เมื่อผู้ใช้คุยกับ Agent ตัวนั้น มันก็จะสามารถค้นหาเอกสารของคุณเพื่อมาตอบคำถามได้!
 
-### API Configuration
+### การตั้งค่า API
 
-To use File Store Agents, you need a Gemini API key:
+การใช้ File Store Agents จำเป็นต้องมี Gemini API key:
 
-1. Get your API key from: https://ai.google.dev/
-2. Add to your `.env` file:
+1. ขอ API key ที่: https://ai.google.dev/
+2. ใส่ในไฟล์ `.env`:
    ```bash
    GEMINI_API_KEY=your_api_key_here
    ```
 
-### Technical Details
+### รายละเอียดทางเทคนิค
 
-- **Backend**: `server/app/gemini_service.py` handles all Gemini API interactions
-- **Database**: Stores file store metadata and file references in SQLite
-- **File Upload**: Supports up to 10MB per file (configurable)
+- **Backend**: `server/app/gemini_service.py` จัดการการเชื่อมต่อ Gemini API ทั้งหมด
+- **Database**: เก็บ Metadata ของ File Store และรายการไฟล์ใน PostgreSQL
+- **File Upload**: รองรับไฟล์ได้สูงสุด 10MB ต่อไฟล์ (ตั้งค่าเพิ่มได้)
 - **Supported Formats**: PDF, TXT, MD, DOC, DOCX
-- **Unicode Support**: Automatically handles non-ASCII filenames by creating temporary ASCII copies
+- **Unicode Support**: ระบบจัดการชื่อไฟล์ที่ไม่ใช่ภาษาอังกฤษให้อัตโนมัติ
 
-### Troubleshooting
+### การแก้ไขปัญหาเบื้องต้น (Troubleshooting)
 
-**Issue**: Files with Thai/Unicode names fail to upload
-- **Solution**: The system automatically handles this by creating temporary ASCII-named copies
+**ปัญหา**: อัปโหลดไฟล์ชื่อไทยไม่ได้
+- **วิธีแก้**: ระบบจัดการให้แล้วโดยอัตโนมัติ (เปลี่ยนชื่อไฟล์ชั่วคราวเป็น ASCII เพื่ออัปโหลด)
 
-**Issue**: Query returns no results
-- **Solution**: Make sure your documents contain relevant information and try rephrasing your query
+**ปัญหา**: ค้นหาแล้วไม่เจอผลลัพธ์
+- **วิธีแก้**: ตรวจสอบว่าเอกสารมีเนื้อหาที่เกี่ยวข้อง และลองเปลี่ยนคำถามดู
 
-**Issue**: File upload is slow
-- **Solution**: Large files take time to process. The progress bar shows upload status.
+**ปัญหา**: อัปโหลดช้า
+- **วิธีแก้**: ไฟล์ใหญ่อาจใช้เวลาประมวลผลนาน ให้ดูความคืบหน้าที่ Progress bar
 
-## Requirements
+## ความต้องการของระบบ
 
-- OpenAI API key
-  - If you're new to the OpenAI API, [sign up for an account](https://platform.openai.com/signup).
-  - Follow the [Quickstart](https://platform.openai.com/docs/quickstart) to retrieve your API key.
-- Gemini API key (optional, for File Store Agents)
-  - Get your API key from: https://ai.google.dev/
-  - Required only if you want to use File Store Agents feature
-- Node.js and npm
-- `uv` installed on your system
+- **OpenAI API Key**: จำเป็นสำหรับการทำงานของ AI และ Voice Processing
+- **Gemini API Key** (Optional): สำหรับใช้ฟีเจอร์ File Store Agents
+- **Docker**: (แนะนำ) สำหรับการรันระบบโดยไม่ต้องลงโปรแกรมอื่นเพิ่ม
+- **Node.js และ Python**: (กรณีรันแบบ Manual)
+- **uv**: (Package manager ของ Python)
 
-## How to use
+## เริ่มต้นใช้งาน
 
-### Quick Start with Docker (Recommended) 🐳
+### การใช้งานผ่าน Docker (แนะนำ) 🐳
 
-The easiest way to get started is using Docker. No need to install Node.js, Python, or uv!
+วิธีที่ง่ายที่สุดคือใช้ Docker ไม่ต้องลง Node.js, Python หรือ uv เอง!
 
-1. **Prerequisites:**
-   - Install [Docker Desktop](https://docs.docker.com/get-docker/)
-   - Make sure Docker is running
+1. **สิ่งที่ต้องมี:**
+   - ติดตั้ง [Docker Desktop](https://docs.docker.com/get-docker/)
+   - ตรวจสอบว่า Docker รันอยู่
 
-2. **Set the API keys:**
+2. **ตั้งค่า API keys:**
 
-   Create a `.env` file at the root of the project:
+   สร้างไฟล์ `.env` ที่ root ของโปรเจกต์:
 
    ```bash
    cp .env.example .env
-   # Edit .env and add your API keys:
+   # แก้ไขไฟล์ .env และใส่ API Keys ของคุณ:
    # OPENAI_API_KEY=your_openai_api_key
-   # SOFTNIX_API_KEY=your_softnix_api_key (optional)
-   # GEMINI_API_KEY=your_gemini_api_key (optional)
+   # SOFTNIX_API_KEY=your_softnix_api_key (ถ้ามี)
+   # GEMINI_API_KEY=your_gemini_api_key (ถ้ามี)
    ```
 
-3. **Clone the Repository:**
+3. **Clone Repository:**
 
    ```bash
    git clone https://github.com/rujirapongsn2/servio.git
    cd servio/
    ```
 
-4. **Run with Docker:**
+4. **รันด้วย Docker:**
 
    ```bash
-   # Start the Docker management script
+   # เริ่มสคริปต์จัดการ Docker
    ./start.sh
 
-   # Then select option 2 (Start services in background)
-   # Or select option 1 to see logs in real-time
+   # เลือกข้อ 2 (Start services in background)
+   # หรือข้อ 1 ถ้าอยากดู Log แบบ Real-time
    ```
 
-   The interactive script provides:
-   - ✅ Start/Stop services
-   - ✅ View logs (all, backend only, or frontend only)
-   - ✅ Check container status
+   สคริปต์แบบ Interactive นี้ช่วยให้คุณ:
+   - ✅ สั่ง Start/Stop services
+   - ✅ ดู Logs (รวม, เฉพาะ backend, หรือเฉพาะ frontend)
+   - ✅ เช็คสถานะ Container
    - ✅ Build/Rebuild images
-   - ✅ Clean up containers and volumes
+   - ✅ ล้าง Containers และ Volumes
 
-   **Access your application:**
+   **ช่องทางเข้าใช้งาน:**
    - Frontend: [`http://localhost:3000`](http://localhost:3000)
    - Backend API: [`http://localhost:8000`](http://localhost:8000)
    - Admin Console: [`http://localhost:3000/admin`](http://localhost:3000/admin)
    - WebSocket: `ws://localhost:8000/ws`
 
-   **Direct Docker Commands** (if you prefer):
+   **คำสั่ง Docker Direct** (ถ้าคุณถนัดแบบพิมพ์เอง):
    ```bash
-   # Build and start services
+   # Build และ Start services
    docker-compose up -d
 
-   # View logs
+   # ดู Logs
    docker-compose logs -f
 
    # Stop services
    docker-compose down
    ```
 
-### Manual Installation (Development)
+### การติดตั้งแบบ Manual (Development)
 
-If you prefer to run without Docker:
+ถ้าไม่อยากใช้ Docker:
 
-1. **Set the API keys:**
+1. **ตั้งค่า API keys:**
 
-   Create a `.env` file at the root of the project (see `.env.example` for reference):
+   สร้างไฟล์ `.env` (ดู `.env.example` เป็นแนวทาง):
 
    ```bash
-   # Required: OpenAI API key for voice agents
+   # Required: สำหรับ Voice Agents
    OPENAI_API_KEY=<your_openai_api_key>
 
-   # Optional: Softnix API key
+   # Optional: สำหรับ Softnix integration
    SOFTNIX_API_KEY=<your_softnix_api_key>
 
-   # Optional: Gemini API key for File Store Agents
+   # Optional: สำหรับ File Store Agents
    GEMINI_API_KEY=<your_gemini_api_key>
    ```
 
-   Alternatively, you can set the `OPENAI_API_KEY` environment variable [globally in your system](https://platform.openai.com/docs/libraries#create-and-export-an-api-key).
+   หรือจะตั้งค่า `OPENAI_API_KEY` เป็น environment variable ในเครื่องเลยก็ได้
 
-2. **Clone the Repository:**
+2. **Clone Repository:**
 
    ```bash
    git clone https://github.com/rujirapongsn2/servio.git
    cd servio/
    ```
 
-3. **Install dependencies:**
+3. **ติดตั้ง Dependencies:**
 
-   You will have to install both the dependencies for the front-end and the server. To do this run in the project root:
+   ต้องลง dependency ทั้งฝั่ง frontend และ server รันคำสั่งนี้ที่ root:
 
    ```bash
    make sync
    ```
 
-4. **Run the app:**
+4. **รันแอปพลิเคชัน:**
 
-   You have multiple options to start the application:
+   มีหลายทางเลือก:
 
-   **Option 1: Using Make (Production Mode)**
+   **ทางเลือก 1: ใช้ Make (Production Mode)**
    ```bash
    make serve
    ```
-   Starts the app in production mode at [`http://localhost:3000`](http://localhost:3000).
+   รันแอปในโหมด Production ที่ [`http://localhost:3000`](http://localhost:3000)
 
-   **Option 2: Development Mode with Hot Reload**
+   **ทางเลือก 2: Development Mode with Hot Reload**
    ```bash
    cd frontend && npm run dev
    ```
-   - Frontend: [`http://localhost:3001`](http://localhost:3001) (or next available port)
+   - Frontend: [`http://localhost:3001`](http://localhost:3001) (หรือพอร์ตอื่นถ้าไม่ว่าง)
    - Backend: [`http://localhost:8000`](http://localhost:8000)
    - WebSocket: `ws://localhost:8000/ws`
 
-   **Option 3: Run Separately**
+   **ทางเลือก 3: รันแยกกัน**
    ```bash
    # Terminal 1 - Frontend only
    cd frontend && npm run dev:next
@@ -472,47 +466,47 @@ If you prefer to run without Docker:
    cd server && uv run server.py
    ```
 
-   **Available Ports:**
-   - Frontend: `3000` (production) or `3001+` (development, auto-increments if busy)
+   **พอร์ตที่ใช้งาน:**
+   - Frontend: `3000` (production) หรือ `3001+` (dev)
    - Backend: `8000`
    - Admin Console: [`http://localhost:3001/admin`](http://localhost:3001/admin)
 
-## Docker Deployment
+## การ Deploy ด้วย Docker
 
-Servio includes production-ready Docker deployment with multi-container architecture.
+Servio มาพร้อมชุด Docker deployment ที่พร้อมสำหรับ Production และใช้สถาปัตยกรรมแบบ Multi-container
 
-### Architecture
+### สถาปัตยกรรม (Architecture)
 
-The Docker setup uses **docker-compose** to orchestrate two services:
+Docker setup ใช้ **docker-compose** จัดการ 2 Services หลัก:
 
 - **Backend Container** (Python 3.11 + FastAPI + uvicorn)
   - Port: 8000
-  - Auto-installs dependencies using `uv`
-  - SQLite database persisted via volume mount
-  - Health checks on `/api/admin/sessions` endpoint
+  - ติดตั้ง dependency อัตโนมัติด้วย `uv`
+  - เชื่อมต่อ PostgreSQL database ผ่าน Environment Variables
+  - มี Health checks ที่ endpoint `/api/admin/sessions`
 
 - **Frontend Container** (Node.js 20 + Next.js)
   - Port: 3000
-  - Multi-stage build for optimized image size
-  - Runs as non-root user for security
-  - Health checks on HTTP root endpoint
+  - Multi-stage build เพื่อขนาด image ที่เล็ก
+  - รันด้วย non-root user เพื่อความปลอดภัย
+  - Health checks ที่ HTTP root endpoint
 
 - **Shared Network** (`voice-agent-network`)
-  - Allows backend and frontend to communicate
-  - Internal DNS resolution (backend can reach frontend and vice versa)
+  - ให้ backend และ frontend คุยกันได้
+  - Internal DNS resolution (เรียกหากันด้วยชื่อ service ได้เลย)
 
-### Docker Files Structure
+### โครงสร้างไฟล์ Docker
 
 ```
 CSAgent/
 ├── docker-compose.yml          # Service orchestration
 ├── .env                        # Environment variables (create from .env.example)
 ├── .env.example               # Template for environment variables
-├── start.sh                   # Interactive Docker management script
+├── start.sh                   # สคริปต์ interactive สำหรับจัดการ Docker
 ├── server/
 │   ├── Dockerfile            # Backend container definition
 │   ├── .dockerignore        # Exclude unnecessary files
-│   └── data/                # SQLite database volume (auto-created)
+│   └── data/                # (Legacy) SQLite volume ถ้ายังใช้แบบเก่า
 └── frontend/
     ├── Dockerfile           # Frontend container definition (multi-stage)
     └── .dockerignore       # Exclude node_modules, .next, etc.
@@ -520,7 +514,7 @@ CSAgent/
 
 ### Environment Variables
 
-Required variables in `.env`:
+ตัวแปรที่จำเป็นใน `.env`:
 
 ```bash
 # Required
@@ -533,63 +527,57 @@ GEMINI_API_KEY=your_gemini_api_key
 # Docker Configuration (optional, defaults provided)
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
-DATABASE_PATH=/app/data/agents.db
+# DATABASE_PATH=/app/data/agents.db # ใช้ถ้ายังรัน SQLite ในบางจุด
 NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
 
-# Production CORS (comma-separated domains)
+# Production CORS (ระบุโดเมนด้วยจุลภาค)
 ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 ```
 
 ### Database Persistence
 
-The SQLite database is persisted using Docker volumes:
+- **PostgreSQL**: ข้อมูลหลักทั้งหมดจะถูกเก็บใน PostgreSQL service ที่กำหนดใน docker-compose หรือ external DB
+- **SQLite** (Legacy/Backup): ถ้ามีการใช้งาน SQLite ข้อมูลจะถูกเก็บผ่าน Volume mount: `./server/data:/app/data`
 
-- **Volume Mount**: `./server/data:/app/data`
-- **Database File**: `./server/data/agents.db`
-- **Persistence**: Data survives container restarts and rebuilds
-- **Backup**: Simply copy `./server/data/agents.db` to back up
+### การใช้สคริปต์จัดการ Docker
 
-### Using the Docker Management Script
-
-The `start.sh` script provides an interactive menu for managing Docker services:
+รัน `./start.sh` แล้วจะมีเมนูให้เลือก:
 
 ```bash
 ./start.sh
 ```
 
-**Menu Options:**
+**ตัวเลือกเมนู:**
+1. Start (foreground) - ดู Log เรียลไทม์, กด Ctrl+C เพื่อหยุด
+2. Start (background) - รันเบื้องหลัง, ใช้เมนู view logs ดูได้
+3. Stop services - หยุด Container ทั้งหมด (ข้อมูลยังอยู่)
+4. Restart services - รีสตาร์ท Frontend และ Backend
+5. Build/Rebuild - สร้าง Image ใหม่ (ทำหลังแก้โค้ด)
+6. View logs - ดู Log ของระบบ
+7. Check status - ดูสถานะ Container และ URL
+8. Clean up - ลบ Container และ Volume (⚠️ ระวังข้อมูลหาย)
+0. Exit - ออก
 
-1. **Start services (foreground)** - See logs in real-time, Ctrl+C to stop
-2. **Start services (background)** - Run in background, use logs option to view output
-3. **Stop services** - Stop all containers (data is preserved)
-4. **Restart services** - Restart both frontend and backend
-5. **Build/Rebuild images** - Rebuild Docker images (use after code changes)
-6. **View logs** - View logs for all services, backend only, or frontend only
-7. **Check status** - See container status and access URLs
-8. **Clean up** - Remove containers and volumes (⚠️ deletes database!)
-0. **Exit** - Quit the script
+### คู่มือ Production Deployment
 
-### Production Deployment Guide
+ส่วนนี้แนะนำการ Deploy บน Production Server พร้อม SSL/HTTPS
 
-This guide covers deploying Servio to production servers with SSL/HTTPS support.
+#### สิ่งที่ต้องเตรียม (Prerequisites)
+- Server ที่มี Domain name (เช่น `yourdomain.com`)
+- DNS records ชี้มาที่ IP Server ของคุณ
+- Firewall เปิดพอร์ต 80 และ 443
 
-#### Prerequisites
+#### ขั้นตอนที่ 1: ตั้งค่า Environment Variables
 
-- A server with a domain name (e.g., `yourdomain.com`)
-- DNS records pointing to your server's IP address
-- Ports 80 and 443 open on your firewall
-
-#### Step 1: Configure Environment Variables
-
-Create or update `.env` file with production settings:
+สร้างหรืออัปเดตไฟล์ `.env` สำหรับ Production:
 
 ```bash
-# API Keys (Required)
+# API Keys (จำเป็น)
 OPENAI_API_KEY=your_openai_api_key
 SOFTNIX_API_KEY=your_softnix_api_key  # Optional
 GEMINI_API_KEY=your_gemini_api_key    # Optional
 
-# Database Configuration
+# ตั้งค่า Database (PostgreSQL)
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_secure_password_here
 POSTGRES_DB=voice_agents
@@ -603,23 +591,23 @@ FRONTEND_PORT=3000
 # Production Environment
 ENVIRONMENT=production
 
-# ⚠️ CRITICAL: Production WebSocket URL
-# For HTTPS deployment, use wss:// (secure WebSocket)
-# Replace yourdomain.com with your actual domain
+# ⚠️ สำคัญมาก: Production WebSocket URL
+# สำหรับ HTTPS Deployment ต้องใช้ wss:// (secure WebSocket)
+# แทนที่ yourdomain.com ด้วยโดเมนจริงของคุณ
 NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
 
-# CORS Origins (comma-separated)
+# CORS Origins (คั่นด้วย comma)
 ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 ```
 
-**Important Notes:**
-- `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` must use `wss://` (not `ws://`) for HTTPS sites
-- This variable is baked into the frontend build - **rebuild required** after changes
-- Microphone access requires HTTPS in production (browsers block HTTP microphone access)
+**หมายเหตุสำคัญ:**
+- `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` ต้องเป็น `wss://` (ไม่ใช่ `ws://`) สำหรับเว็บ HTTPS
+- ตัวแปรนี้จะถูกฝังลงไปตอน Build frontend - **ต้อง Rebuild ใหม่** ทุกครั้งที่เปลี่ยนค่า
+- Browser ปัจจุบันบังคับให้ใช้ HTTPS เท่านั้นถึงจะอนุญาตให้ใช้ไมโครโฟนได้
 
-#### Step 2: Create Frontend Build-time Configuration
+#### ขั้นตอนที่ 2: สร้าง Frontend Build-time Configuration
 
-Next.js requires `NEXT_PUBLIC_*` variables at **build time**. Create `.env.production` in the `frontend/` directory:
+Next.js ต้องการตัวแปร `NEXT_PUBLIC_*` ในขั้นตอน **build time**. ให้สร้างไฟล์ `.env.production` ในโฟลเดอร์ `frontend/`:
 
 ```bash
 cd /path/to/servio/frontend
@@ -627,42 +615,28 @@ echo "NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws" > .env.production
 cd ..
 ```
 
-#### Step 3: Set Up SSL/HTTPS with Caddy (Recommended)
+#### ขั้นตอนที่ 3: ตั้งค่า SSL/HTTPS ด้วย Caddy (แนะนำ)
 
-Caddy automatically generates and renews SSL certificates using Let's Encrypt.
+Caddy จะจัดการเรื่อง SSL certificate (Let's Encrypt) และการต่ออายุให้อัตโนมัติ
 
-##### For Debian/Ubuntu:
-```bash
-sudo apt update
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
-```
+##### การติดตั้ง (Debian/Ubuntu):
+*(ดูคำสั่งติดตั้งละเอียดใน English section หรือเว็บ Caddy)*
 
-##### For AlmaLinux/RHEL/CentOS:
-```bash
-sudo dnf install -y dnf-plugins-core
-sudo dnf config-manager --add-repo https://copr.fedorainfracloud.org/coprs/g/caddy/caddy/repo/epel-9/group_caddy-caddy-epel-9.repo
-sudo dnf install -y caddy
-```
-
-##### Create Caddyfile:
+##### สร้าง Caddyfile:
 ```bash
 sudo nano /etc/caddy/Caddyfile
 ```
 
-Add this configuration (replace `yourdomain.com` with your domain):
+ใส่ Config (แก้ `yourdomain.com` เป็นของคุณ):
 
 ```caddy
 yourdomain.com {
-    # Caddy automatically handles SSL certificates
+    # Caddy จัดการ SSL ให้เอง
 
     # Frontend (Next.js)
     reverse_proxy localhost:3000
 
-    # WebSocket endpoint for voice agent
+    # WebSocket endpoint
     handle /ws {
         reverse_proxy localhost:8000 {
             header_up Upgrade {http.request.header.Upgrade}
@@ -670,7 +644,7 @@ yourdomain.com {
         }
     }
 
-    # Backend API endpoints
+    # API endpoints
     handle /api/* {
         reverse_proxy localhost:8000
     }
@@ -682,423 +656,102 @@ yourdomain.com {
 }
 ```
 
-Validate and start Caddy:
-
+ตรวจสอบและเริ่มทำงาน:
 ```bash
-# Validate configuration
 sudo caddy validate --config /etc/caddy/Caddyfile
-
-# Format Caddyfile (optional but recommended)
-sudo caddy fmt --overwrite /etc/caddy/Caddyfile
-
-# Enable and start Caddy
 sudo systemctl enable caddy
 sudo systemctl start caddy
-sudo systemctl status caddy
 ```
 
-##### Configure Firewall:
-
-**For Debian/Ubuntu (ufw):**
-```bash
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw reload
-```
-
-**For AlmaLinux/RHEL/CentOS (firewalld):**
-```bash
-sudo firewall-cmd --permanent --add-service=http
-sudo firewall-cmd --permanent --add-service=https
-sudo firewall-cmd --reload
-```
-
-**For AlmaLinux with SELinux:**
-```bash
-# Allow Caddy to make network connections
-sudo setsebool -P httpd_can_network_connect 1
-```
-
-#### Step 4: Build and Deploy Application
+#### ขั้นตอนที่ 4: Build และ Deploy Application
 
 ```bash
-# Navigate to project directory
 cd /path/to/servio
 
-# Build frontend with production environment variables
+# Build frontend พร้อม production vars
 docker compose build --no-cache frontend
 
 # Build backend
 docker compose build backend
 
-# Start all services
-docker compose up -d
-
-# Verify services are running
-docker compose ps
-```
-
-#### Step 5: Verify Deployment
-
-1. **Check SSL Certificate:**
-   ```bash
-   curl -I https://yourdomain.com
-   ```
-   Should return `HTTP/2 200` with SSL headers
-
-2. **Test WebSocket Connection:**
-   Open browser Developer Console (F12) and check for:
-   - No "Mixed Content" errors
-   - WebSocket connects to `wss://yourdomain.com/ws`
-   - No connection errors
-
-3. **Test Microphone Access:**
-   - Visit `https://yourdomain.com`
-   - Click "Press to call" button
-   - Browser should request microphone permission
-   - Button should become enabled (green)
-
-#### Common Issues and Solutions
-
-##### Issue 1: "Press to call" button is disabled
-
-**Symptoms:**
-- Button appears grayed out
-- Console shows: `WebSocket connection failed` or `Mixed Content` error
-
-**Solution:**
-```bash
-# Check if frontend has correct WebSocket URL
-cd /path/to/servio/frontend
-cat .env.production
-
-# Should show:
-# NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
-
-# If missing or wrong, recreate it:
-echo "NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws" > .env.production
-
-# Rebuild frontend
-cd ..
-docker compose build --no-cache frontend
-docker compose up -d frontend
-
-# Wait 1-2 minutes for build to complete, then refresh browser
-```
-
-##### Issue 2: Microphone blocked on HTTP
-
-**Error:** `NotAllowedError: Permission denied` or no microphone prompt
-
-**Cause:** Browsers require HTTPS for microphone access (except localhost)
-
-**Solution:**
-- Ensure you're accessing via `https://yourdomain.com` (not `http://`)
-- Verify SSL certificate is valid (no browser warnings)
-- Check Caddy logs: `sudo journalctl -u caddy -f`
-
-##### Issue 3: WebSocket connection fails
-
-**Console Error:**
-```
-[blocked] The page at https://yourdomain.com/ requested insecure content from ws://localhost:8000/ws
-```
-
-**Cause:** Frontend is using default WebSocket URL instead of production URL
-
-**Solution:**
-1. Verify `.env` has: `NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws`
-2. Create `frontend/.env.production` with same value
-3. Rebuild frontend: `docker compose build --no-cache frontend`
-4. Restart: `docker compose up -d frontend`
-
-##### Issue 4: Caddy SSL certificate fails
-
-**Error:** `acme: error: 400`
-
-**Possible causes:**
-- DNS not pointing to server IP
-- Ports 80/443 not accessible from internet
-- Domain already has SSL certificate from another service
-
-**Solution:**
-```bash
-# Check DNS resolution
-nslookup yourdomain.com
-
-# Test port accessibility from outside (use online tool like https://www.yougetsignal.com/tools/open-ports/)
-# Or from another machine:
-telnet yourdomain.com 80
-telnet yourdomain.com 443
-
-# Check Caddy logs
-sudo journalctl -u caddy -n 100 --no-pager
-
-# Try manual certificate issuance
-sudo caddy trust
-sudo systemctl restart caddy
-```
-
-#### Step 6: Monitor and Maintain
-
-```bash
-# View application logs
-docker compose logs -f
-
-# View Caddy logs
-sudo journalctl -u caddy -f
-
-# Check SSL certificate expiry
-curl -vI https://yourdomain.com 2>&1 | grep -i expire
-
-# Restart services
-docker compose restart
-
-# Update application
-git pull
-docker compose build --no-cache
-docker compose up -d
-```
-
-#### Alternative: Using Nginx Instead of Caddy
-
-If you prefer Nginx:
-
-```bash
-# Install Nginx and Certbot
-sudo apt install -y nginx certbot python3-certbot-nginx  # Debian/Ubuntu
-# OR
-sudo dnf install -y nginx certbot python3-certbot-nginx  # AlmaLinux
-
-# Create Nginx config
-sudo nano /etc/nginx/sites-available/servio  # Debian/Ubuntu
-# OR
-sudo nano /etc/nginx/conf.d/servio.conf      # AlmaLinux
-```
-
-Add this configuration:
-
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /ws {
-        proxy_pass http://localhost:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 86400;
-    }
-
-    location /api {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-    }
-
-    location /assets {
-        proxy_pass http://localhost:8000;
-    }
-}
-```
-
-Enable and get SSL certificate:
-
-```bash
-# Debian/Ubuntu
-sudo ln -s /etc/nginx/sites-available/servio /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-
-# AlmaLinux (config already in conf.d/)
-sudo nginx -t
-sudo systemctl restart nginx
-
-# Get SSL certificate (both)
-sudo certbot --nginx -d yourdomain.com
-
-# Enable auto-renewal
-sudo systemctl enable certbot.timer
-```
-
-#### Environment Variables Quick Reference
-
-| Variable | Example | Required | Notes |
-|----------|---------|----------|-------|
-| `OPENAI_API_KEY` | `sk-...` | Yes | OpenAI API key |
-| `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` | `wss://yourdomain.com/ws` | Yes | **Must use `wss://` for HTTPS!** |
-| `ALLOWED_ORIGINS` | `https://yourdomain.com` | Yes | Comma-separated CORS origins |
-| `POSTGRES_PASSWORD` | `your_secure_password` | Yes | Database password |
-| `DATABASE_URL` | `postgresql://postgres:pass@postgres:5432/db` | Yes | Full database connection URL |
-| `ENVIRONMENT` | `production` | Recommended | Set to `production` |
-| `SOFTNIX_API_KEY` | `eyJ...` | Optional | For Softnix integration |
-| `GEMINI_API_KEY` | `AIza...` | Optional | For File Store Agents |
-
-#### Security Checklist
-
-- [ ] Use strong database passwords
-- [ ] Enable HTTPS/SSL (Caddy or Certbot)
-- [ ] Set `ENVIRONMENT=production` in `.env`
-- [ ] Configure `ALLOWED_ORIGINS` with your domain only
-- [ ] Use `wss://` (not `ws://`) for WebSocket URL
-- [ ] Rebuild frontend after environment variable changes
-- [ ] Keep Docker images updated
-- [ ] Regularly backup database: `cp server/data/agents.db backup/`
-- [ ] Monitor logs for errors
-- [ ] Test SSL certificate renewal
-
-### Troubleshooting
-
-**Port already in use:**
-```bash
-# Find process using port 3000
-lsof -ti :3000 | xargs kill -9
-
-# Or change port in .env
-FRONTEND_PORT=3001
-```
-
-**Database not persisting:**
-```bash
-# Check volume mount
-docker-compose exec backend ls -la /app/data/
-
-# Verify DATABASE_PATH environment variable
-docker-compose exec backend env | grep DATABASE_PATH
-```
-
-**Frontend can't reach backend:**
-```bash
-# Check network
-docker network inspect csagent_voice-agent-network
-
-# Test connection from frontend container
-docker-compose exec frontend ping backend
-```
-
-**View container logs:**
-```bash
-# All services
-docker-compose logs -f
-
-# Backend only
-docker-compose logs -f backend
-
-# Frontend only
-docker-compose logs -f frontend
-
-# Last 100 lines
-docker-compose logs --tail=100
-```
-
-### Docker Commands Quick Reference
-
-```bash
-# Build images
-docker-compose build
-docker-compose build --no-cache  # Rebuild from scratch
-
 # Start services
-docker-compose up                # Foreground (see logs)
-docker-compose up -d            # Background (detached)
-
-# Stop services
-docker-compose down             # Stop and remove containers
-docker-compose down -v          # Also remove volumes (⚠️ deletes data!)
-
-# View status
-docker-compose ps               # Container status
-docker-compose top              # Running processes
-
-# Restart
-docker-compose restart          # Restart all services
-docker-compose restart backend  # Restart specific service
-
-# Execute commands in containers
-docker-compose exec backend bash    # Open bash in backend
-docker-compose exec frontend sh     # Open sh in frontend (Alpine)
-
-# View resource usage
-docker stats                    # Real-time stats
+docker compose up -d
 ```
 
-## Admin & Agents
+#### ขั้นตอนที่ 5: ตรวจสอบการ Deployment
+
+1. **เช็ค SSL**: เข้า `https://yourdomain.com` ต้องขึ้นแม่กุญแจ
+2. **เช็ค WebSocket**: เปิด Console (F12) ต้องไม่มี Error แดงๆ และต่อ `wss://...` สำเร็จ
+3. **เช็คไมโครโฟน**: กดปุ่มโทร Browser ต้องขออนุญาตใช้ไมค์ และปุ่มต้องกดได้ (สีเขียว)
+
+#### ปัญหาที่พบบ่อย (Common Issues)
+
+**ปัญหา 1: ปุ่มโทรเป็นสีเทา กดไม่ได้**
+- **สาเหตุ**: WebSocket เชื่อมต่อไม่ได้ หรือ Mixed Content
+- **แก้**: เช็ค `.env.production` ใน frontend ว่าเป็น `wss://` ถูกต้องไหม แล้ว Build frontend ใหม่
+
+**ปัญหา 2: ไมโครโฟนใช้ไม่ได้ / Browser บล็อก**
+- **สาเหตุ**: เข้าเว็บผ่าน `http://` ธรรมดา
+- **แก้**: ต้องเข้าผ่าน `https://` เท่านั้น
+
+**ปัญหา 3: WebSocket Error**
+- **Console แจ้ง**: `requested insecure content from ws://localhost:8000/ws`
+- **แก้**: Frontend ยังจำค่าเก่าที่เป็น localhost อยู่ ให้แก้ `.env` เป็นโดเมนจริง แลัว Rebuild
+
+#### Checklist ความปลอดภัย
+- [ ] ตั้งรหัสผ่าน Database ให้ยาก
+- [ ] เปิด HTTPS/SSL
+- [ ] ตั้งค่า `ENVIRONMENT=production`
+- [ ] ตั้ง `ALLOWED_ORIGINS` ให้รับเฉพาะโดเมนเรา
+- [ ] ใช้ `wss://` สำหรับ WebSocket
+- [ ] Backup Database สม่ำเสมอ
+
+## การใช้งาน Admin & Agents
 
 ### Admin Console
-- URL: `http://localhost:3001/admin` (or next available port in development mode)
-- Default login: `admin` / set via database; token stored in `localStorage` for subsequent requests.
+- เข้าที่: `http://localhost:3001/admin` (หรือพอร์ตอื่นใน dev mode)
+- ล็อกอิน: `admin` (รหัสผ่านตามที่ตั้งใน DB; token จะถูกจำไว้ใน browser)
 
-### Agents Management
-The Admin Console provides two tabs for managing your AI agents:
+### การจัดการ Agents (Agents Management)
+มี 2 แท็บหลัก:
 
 #### 1. **Agents Tab**
-- Create, edit, and delete traditional agents
-- Configure agent instructions, models, and tools
-- Set up agent handoffs and relationships
-- Test agents directly in the browser
+- สร้าง/แก้ไข/ลบ Agent ทั่วไป
+- ใส่คำสั่ง (Instructions), เลือกรุ่นโมเดล, ใส่ Tools
+- ตั้งค่าการส่งต่อ (Handoffs)
+- ทดสอบคุยกับ Agent ได้เลยตรงนั้น
 
 #### 2. **File Store Agents Tab**
-- Create document search agents powered by Gemini File Search
-- Upload and manage document collections
-- Auto-create search tools for your file stores
-- Test queries with grounding sources
-- Manage files: add, remove, or update documents
+- สร้าง Agent ค้นหาเอกสารด้วย Gemini
+- อัปโหลดไฟล์ จัดการไฟล์
+- สร้าง Tool ค้นหาให้อัตโนมัติ (Auto-create tools)
+- ทดสอบคำถามพร้อมดูแหล่งอ้างอิง
 
 ### Dynamic Coordinator + DB Agents
-- The backend composes a coordinator agent at runtime that includes agents from the database as handoffs. If you create a "Dtwin Agent" in Admin, the coordinator can transfer to it when a user asks about DTWIN.
-- Reset in-call agent state triggers rebuilding the coordinator with latest DB changes.
-- File Store Agent tools are automatically available to all agents once created.
+- ระบบจะสร้าง Coordinator agent ขึ้นมาตอน Run time โดยรวมเอา Agent ที่มีใน Database เข้าไปเป็นเงื่อนไขการส่งต่อ (Handoffs) ด้วย
+- ถ้าคุณสร้าง "Dtwin Agent" ใน Admin, ตัว Coordinator ก็จะส่งต่อให้ได้เมื่อ User ถามถึง DTWIN
+- File Store Agent tools ที่สร้างไว้ ทุก Agent สามารถดึงไปใช้ได้
 
 ### Dtwin Agent Tips
-- For offline/dev environments, disable MCP tools to avoid network errors:
-  - Add to `.env`: `DISABLE_MCP=1`
-- To make Dtwin testable without network, run:
-  ```bash
-  uv run python server/scripts/configure_dtwin_fallback.py
-  ```
-  This removes MCP tools from Dtwin and attaches a built-in mock tool (`get_past_orders`).
-
-### Testing Agents (API)
-- Test endpoint streams output and aggregates text:
-  ```bash
-  curl -X POST \
-    -H "Authorization: Bearer <ADMIN_TOKEN>" \
-    -H "Content-Type: application/json" \
-    -d '{"message":"hello"}' \
-    http://localhost:8000/api/admin/agents/<id>/test
-  ```
-  If MCP is disabled or unreachable, the response still returns 200 with an explanatory message rather than a 500.
+- สำหรับการทำ Offline/Dev environment ให้ปิด MCP tools เพื่อไม่ให้ Error:
+  - เพิ่มใน `.env`: `DISABLE_MCP=1`
+- ถ้าจะเทส Dtwin แบบไม่ต่อ Network ให้รัน: `uv run python server/scripts/configure_dtwin_fallback.py` (จะเปลี่ยนไปใช้ Mock tool แทน)
 
 ## Screenshots & GIFs
 
 ### Admin Dashboard
-The Servio admin dashboard provides a comprehensive overview of your voice agent system with real-time statistics and quick actions.
+หน้าแดชบอร์ดแสดงภาพรวมระบบพร้อมสถิติเรียลไทม์
 
 ![Admin Dashboard](dashboard-preview.png)
 
-**Key Features:**
-- **System Overview**: View total agents, tools, built-in tools, and custom tools at a glance
-- **Quick Actions**: Create new agents, manage existing agents, and add custom tools directly from the dashboard
-- **Clean Interface**: Modern, responsive design with easy navigation
-- **Agent Management**: Navigate between Dashboard, Agents, Online Agent monitoring, Tools, Widget configuration, and Settings
+**ฟีเจอร์เด่น:**
+- **System Overview**: ดูจำนวน Agent, Tool ทั้งหมด
+- **Quick Actions**: ปุ่มลัดสร้าง Agent หรือ Tool ใหม่
+- **Clean Interface**: ดีไซน์ทันสมัย ใช้งานง่าย
+- **เมนูจัดการ**: แถบด้านซ้ายสำหรับเข้าถึงฟังก์ชันต่างๆ
 
-### Dtwin Transfer (expected)
-- Add your screenshot or GIF demonstrating: user asks about "DTWIN" → triage transfers to "Dtwin Agent" → agent responds.
-- Place files at:
-  - `docs/images/dtwin-transfer.png`
-  - `docs/images/dtwin-transfer.gif` (optional)
-
-Example embed (auto-picks whichever exists):
+### Dtwin Transfer (การส่งต่องาน)
+ภาพตัวอย่างการที่ User ถามถึง DTWIN แล้วระบบส่งต่อไปยัง Dtwin Agent:
 
 ![Dtwin transfer](docs/images/dtwin-transfer.png)
 
@@ -1108,32 +761,24 @@ Example embed (auto-picks whichever exists):
 ### Admin Settings Saved
 ![Admin settings success](.playwright-mcp/admin-settings-success.png)
 
-### Tips to Capture a GIF
-- macOS: QuickTime Player → New Screen Recording → export → convert to GIF via `ffmpeg` or an online tool.
-- CLI (ffmpeg): `ffmpeg -i input.mov -vf "fps=12,scale=1200:-1:flags=lanczos" -loop 0 docs/images/dtwin-transfer.gif`
+## การใช้งานแอปพลิเคชัน (Using the App)
 
-## Using the App
+### อินเทอร์เฟซแบบ Push-to-Talk
 
-### Push-to-Talk Interface
-
-The app uses a **Push-to-Talk** system for voice interaction:
-
-1. **Start a Call**: Click the green **Call** button 🟢
-2. **Push-to-Talk Button Appears**: A large blue microphone button will appear
-3. **Hold to Speak**:
-   - Press and hold the button (mouse/touch)
-   - Button turns red 🔴 and shows "Recording..."
-   - Speak your message
-4. **Release to Send**:
-   - Release the button
-   - Audio is sent immediately to the agent
-   - Button returns to blue, ready for next message
-5. **End Call**: Click the red "End Call" button to finish
+1. **เริ่มโทร**: กดปุ่มโทรสีเขียว 🟢
+2. **ปุ่มพูดจะปรากฏ**: ปุ่มไมโครโฟนสีฟ้าใหญ่ๆ
+3. **กดค้างเพื่อพูด**:
+   - กดปุ่มค้างไว้ (คลิกเมาส์ หรือแตะหน้าจอ)
+   - ปุ่มเปลี่ยนเป็นสีแดง 🔴 และขึ้นว่า "Recording..."
+   - พูดข้อความของคุณ
+4. **ปล่อยเพื่อส่ง**:
+   - ปล่อยปุ่มเมื่อพูดจบ
+   - เสียงจะถูกส่งไปประมวลผลทันที
+   - ปุ่มกลับเป็นสีฟ้า พร้อมรับคำสั่งต่อไป
+5. **วางสาย**: กดปุ่มวางสายสีแดง เพื่อจบการทำงาน
 
 ### Console Debugging
-
-Open your browser's Developer Console (F12) to see real-time logs:
-
+กด F12 เพื่อดู Log การทำงานได้:
 ```
 📞 Call started - Ready for Push-to-Talk
 🎤 Push-to-Talk: Recording started
@@ -1143,31 +788,31 @@ Transferred to Stylist Agent
 📞 Call ended
 ```
 
-### Example Conversations
+### ตัวอย่างบทสนทนา
 
-**Fashion Advice**:
+**ขอคำแนะนำแฟชั่น**:
 ```
-You: [Press & hold] "What should I wear for summer?"
-Stylist Agent: "I recommend breathable cotton t-shirts and linen shorts..."
+คุณ: [กดค้าง] "หน้าร้อนใส่ชุดอะไรดี?"
+Stylist Agent: "แนะนำเสื้อยืดผ้าฝ้ายระบายอากาศครับ..."
 
-You: [Press & hold] "Show me some trendy styles in Bangkok"
-Stylist Agent: [Uses WebSearch] "Current trends in Bangkok include..."
+คุณ: [กดค้าง] "ขอเทรนด์ในกรุงเทพฯ ช่วงนี้หน่อย"
+Stylist Agent: [Uses WebSearch] "เทรนด์ตอนนี้ที่กำลังมาคือ..."
 ```
 
-**Order Management**:
+**จัดการคำสั่งซื้อ**:
 ```
-You: [Press & hold] "Check my orders"
+คุณ: [กดค้าง] "เช็ครายการสั่งซื้อให้หน่อย"
 → Transferred to Customer Support Agent
-Customer Support: "You have 9 orders. The most recent is AB472..."
+Customer Support: "คุณมี 9 รายการครับ ล่าสุดคือ AB472..."
 
-You: [Press & hold] "Refund order AB472"
-Customer Support: [Uses submit_refund_request] "Refund processed successfully"
+คุณ: [กดค้าง] "ขอคืนเงินรายการ AB472"
+Customer Support: [Uses submit_refund_request] "ดำเนินการคืนเงินให้เรียบร้อยครับ"
 ```
 
 ## Contributing
 
-You are welcome to open issues or submit PRs to improve this app, however, please note that we may not review all suggestions.
+ยินดีต้อนรับทุก Issues และ Pull Requests เพื่อปรับปรุงแอปพลิเคชันนี้
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+โปรเจกต์นี้ใช้สัญญาอนุญาตแบบ MIT ดูรายละเอียดในไฟล์ LICENSE
