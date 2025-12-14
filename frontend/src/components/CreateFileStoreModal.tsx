@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, AlertCircle } from "lucide-react";
 import MultiFileUploader from "./MultiFileUploader";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface CreateFileStoreModalProps {
   onClose: () => void;
@@ -18,6 +19,7 @@ export default function CreateFileStoreModal({
   onClose,
   onSuccess,
 }: CreateFileStoreModalProps) {
+  const apiBaseUrl = getApiBaseUrl();
   const [displayName, setDisplayName] = useState("");
   const [createTool, setCreateTool] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
@@ -32,7 +34,7 @@ export default function CreateFileStoreModal({
     const fetchExistingStores = async () => {
       try {
         const token = localStorage.getItem("adminToken");
-        const response = await fetch("http://localhost:8000/api/admin/file-stores", {
+        const response = await fetch(`${apiBaseUrl}/api/admin/file-stores`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (response.ok) {
@@ -44,7 +46,7 @@ export default function CreateFileStoreModal({
       }
     };
     fetchExistingStores();
-  }, []);
+  }, [apiBaseUrl]);
 
   // Validate name when it changes
   useEffect(() => {
@@ -85,7 +87,7 @@ export default function CreateFileStoreModal({
 
       // Step 1: Create file store
       const token = localStorage.getItem("adminToken");
-      const response = await fetch("http://localhost:8000/api/admin/file-stores", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/file-stores`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -119,7 +121,7 @@ export default function CreateFileStoreModal({
         formData.append("file", file);
 
         const uploadResponse = await fetch(
-          `http://localhost:8000/api/admin/file-stores/${createdStoreId}/upload`,
+          `${apiBaseUrl}/api/admin/file-stores/${createdStoreId}/upload`,
           {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },

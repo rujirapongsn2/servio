@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { IconPicker } from "@/components/IconPicker";
+import { getApiBaseUrl } from "@/lib/api";
 
 export default function EditToolPage() {
   const router = useRouter();
   const params = useParams();
   const toolId = params.id as string;
+  const apiBaseUrl = getApiBaseUrl();
 
   const [loading, setLoading] = useState(true);
   const [toolType, setToolType] = useState<"custom_api" | "mcp_streamable_http">("custom_api");
@@ -35,7 +37,7 @@ export default function EditToolPage() {
   const fetchTool = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch(`http://localhost:8000/api/admin/tools/${toolId}`, {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools/${toolId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -106,7 +108,7 @@ export default function EditToolPage() {
         config.timeout_seconds = parseInt(formData.timeout_seconds) || 60;
       }
 
-      const response = await fetch(`http://localhost:8000/api/admin/tools/${toolId}`, {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools/${toolId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

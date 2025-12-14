@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/Button";
+import { getApiBaseUrl } from "@/lib/api";
 
 function formatTimeAgo(timestamp: number) {
     const seconds = Math.floor((Date.now() - timestamp * 1000) / 1000);
@@ -55,6 +56,10 @@ export default function MonitorPage() {
     const [mode, setMode] = useState<"AI" | "MANUAL">("AI");
     const [inputMessage, setInputMessage] = useState("");
     const [isConnected, setIsConnected] = useState(false);
+    const apiBaseUrl = getApiBaseUrl();
+    const websocketBase = (process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT
+        ? process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT.replace(/\/$/, "")
+        : `${apiBaseUrl.replace(/^http/, "ws")}/ws`);
 
     const wsRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -64,7 +69,7 @@ export default function MonitorPage() {
         const fetchSessions = async () => {
             try {
                 const token = localStorage.getItem("adminToken");
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/sessions`, {
+                const res = await fetch(`${apiBaseUrl}/api/admin/sessions`, {
                     headers: {
                         "Authorization": `Bearer ${token}`
                     }
@@ -92,7 +97,7 @@ export default function MonitorPage() {
             wsRef.current.close();
         }
 
-        const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT || "ws://localhost:8000/ws"}/admin/monitor?session_id=${selectedSessionId}`;
+        const wsUrl = `${websocketBase}/admin/monitor?session_id=${selectedSessionId}`;
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {

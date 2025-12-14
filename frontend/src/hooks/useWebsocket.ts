@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Message } from "@/lib/types";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "@/lib/utils";
+import { getApiBaseUrl } from "@/lib/api";
 
 export function useWebsocket({
   url,
@@ -12,10 +13,10 @@ export function useWebsocket({
   onNewAudio?: (audio: Int16Array<ArrayBuffer>) => void;
   onAudioDone?: () => void;
 } = {}) {
-  url =
-    url ??
-    process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT ??
-    "ws://localhost:8000/ws";
+  const defaultWs = (process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT
+    ? process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT.replace(/\/$/, "")
+    : `${getApiBaseUrl().replace(/^http/, "ws")}/ws`);
+  url = url ?? defaultWs;
   const [isReady, setIsReady] = useState(false);
   const [history, setHistory] = useState<Message[]>([]);
   const [agentName, setAgentName] = useState<string | null>(null);

@@ -17,6 +17,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface AnalyticsSummary {
   total_conversations: number;
@@ -66,6 +67,7 @@ interface TrendsData {
 }
 
 export default function AnalyticsPage() {
+  const apiBaseUrl = getApiBaseUrl();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [trends, setTrends] = useState<TrendsData | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -96,7 +98,7 @@ export default function AnalyticsPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/analytics/summary?period=${period}`,
+        `${apiBaseUrl}/api/admin/analytics/summary?period=${period}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -117,7 +119,7 @@ export default function AnalyticsPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/analytics/trends?period=${trendPeriod}`,
+        `${apiBaseUrl}/api/admin/analytics/trends?period=${trendPeriod}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -148,7 +150,7 @@ export default function AnalyticsPage() {
       if (filterSentiment) params.append("sentiment", filterSentiment);
 
       const response = await fetch(
-        `http://localhost:8000/api/admin/analytics/conversations?${params}`,
+        `${apiBaseUrl}/api/admin/analytics/conversations?${params}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -171,7 +173,7 @@ export default function AnalyticsPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/analytics/conversations/${id}`,
+        `${apiBaseUrl}/api/admin/analytics/conversations/${id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

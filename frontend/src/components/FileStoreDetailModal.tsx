@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, FileText, Trash2, Upload, Loader2 } from "lucide-react";
 import MultiFileUploader from "./MultiFileUploader";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface FileStore {
   id: number;
@@ -30,6 +31,7 @@ export default function FileStoreDetailModal({
   store,
   onClose,
 }: FileStoreDetailModalProps) {
+  const apiBaseUrl = getApiBaseUrl();
   const [files, setFiles] = useState<FileStoreFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -41,7 +43,7 @@ export default function FileStoreDetailModal({
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/file-stores/${store.id}/files`,
+        `${apiBaseUrl}/api/admin/file-stores/${store.id}/files`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -56,7 +58,7 @@ export default function FileStoreDetailModal({
     } finally {
       setLoading(false);
     }
-  }, [store.id]);
+  }, [apiBaseUrl, store.id]);
 
   useEffect(() => {
     fetchFiles();
@@ -78,7 +80,7 @@ export default function FileStoreDetailModal({
         formData.append("file", file);
 
         const response = await fetch(
-          `http://localhost:8000/api/admin/file-stores/${store.id}/upload`,
+          `${apiBaseUrl}/api/admin/file-stores/${store.id}/upload`,
           {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
@@ -114,7 +116,7 @@ export default function FileStoreDetailModal({
       setDeleting(fileId);
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/file-stores/${store.id}/files/${fileId}`,
+        `${apiBaseUrl}/api/admin/file-stores/${store.id}/files/${fileId}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },

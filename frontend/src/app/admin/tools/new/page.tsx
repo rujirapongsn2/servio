@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconPicker } from "@/components/IconPicker";
+import { getApiBaseUrl } from "@/lib/api";
 
 export default function NewToolPage() {
   const router = useRouter();
+  const apiBaseUrl = getApiBaseUrl();
   const [toolType, setToolType] = useState<"custom_api" | "mcp_streamable_http">("custom_api");
   const [formData, setFormData] = useState({
     name: "",
@@ -58,12 +60,12 @@ export default function NewToolPage() {
         // Parse comma-separated tool names
         if (formData.mcp_tools.trim()) {
           config.tools = formData.mcp_tools.split(",").map(t => t.trim()).filter(t => t);
-        } else {
-          config.tools = [];
-        }
+      } else {
+        config.tools = [];
       }
+    }
 
-      const response = await fetch("http://localhost:8000/api/admin/tools", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

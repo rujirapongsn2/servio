@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Sparkles } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface Tool {
   id: number;
@@ -24,6 +25,7 @@ interface Agent {
 export default function AgentEditorPage() {
   const router = useRouter();
   const params = useParams();
+  const apiBaseUrl = getApiBaseUrl();
   const isNew = params.id === "new";
   const agentId = isNew ? null : parseInt(params.id as string);
 
@@ -56,7 +58,7 @@ export default function AgentEditorPage() {
   const fetchTools = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch("http://localhost:8000/api/admin/tools", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -69,7 +71,7 @@ export default function AgentEditorPage() {
   const fetchAgents = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch("http://localhost:8000/api/admin/agents", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/agents`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -85,7 +87,7 @@ export default function AgentEditorPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/agents/${agentId}`,
+        `${apiBaseUrl}/api/admin/agents/${agentId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -116,8 +118,8 @@ export default function AgentEditorPage() {
       };
 
       const url = isNew
-        ? "http://localhost:8000/api/admin/agents"
-        : `http://localhost:8000/api/admin/agents/${agentId}`;
+        ? `${apiBaseUrl}/api/admin/agents`
+        : `${apiBaseUrl}/api/admin/agents/${agentId}`;
 
       const response = await fetch(url, {
         method: isNew ? "POST" : "PUT",
@@ -181,7 +183,7 @@ export default function AgentEditorPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        "http://localhost:8000/api/admin/agents/optimize-prompt",
+        `${apiBaseUrl}/api/admin/agents/optimize-prompt`,
         {
           method: "POST",
           headers: {

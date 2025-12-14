@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Play, Pencil, Trash2, Plus, Bot } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface Agent {
   id: number;
@@ -18,6 +19,7 @@ interface Agent {
 
 export default function AgentsPage() {
   const router = useRouter();
+  const apiBaseUrl = getApiBaseUrl();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -29,7 +31,7 @@ export default function AgentsPage() {
   const fetchAgents = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch("http://localhost:8000/api/admin/agents", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/agents`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -50,7 +52,7 @@ export default function AgentsPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/agents/${id}`,
+        `${apiBaseUrl}/api/admin/agents/${id}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },

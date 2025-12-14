@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getApiBaseUrl } from "@/lib/api";
 
 export default function SettingsPage() {
+  const apiBaseUrl = getApiBaseUrl();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -15,7 +17,7 @@ export default function SettingsPage() {
     const fetchInfo = async () => {
       try {
         const token = localStorage.getItem("adminToken");
-        const res = await fetch("http://localhost:8000/api/admin/system-info", {
+        const res = await fetch(`${apiBaseUrl}/api/admin/system-info`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -50,7 +52,7 @@ export default function SettingsPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        "http://localhost:8000/api/admin/auth/change-password",
+        `${apiBaseUrl}/api/admin/auth/change-password`,
         {
           method: "POST",
           headers: {
@@ -174,7 +176,7 @@ export default function SettingsPage() {
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-400">Backend API:</span>
             <span className="text-gray-900 dark:text-white font-mono">
-              {sys?.backend_url || "http://localhost:8000"}
+              {sys?.backend_url || apiBaseUrl}
             </span>
           </div>
           <div className="flex justify-between">

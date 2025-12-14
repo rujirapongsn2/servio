@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getApiBaseUrl } from "@/lib/api";
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const apiBaseUrl = getApiBaseUrl();
   const [stats, setStats] = useState({
     agentCount: 0,
     toolCount: 0,
@@ -29,10 +31,10 @@ export default function AdminDashboard() {
       }
 
       const [agentsRes, toolsRes] = await Promise.all([
-        fetch("http://localhost:8000/api/admin/agents", {
+        fetch(`${apiBaseUrl}/api/admin/agents`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch("http://localhost:8000/api/admin/tools", {
+        fetch(`${apiBaseUrl}/api/admin/tools`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);

@@ -5,6 +5,7 @@ import { Database, Plus, FileText, Play, Trash2, Upload } from "lucide-react";
 import CreateFileStoreModal from "./CreateFileStoreModal";
 import FileStoreDetailModal from "./FileStoreDetailModal";
 import TestFileStoreModal from "./TestFileStoreModal";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface FileStore {
   id: number;
@@ -16,6 +17,7 @@ interface FileStore {
 }
 
 export default function FileStoresTable() {
+  const apiBaseUrl = getApiBaseUrl();
   const [stores, setStores] = useState<FileStore[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -25,12 +27,12 @@ export default function FileStoresTable() {
 
   useEffect(() => {
     fetchStores();
-  }, []);
+  }, [apiBaseUrl]);
 
   const fetchStores = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch("http://localhost:8000/api/admin/file-stores", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/file-stores`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -53,7 +55,7 @@ export default function FileStoresTable() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/file-stores/${id}`,
+        `${apiBaseUrl}/api/admin/file-stores/${id}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X, Play, Loader2, FileText, Clock } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface FileStore {
   id: number;
@@ -28,6 +29,7 @@ export default function TestFileStoreModal({
   store,
   onClose,
 }: TestFileStoreModalProps) {
+  const apiBaseUrl = getApiBaseUrl();
   const [query, setQuery] = useState("");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
@@ -48,7 +50,7 @@ export default function TestFileStoreModal({
 
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/file-stores/${store.id}/test`,
+        `${apiBaseUrl}/api/admin/file-stores/${store.id}/test`,
         {
           method: "POST",
           headers: {

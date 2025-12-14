@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { getApiBaseUrl } from "@/lib/api";
 
 export default function AgentTestPage() {
   const FORCE_ARGS_PLACEHOLDER = 'Arguments (JSON or key=value, comma-separated). Example: {"symbol":"AAPL"} or symbol=AAPL';
   const router = useRouter();
   const params = useParams();
+  const apiBaseUrl = getApiBaseUrl();
   const agentId = parseInt((params && (params as any).id ? (params as any).id.toString() : "0"));
 
   const [agentName, setAgentName] = useState("");
@@ -29,7 +31,7 @@ export default function AgentTestPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/agents/${agentId}`,
+        `${apiBaseUrl}/api/admin/agents/${agentId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -85,7 +87,7 @@ export default function AgentTestPage() {
       }
 
       const response = await fetch(
-        `http://localhost:8000/api/admin/agents/${agentId}/test`,
+        `${apiBaseUrl}/api/admin/agents/${agentId}/test`,
         {
           method: "POST",
           headers: {

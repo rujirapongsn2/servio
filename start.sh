@@ -394,10 +394,33 @@ while true; do
             echo ""
             ;;
         5)
-            echo -e "${BLUE}Building Docker images...${NC}"
-            echo -e "${YELLOW}This may take a few minutes${NC}"
+            echo -e "${CYAN}Select services to rebuild:${NC}"
+            echo "  1) Backend only"
+            echo "  2) Frontend only"
+            echo "  3) All (backend + frontend)"
+            echo -n "Enter choice [1-3, default 3]: "
+            read -r build_choice
             echo ""
-            docker compose build --no-cache
+
+            case "$build_choice" in
+                1)
+                    echo -e "${BLUE}Rebuilding backend image...${NC}"
+                    docker compose build --no-cache backend
+                    ;;
+                2)
+                    echo -e "${BLUE}Rebuilding frontend image...${NC}"
+                    docker compose build --no-cache frontend
+                    ;;
+                ""|3)
+                    echo -e "${BLUE}Rebuilding all images...${NC}"
+                    docker compose build --no-cache
+                    ;;
+                *)
+                    echo -e "${RED}Invalid choice. Skipping build.${NC}"
+                    echo ""
+                    continue
+                    ;;
+            esac
             echo ""
             echo -e "${GREEN}✓ Build complete${NC}"
             echo ""

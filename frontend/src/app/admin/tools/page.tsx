@@ -22,6 +22,7 @@ import { AVAILABLE_ICONS } from "@/components/IconPicker";
 import CreateFileStoreModal from "@/components/CreateFileStoreModal";
 import FileStoreDetailModal from "@/components/FileStoreDetailModal";
 import TestFileStoreModal from "@/components/TestFileStoreModal";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface Tool {
   id: number;
@@ -51,6 +52,7 @@ const getToolIcon = (toolName: string, toolType: string) => {
 };
 
 export default function ToolsPage() {
+  const apiBaseUrl = getApiBaseUrl();
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFileStoreModal, setShowFileStoreModal] = useState(false);
@@ -65,7 +67,7 @@ export default function ToolsPage() {
   const fetchTools = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch("http://localhost:8000/api/admin/tools", {
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -86,7 +88,7 @@ export default function ToolsPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/tools/${id}`,
+        `${apiBaseUrl}/api/admin/tools/${id}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
@@ -114,7 +116,7 @@ export default function ToolsPage() {
 
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/file-stores?gemini_id=${geminiStoreId}`,
+        `${apiBaseUrl}/api/admin/file-stores?gemini_id=${geminiStoreId}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -142,7 +144,7 @@ export default function ToolsPage() {
 
       const token = localStorage.getItem("adminToken");
       const response = await fetch(
-        `http://localhost:8000/api/admin/file-stores?gemini_id=${geminiStoreId}`,
+        `${apiBaseUrl}/api/admin/file-stores?gemini_id=${geminiStoreId}`,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
