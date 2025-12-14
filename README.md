@@ -351,14 +351,15 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
 
 2. **ตั้งค่า API keys:**
 
-   สร้างไฟล์ `.env` ที่ root ของโปรเจกต์:
+   คัดลอกไฟล์ตัวอย่าง `.env.example` (มีค่าเริ่มต้นสำหรับ backend/frontend แล้ว) แล้วเติมค่าให้ครบ:
 
    ```bash
    cp .env.example .env
-   # แก้ไขไฟล์ .env และใส่ API Keys ของคุณ:
-   # OPENAI_API_KEY=your_openai_api_key
-   # SOFTNIX_API_KEY=your_softnix_api_key (ถ้ามี)
-   # GEMINI_API_KEY=your_gemini_api_key (ถ้ามี)
+   # ใน .env ให้ใส่อย่างน้อย:
+   # - OPENAI_API_KEY=...             (จำเป็น)
+   # - JWT_SECRET_KEY=...             (ตั้งค่าใหม่สำหรับ production)
+   # - SOFTNIX_API_KEY / GEMINI_API_KEY (ถ้ามี)
+   # - NEXT_PUBLIC_API_URL / NEXT_PUBLIC_WEBSOCKET_ENDPOINT (แก้เป็นโดเมนจริงเวลา deploy)
    ```
 
 3. **Clone Repository:**
@@ -409,17 +410,17 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
 
 1. **ตั้งค่า API keys:**
 
-   สร้างไฟล์ `.env` (ดู `.env.example` เป็นแนวทาง):
+   คัดลอก `.env.example` แล้วใส่ค่าที่จำเป็น:
 
    ```bash
-   # Required: สำหรับ Voice Agents
-   OPENAI_API_KEY=<your_openai_api_key>
-
-   # Optional: สำหรับ Softnix integration
-   SOFTNIX_API_KEY=<your_softnix_api_key>
-
-   # Optional: สำหรับ File Store Agents
-   GEMINI_API_KEY=<your_gemini_api_key>
+   cp .env.example .env
+   # Required
+   # OPENAI_API_KEY=<your_openai_api_key>
+   # JWT_SECRET_KEY=<generate_a_secure_value>
+   # Frontend endpoints (ปรับเป็นโดเมนจริงเวลา deploy)
+   # NEXT_PUBLIC_API_URL=http://localhost:8000
+   # NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
+   # Optional integrations: SOFTNIX_API_KEY / GEMINI_API_KEY
    ```
 
    หรือจะตั้งค่า `OPENAI_API_KEY` เป็น environment variable ในเครื่องเลยก็ได้
@@ -501,7 +502,7 @@ Docker setup ใช้ **docker-compose** จัดการ 2 Services หล�
 CSAgent/
 ├── docker-compose.yml          # Service orchestration
 ├── .env                        # Environment variables (create from .env.example)
-├── .env.example               # Template for environment variables
+├── .env.example                # Template for environment variables
 ├── start.sh                   # สคริปต์ interactive สำหรับจัดการ Docker
 ├── server/
 │   ├── Dockerfile            # Backend container definition
@@ -514,21 +515,35 @@ CSAgent/
 
 ### Environment Variables
 
-ตัวแปรที่จำเป็นใน `.env`:
+คัดลอกไฟล์ตัวอย่างแล้วแก้ไขค่า:
+
+```bash
+cp .env.example .env
+```
+
+ตัวแปรหลักใน `.env`:
 
 ```bash
 # Required
 OPENAI_API_KEY=your_openai_api_key
+JWT_SECRET_KEY=change_me_in_production
 
-# Optional
-SOFTNIX_API_KEY=your_softnix_api_key
-GEMINI_API_KEY=your_gemini_api_key
+# Frontend / public endpoints
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
+
+# Optional integrations
+SOFTNIX_API_KEY=your_softnix_api_key    # Optional
+GEMINI_API_KEY=your_gemini_api_key      # Optional
+SOFTNIX_API_INPUTS=product_id,customer_id
 
 # Docker Configuration (optional, defaults provided)
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/voice_agents
 # DATABASE_PATH=/app/data/agents.db # ใช้ถ้ายังรัน SQLite ในบางจุด
-NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
+TOOL_TIMEOUT_SECONDS=60
+SQL_ECHO=false
 
 # Production CORS (ระบุโดเมนด้วยจุลภาค)
 ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
