@@ -89,7 +89,7 @@ export default function AdminDashboard() {
       ) : (
         <>
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               title="Total Agents"
               value={stats.agentCount}
@@ -117,7 +117,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Quick Actions */}
-          <div className="mt-8">
+          <div className="mt-6">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
               Quick Actions
             </h2>
@@ -144,7 +144,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Agent Flow Diagram */}
-          <div className="mt-10 space-y-3">
+          <div className="mt-8 space-y-3">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
               Agent Workflow
             </h2>
@@ -180,7 +180,7 @@ function StatCard({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
       <div
         className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${colorClasses[color as keyof typeof colorClasses]
           }`}
@@ -211,7 +211,7 @@ function ActionCard({
   return (
     <Link
       href={href}
-      className="block bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 hover:border-blue-500 dark:hover:border-blue-500 transition-colors"
+      className="block bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-blue-500 dark:hover:border-blue-500 transition-colors"
     >
       <div className="text-3xl mb-3">{icon}</div>
       <h3 className="text-base font-medium text-gray-900 dark:text-white">
