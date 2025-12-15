@@ -149,7 +149,7 @@ export default function AdminDashboard() {
               Agent Workflow
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              ภาพรวมเส้นทางโอนงาน: เริ่มจาก Coordinator แล้วส่งต่อไปยัง Agent ที่มีอยู่ในระบบ (ดึงจากฐานข้อมูล)
+              Workflow Overview: Starts from Coordinator and hands off to available Agents (fetched from database)
             </p>
             <AgentFlowGraph agents={stats.agents} />
           </div>
@@ -182,9 +182,8 @@ function StatCard({
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
       <div
-        className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${
-          colorClasses[color as keyof typeof colorClasses]
-        }`}
+        className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${colorClasses[color as keyof typeof colorClasses]
+          }`}
       >
         <span className="text-2xl font-bold">{value}</span>
       </div>

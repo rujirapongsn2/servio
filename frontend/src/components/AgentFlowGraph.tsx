@@ -10,6 +10,7 @@ import ReactFlow, {
   NodeProps,
   Position,
   ConnectionLineType,
+  Handle,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -35,11 +36,13 @@ const pillStyle = {
     "0 14px 32px rgba(15,23,42,0.12), 0 3px 10px rgba(15,23,42,0.08)",
   padding: "12px 14px",
   width: 240,
+  position: "relative" as const,
 };
 
-function AgentNode({ data }: NodeProps) {
+function AgentNode({ data, targetPosition = Position.Top, sourcePosition = Position.Bottom }: NodeProps) {
   return (
     <div style={pillStyle}>
+      <Handle type="target" position={targetPosition} isConnectable={false} style={{ opacity: 0 }} />
       <div className="text-center text-base font-semibold text-slate-900">
         {data.label}
       </div>
@@ -51,6 +54,7 @@ function AgentNode({ data }: NodeProps) {
       {data.tools ? (
         <div className="text-[10px] text-slate-400 mt-1">Tools: {data.tools}</div>
       ) : null}
+      <Handle type="source" position={sourcePosition} isConnectable={false} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -72,7 +76,7 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
     nodes.push({
       id: "coordinator",
       type: "agentNode",
-      data: { label: "Coordinator Agent", description: "จุดเริ่มทุกบทสนทนา" },
+      data: { label: "Coordinator Agent", description: "Start of every conversation" },
       position: { x: baseX, y: baseY },
       sourcePosition: Position.Bottom,
       targetPosition: Position.Bottom,
@@ -146,7 +150,7 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
       setSelected({
         id: 0,
         name: "Coordinator Agent",
-        instructions: "จุดเริ่มทุกบทสนทนา โอนต่อ agent ที่มีในระบบ",
+        instructions: "Start of every conversation. Transfers to available agents in the system.",
         tools: [],
       });
       return;
@@ -175,6 +179,7 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
         minZoom={0.6}
         maxZoom={1.2}
         onNodeClick={onNodeClick}
+        onPaneClick={() => setSelected(null)}
         defaultEdgeOptions={{
           type: "smoothstep",
           animated: false,
@@ -189,8 +194,32 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
       </ReactFlow>
       {selected && (
         <div className="absolute top-4 right-4 max-w-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg rounded-lg p-4">
-          <div className="text-sm font-semibold text-slate-900 dark:text-white">
-            {selected.name}
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+              {selected.name}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelected(null);
+              }}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
           </div>
           <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
             {truncate(selected.instructions || "", 200)}
