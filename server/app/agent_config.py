@@ -52,32 +52,15 @@ def get_tool_citations() -> List[str]:
     return citations
 
 
-customer_support_agent = Agent(
-    name="Customer Support Agent",
-    instructions=f"You are a customer support assistant. {STYLE_INSTRUCTIONS}",
-    model="gpt-4o-mini",
-    tools=[],
-)
-
-stylist_agent = Agent(
-    name="Stylist Agent",
-    model="gpt-4o-mini",
-    instructions=f"You are a stylist assistant. {STYLE_INSTRUCTIONS}",
-    tools=[WebSearchTool(user_location=UserLocation(type="approximate", city="Bangkok"))],
-    handoffs=[customer_support_agent],
-)
-
 triage_agent = Agent(
     name="Coordinator Agent",
     model="gpt-4o-mini",
-    instructions=f"""Route the user to the appropriate agent based on their request.
-
-    Transfer to:
-    - Stylist Agent: Fashion advice, clothing recommendations, style questions
-    - Customer Support Agent: General customer support and assistance
-
-    {STYLE_INSTRUCTIONS}""",
-    handoffs=[stylist_agent, customer_support_agent],
+    instructions=f"""You are the coordinator for all conversations.
+- Greet the user and handle their request directly.
+- If specialized agents exist in the database, briefly confirm intent then transfer to the best match.
+- When no specialized agents are available, do your best to answer yourself.
+{STYLE_INSTRUCTIONS}""",
+    handoffs=[],
 )
 
 starting_agent = triage_agent
@@ -636,9 +619,8 @@ def get_runtime_starting_agent() -> Agent:
             # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
             continue
 
-    # Base triage
-    base_handoffs = [stylist_agent, customer_support_agent]
-    combined_handoffs = base_handoffs + db_agents
+    # Base triage (no built-in handoffs; wait for DB-defined agents)
+    combined_handoffs = db_agents
 
     # Enrich instructions with dynamic agent list and routing hints
     extra = "\n\nAdditional agents available for transfer:"
@@ -648,7 +630,7 @@ def get_runtime_starting_agent() -> Agent:
             agent_instructions = a.get("instructions", "")
             extra += f"\n- {agent_name}: {agent_instructions[:150]}"
     else:
-        extra += " None."
+        extra += " None yet. Handle requests yourself until admins add more agents."
 
     # Add explicit routing hint for specific agents
     for a in db_agents_data:
