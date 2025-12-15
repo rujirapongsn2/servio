@@ -42,16 +42,32 @@ def get_db_connection():
     import psycopg2
     import psycopg2.extras
     import os
+    from sqlalchemy.engine.url import make_url
 
-    # Create connection directly with psycopg2 for RealDictCursor support
-    connection = psycopg2.connect(
-        dbname=os.getenv("POSTGRES_DB", "voice_agents"),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", "postgres123"),
-        host=os.getenv("POSTGRES_HOST", "postgres"),
-        port=os.getenv("POSTGRES_PORT", "5432"),
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
+    # Prefer DATABASE_URL if provided (handles complex passwords like `/` or `@`)
+    db_url = os.getenv("DATABASE_URL")
+
+    if db_url:
+        # Parse URL to safely handle special chars in password (/, @, etc.)
+        parsed = make_url(db_url)
+        connection = psycopg2.connect(
+            dbname=parsed.database,
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.host,
+            port=parsed.port or "5432",
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+    else:
+        # Fallback to discrete vars
+        connection = psycopg2.connect(
+            dbname=os.getenv("POSTGRES_DB", "voice_agents"),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", "postgres"),
+            host=os.getenv("POSTGRES_HOST", "postgres"),
+            port=os.getenv("POSTGRES_PORT", "5432"),
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
     return connection
 
 
@@ -638,6 +654,26 @@ def save_conversation_analytics(conversation_id: int, analytics_data: Dict[str, 
         db.add(analytics)
         db.flush()
         return analytics.id
+
+
+# ============================================================================
+# Maintenance Operations
+# ============================================================================
+
+def delete_all_conversations() -> Dict[str, int]:
+    """Delete all conversation history (messages, analytics, summaries)."""
+    with get_db() as db:
+        deleted_messages = db.query(ConversationMessage).delete()
+        deleted_analytics = db.query(ConversationAnalytics).delete()
+        deleted_summaries = db.query(AnalyticsDailySummary).delete()
+        deleted_conversations = db.query(Conversation).delete()
+
+        return {
+            "messages": deleted_messages,
+            "analytics": deleted_analytics,
+            "summaries": deleted_summaries,
+            "conversations": deleted_conversations,
+        }
 
 
 def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:

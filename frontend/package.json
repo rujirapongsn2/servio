@@ -22,6 +22,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^15.6.1",
+    "reactflow": "^11.11.4",
     "recharts": "^3.5.0",
     "tailwind-merge": "^3.0.2",
     "wavtools": "^0.1.5"

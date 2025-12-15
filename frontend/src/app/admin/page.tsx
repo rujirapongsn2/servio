@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/lib/api";
+import dynamic from "next/dynamic";
+
+const AgentFlowGraph = dynamic(
+  () => import("@/components/AgentFlowGraph"),
+  { ssr: false }
+);
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -13,6 +19,7 @@ export default function AdminDashboard() {
     toolCount: 0,
     builtinTools: 0,
     customTools: 0,
+    agents: [] as any[],
   });
   const [loading, setLoading] = useState(true);
 
@@ -57,6 +64,7 @@ export default function AdminDashboard() {
         toolCount: Array.isArray(tools) ? tools.length : 0,
         builtinTools: Array.isArray(tools) ? tools.filter((t: any) => t.type === "builtin").length : 0,
         customTools: Array.isArray(tools) ? tools.filter((t: any) => t.type === "custom_api").length : 0,
+        agents: Array.isArray(agents) ? agents : [],
       });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
@@ -133,6 +141,17 @@ export default function AdminDashboard() {
                 icon="🔧"
               />
             </div>
+          </div>
+
+          {/* Agent Flow Diagram */}
+          <div className="mt-10 space-y-3">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Agent Workflow
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              ภาพรวมเส้นทางโอนงาน: เริ่มจาก Coordinator แล้วส่งต่อไปยัง Agent ที่มีอยู่ในระบบ (ดึงจากฐานข้อมูล)
+            </p>
+            <AgentFlowGraph agents={stats.agents} />
           </div>
         </>
       )}

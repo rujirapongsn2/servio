@@ -12,6 +12,10 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [sys, setSys] = useState<any>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteSuccess, setDeleteSuccess] = useState("");
 
   useEffect(() => {
     const fetchInfo = async () => {
@@ -79,6 +83,43 @@ export default function SettingsPage() {
       setError(err.message || "An error occurred while changing password");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteHistory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDeleteError("");
+    setDeleteSuccess("");
+
+    if (deleteConfirm.trim().toUpperCase() !== "DELETE") {
+      setDeleteError('กรุณาพิมพ์ "DELETE" เพื่อยืนยันการลบประวัติการสนทนา');
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      const token = localStorage.getItem("adminToken");
+      const res = await fetch(`${apiBaseUrl}/api/admin/conversations`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "ลบประวัติการสนทนาไม่สำเร็จ");
+      }
+
+      const data = await res.json().catch(() => ({}));
+      setDeleteSuccess(
+        data?.message || "ลบประวัติการสนทนาทั้งหมดเรียบร้อยแล้ว"
+      );
+      setDeleteConfirm("");
+    } catch (err: any) {
+      setDeleteError(err.message || "เกิดข้อผิดพลาดขณะลบประวัติการสนทนา");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -163,6 +204,59 @@ export default function SettingsPage() {
             >
               {loading ? "Changing Password..." : "Change Password"}
             </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Delete Conversation History */}
+      <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-red-200 dark:border-red-800 p-6">
+        <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+          ลบประวัติการสนทนา
+        </h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          การลบนี้จะลบข้อมูลการสนทนา ข้อความ และสถิติทั้งหมดออกจากระบบ ไม่สามารถกู้คืนได้
+        </p>
+        <form onSubmit={handleDeleteHistory} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              พิมพ์ <span className="font-mono">DELETE</span> เพื่อยืนยัน
+            </label>
+            <input
+              type="text"
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-gray-900 dark:text-white"
+              placeholder="DELETE"
+            />
+          </div>
+
+          {deleteError && (
+            <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-4">
+              <div className="text-sm text-red-800 dark:text-red-300">
+                {deleteError}
+              </div>
+            </div>
+          )}
+
+          {deleteSuccess && (
+            <div className="rounded-md bg-green-50 dark:bg-green-900/20 p-4">
+              <div className="text-sm text-green-800 dark:text-green-300">
+                {deleteSuccess}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={deleteLoading}
+              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+            >
+              {deleteLoading ? "กำลังลบ..." : "ลบประวัติการสนทนาทั้งหมด"}
+            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              การกระทำนี้ไม่สามารถย้อนกลับได้
+            </span>
           </div>
         </form>
       </div>

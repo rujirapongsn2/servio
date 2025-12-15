@@ -1054,3 +1054,24 @@ async def get_analytics_trends(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get analytics trends: {str(e)}"
         )
+
+
+@router.delete("/conversations", response_model=MessageResponse)
+async def delete_conversations(current_user: str = Depends(get_current_user)):
+    """Delete all conversation history (messages, analytics, summaries)."""
+    try:
+        result = database.delete_all_conversations()
+        return MessageResponse(
+            message=(
+                "Conversation history deleted "
+                f"(conversations: {result.get('conversations', 0)}, "
+                f"messages: {result.get('messages', 0)}, "
+                f"analytics: {result.get('analytics', 0)}, "
+                f"summaries: {result.get('summaries', 0)})"
+            )
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete conversations: {str(e)}"
+        )
