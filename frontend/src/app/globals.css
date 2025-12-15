@@ -11,6 +11,12 @@
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --font-serif: "New York", serif;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Text", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Text", Roboto, "Helvetica Neue", Arial, sans-serif;
+  
+  /* Layer 3 Brand Colors */
+  --brand-gradient-start: #FDC70C;
+  --brand-gradient-end: #A9CB2E;
+  --brand-text-dark: #0D1B2A;
 }
 
 @media (prefers-color-scheme: dark) {

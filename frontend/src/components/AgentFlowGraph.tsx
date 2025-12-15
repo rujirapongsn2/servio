@@ -30,13 +30,15 @@ function truncate(text: string, max = 140) {
 
 const pillStyle = {
   background: "#fff",
-  border: "1px solid #e5e7eb",
   borderRadius: 16,
-  boxShadow:
-    "0 14px 32px rgba(15,23,42,0.12), 0 3px 10px rgba(15,23,42,0.08)",
   padding: "12px 14px",
   width: 240,
   position: "relative" as const,
+  border: "2px solid transparent",
+  backgroundImage: "linear-gradient(#fff, #fff), linear-gradient(90deg, var(--brand-gradient-start), var(--brand-gradient-end))",
+  backgroundOrigin: "border-box",
+  backgroundClip: "padding-box, border-box",
+  boxShadow: "0 4px 20px -2px rgba(253, 199, 12, 0.25), 0 4px 20px -2px rgba(169, 203, 46, 0.25)", // Dual shadow
 };
 
 function AgentNode({ data, targetPosition = Position.Top, sourcePosition = Position.Bottom }: NodeProps) {
@@ -114,8 +116,8 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
         target: `agent-${agent.id}`,
         type: "smoothstep",
         animated: false,
-        style: { stroke: "#0f172a", strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#0f172a" },
+        style: { stroke: "#0D1B2A", strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#0D1B2A" },
       });
     });
 
@@ -133,8 +135,8 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
           target: targetId,
           type: "smoothstep",
           animated: false,
-          style: { stroke: "#0f172a", strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#0f172a" },
+          style: { stroke: "#0D1B2A", strokeWidth: 2 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#0D1B2A" },
         });
       });
     });
@@ -183,8 +185,8 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
         defaultEdgeOptions={{
           type: "smoothstep",
           animated: false,
-          style: { stroke: "#0f172a", strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#0f172a" },
+          style: { stroke: "#0D1B2A", strokeWidth: 2 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#0D1B2A" },
         }}
         connectionLineType={ConnectionLineType.Bezier}
         className="!bg-transparent"

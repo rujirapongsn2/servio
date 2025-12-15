@@ -149,7 +149,7 @@ export default function AdminDashboard() {
               Agent Workflow
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Workflow Overview: Starts from Coordinator and hands off to available Agents (fetched from database)
+              Workflow Overview: Starts from Coordinator and hands off to available Agents
             </p>
             <AgentFlowGraph agents={stats.agents} />
           </div>
@@ -211,7 +211,7 @@ function ActionCard({
   return (
     <Link
       href={href}
-      className="block bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-blue-500 dark:hover:border-blue-500 transition-colors"
+      className="block bg-white dark:bg-gray-800 rounded-lg border-2 border-transparent hover:border-transparent p-4 transition-all relative before:absolute before:inset-0 before:rounded-lg before:p-[2px] before:bg-gradient-to-r before:from-brand-start before:to-brand-end before:-z-10 before:content-[''] hover:before:opacity-100 before:opacity-0"
     >
       <div className="text-3xl mb-3">{icon}</div>
       <h3 className="text-base font-medium text-gray-900 dark:text-white">

@@ -50,7 +50,7 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen grid grid-cols-1 md:grid-cols-2 bg-white dark:bg-gray-900">
       {/* Left visual panel: blue background with Servio logo */}
-      <div className="hidden md:flex flex-col bg-[#2563eb] text-white p-8">
+      <div className="hidden md:flex flex-col bg-[#2786C2] text-white p-8">
         <img
           src="/servio_logo.png"
           alt="Servio"
@@ -113,7 +113,7 @@ export default function AdminLoginPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full h-12 rounded-xl text-white bg-[#2786C2] hover:bg-[#1e6b9d] focus:ring-2 focus:ring-[#2786C2] disabled:opacity-50"
               >
                 {loading ? "Signing in..." : "Sign In"}
               </Button>

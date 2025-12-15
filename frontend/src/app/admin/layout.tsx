@@ -82,13 +82,13 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sidebar (blue, with Servio logo) */}
+      {/* Sidebar (Brand Blue #2786C2) */}
       <div
-        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} bg-[#2563eb] text-white border-r border-blue-700 transition-all duration-200 z-20`}
+        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} bg-[#2786C2] text-white border-r border-[#1e6b9d] transition-all duration-200 z-20 shadow-xl`}
       >
         <div className="flex flex-col h-full">
           {/* Header with logo */}
-          <div className="flex items-center justify-between h-20 px-4 border-b border-blue-600">
+          <div className="flex items-center justify-between h-20 px-4 border-none">
             <img
               src="/servio_logo.png"
               alt="Servio"
@@ -169,10 +169,10 @@ export default function AdminLayout({
           </nav>
 
           {/* User info and logout */}
-          <div className="p-4 border-t border-blue-600">
+          <div className="p-4 border-none">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-white text-blue-700 rounded-full flex items-center justify-center font-semibold">
+                <div className="w-8 h-8 bg-gradient-to-r from-brand-start to-brand-end text-brand-dark rounded-full flex items-center justify-center font-semibold">
                   {username.charAt(0).toUpperCase()}
                 </div>
                 <div className={`text-sm text-white ${collapsed ? "hidden" : "block"}`}>
@@ -215,9 +215,9 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`block px-3 py-2 rounded-md text-sm font-medium ${active
-        ? "bg-white/20 text-white"
-        : "text-white/90 hover:bg-white/10 hover:text-white"
+      className={`block px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${active
+        ? "bg-gradient-to-r from-brand-start to-brand-end text-brand-dark shadow-md"
+        : "text-white/80 hover:bg-white/5 hover:text-white"
         }`}
       title={label || undefined}
     >
