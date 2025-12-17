@@ -3,6 +3,9 @@ from collections.abc import AsyncIterator
 from logging import getLogger
 from typing import Any, Dict
 import uuid
+import json
+import base64
+import audioop
 
 from agents import Runner, trace
 from agents.voice import (
@@ -23,8 +26,9 @@ from app.utils import (
     is_text_output,
     process_inputs,
 )
+from app.telephony_utils import TelephonyUtils, TwilioHelper
 from app.session_manager import session_manager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 import os
@@ -197,6 +201,163 @@ async def websocket_endpoint(websocket: WebSocket):
         session_manager.disconnect(session_id)
 
 
+@app.websocket("/ws/twilio-stream")
+async def twilio_stream_endpoint(websocket: WebSocket):
+    # session_manager.connect will handle accept()
+    stream_sid = None
+    session_id = str(uuid.uuid4())
+    
+    # Register session with tracking for Admin Dashboard
+    # We create a dummy connection object or use the TwilioHelper once initialized
+    # But tracking requires 'connect' first.
+    await session_manager.connect(websocket, session_id)
+    # Set mode to AI by default
+    session_manager.set_mode(session_id, "AI")
+    
+    connection = None
+    audio_buffer = []
+    
+    # VAD State
+    silence_frames = 0
+    has_spoken = False
+
+    try:
+        # 1. Wait for 'start' event to get streamSid and init
+        while True:
+            data_str = await websocket.receive_text()
+            data = json.loads(data_str)
+            if data['event'] == 'start':
+                stream_sid = data['start']['streamSid']
+                print(f"Twilio Stream started: {stream_sid}")
+                break
+            elif data['event'] == 'connected':
+                continue
+        
+        # 2. Init Agent
+        with trace("Voice Agent Phone Call"):
+            dynamic_starting_agent = get_runtime_starting_agent()
+            connection = TwilioHelper(websocket, [], dynamic_starting_agent, session_id, stream_sid)
+            # Register helper so session manager can control it (e.g. view transcripts)
+            session_manager.register_helper(session_id, connection)
+            
+            workflow = Workflow(connection, session_id)
+            
+            # 3. Media Loop
+            while True:
+                try:
+                    data_str = await websocket.receive_text()
+                    data = json.loads(data_str)
+                except WebSocketDisconnect:
+                    break
+                except Exception as e:
+                    print(f"Error receiving data: {e}")
+                    break
+
+                if data['event'] == 'media':
+                    payload = data['media']['payload']
+                    # Decode Twilio audio -> Float32
+                    # We keep raw ULW/PCM for VAD check before decoding to full float32 for model
+                    ulaw_data = base64.b64decode(payload)
+                    pcm_8k_chunk = TelephonyUtils.ulaw_to_pcm16(ulaw_data) # 160 samples (20ms)
+
+                    # 1. VAD Check
+                    # Debug: Calculate RMS manually to check levels
+                    try:
+                        rms = audioop.rms(pcm_8k_chunk, 2)
+                    except:
+                        rms = 0
+                    
+                    # 1. VAD Check
+                    # Debug: Calculate RMS manually to check levels
+                    try:
+                        rms = audioop.rms(pcm_8k_chunk, 2)
+                    except:
+                        rms = 0
+                    
+                    # 1. VAD Check
+                    # Debug: Calculate RMS manually to check levels
+                    try:
+                        rms = audioop.rms(pcm_8k_chunk, 2)
+                    except:
+                        rms = 0
+                    
+                    # Tune Threshold: 
+                    # Noise/Breathing seems to be hitting 400-500 causing resets. 
+                    # Real speech is > 1000.
+                    # Set to 600 to filter out louder breathing/noise.
+                    is_voice = rms > 600 
+                    
+                    if is_voice:
+                         # Log only if we are transitioning from silence to voice, or just occasionally
+                         if silence_frames > 0:
+                             print(f"Voice started! RMS: {rms}")
+                         silence_frames = 0
+                         has_spoken = True
+                    else:
+                        silence_frames += 1
+                        # Debug: If has_spoken is True, we are waiting for silence to fill up
+                        if has_spoken and silence_frames % 10 == 0:
+                             print(f"Waiting for silence... ({silence_frames}/30) RMS: {rms}")
+
+                    # 2. Add to buffer (Float32 for AI)
+                    chunk_float32 = TelephonyUtils.decode_twilio_payload(payload)
+                    audio_buffer.append(chunk_float32)
+
+                    # 3. VAD Trigger Check
+                    # - We have spoken at least once in this turn
+                    # - Silence has persisted for ~600ms (30 frames)
+                    # - OR Buffer is getting too long (> 5 seconds), force send for responsiveness
+                    
+                    BUFFER_LIMIT = 250 # 250 * 20ms = 5 seconds
+                    
+                    should_process = False
+                    reason = ""
+                    
+                    if has_spoken and silence_frames > 30:
+                        should_process = True
+                        reason = "silence"
+                    elif len(audio_buffer) > BUFFER_LIMIT:
+                        should_process = True
+                        reason = "buffer_limit"
+                        
+                    if should_process:
+                        print(f"Speech complete ({reason}). Buffer: {len(audio_buffer)} chunks. Processing...")
+                        
+                        audio_input = concat_audio_chunks(audio_buffer)
+                        audio_buffer = []  # reset
+                        silence_frames = 0
+                        has_spoken = False
+                        
+                        # Run pipeline
+                        print("Running VoicePipeline...")
+                        output = await VoicePipeline(
+                            workflow=workflow,
+                            config=VoicePipelineConfig(
+                                tts_settings=TTSModelSettings(
+                                    buffer_size=512, transform_data=lambda x: x
+                                )
+                            ),
+                        ).run(audio_input)
+                        
+                        print("Streaming response...")
+                        async for event in output.stream():
+                            await connection.send_audio_chunk(event)
+                        print("Response stream done.")
+                        
+                        # Signal end of turn (optional)
+                        # await connection.send_audio_done()
+
+                elif data['event'] == 'stop':
+                    print("Twilio Stream stopped")
+                    break
+                    
+    except Exception as e:
+        print(f"Twilio Endpoint Error: {e}")
+    finally:
+        # Note: We don't have session_manager for this custom session yet
+        pass
+
+
 @app.websocket("/ws/admin/monitor")
 async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(None)):
     # In a real app, validate admin token here
@@ -229,6 +390,27 @@ async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(N
 @app.get("/api/admin/sessions")
 async def get_active_sessions():
     return session_manager.get_all_sessions()
+
+
+@app.post("/incoming-call")
+async def incoming_call_endpoint(request: Request):
+    """
+    Dynamic endpoint for Twilio Webhook.
+    Returns TwiML that connects to the WebSocket on the same host.
+    """
+    host = request.headers.get("host") or "localhost:8000"
+    # If behind ngrok, header 'host' is usually the ngrok domain.
+    # Protocol: if https is used, web socket should be wss.
+    # We can assume wss for ngrok.
+    
+    xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="wss://{host}/ws/twilio-stream" />
+    </Connect>
+</Response>
+"""
+    return Response(content=xml_content, media_type="application/xml")
 
 
 if __name__ == "__main__":
