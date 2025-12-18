@@ -13,6 +13,7 @@ import {
   Wrench,
   Puzzle,
   Settings,
+  Phone,
 } from "lucide-react";
 
 export default function AdminLayout({
@@ -166,6 +167,19 @@ export default function AdminLayout({
             >
               Settings
             </NavLink>
+            <NavLink
+              href="/admin/voip"
+              active={pathname.startsWith("/admin/voip")}
+              collapsed={collapsed}
+              icon={Phone}
+              badge={
+                <span className="ml-auto bg-orange-500 text-white text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-sm tracking-wide">
+                  Beta
+                </span>
+              }
+            >
+              VoIP
+            </NavLink>
           </nav>
 
           {/* User info and logout */}
@@ -204,12 +218,14 @@ function NavLink({
   children,
   collapsed = false,
   icon: Icon,
+  badge,
 }: {
   href: string;
   active: boolean;
   children: React.ReactNode;
   collapsed?: boolean;
   icon?: LucideIcon;
+  badge?: React.ReactNode;
 }) {
   const label = typeof children === "string" ? (children as string) : "";
   return (
@@ -222,13 +238,19 @@ function NavLink({
       title={label || undefined}
     >
       {collapsed ? (
-        <span className="inline-flex w-full justify-center font-semibold">
+        <span className="inline-flex w-full justify-center font-semibold relative">
           {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : label ? label.charAt(0) : "·"}
+          {badge && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-orange-500" />
+          )}
         </span>
       ) : (
-        <span className="inline-flex items-center space-x-3 whitespace-nowrap">
-          {Icon && <Icon className="h-5 w-5" aria-hidden="true" />}
-          <span className="inline-block">{children}</span>
+        <span className="inline-flex items-center justify-between w-full">
+          <span className="inline-flex items-center space-x-3 whitespace-nowrap">
+            {Icon && <Icon className="h-5 w-5" aria-hidden="true" />}
+            <span className="inline-block">{children}</span>
+          </span>
+          {badge}
         </span>
       )}
     </Link>

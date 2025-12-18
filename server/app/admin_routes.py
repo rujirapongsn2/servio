@@ -27,7 +27,11 @@ from app.models import (
     FileStoreFileResponse,
     CreateFileStoreRequest,
     TestFileStoreRequest,
+    TestFileStoreRequest,
     TestFileStoreResponse,
+    VoIPProviderResponse,
+    CreateVoIPProviderRequest,
+    UpdateVoIPProviderRequest,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -743,6 +747,101 @@ async def test_file_store(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to test file store: {str(e)}"
         )
+
+
+# VoIP Provider endpoints
+@router.get("/voip-providers", response_model=List[VoIPProviderResponse])
+async def get_voip_providers(current_user: str = Depends(get_current_user)):
+    """Get all VoIP providers"""
+    providers = database.get_all_voip_providers()
+    
+    # Initialize default Twilio provider if none exist
+    if not providers:
+        default_config = {
+            "account_sid": "",
+            "auth_token": "",
+            "phone_number": ""
+        }
+        database.create_voip_provider("Twilio", "twilio", default_config, is_active=True)
+        providers = database.get_all_voip_providers()
+
+    return providers
+
+
+@router.get("/voip-providers/{provider_id}", response_model=VoIPProviderResponse)
+async def get_voip_provider(provider_id: int, current_user: str = Depends(get_current_user)):
+    """Get a single VoIP provider by ID"""
+    provider = database.get_voip_provider_by_id(provider_id)
+
+    if not provider:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return provider
+
+
+@router.post("/voip-providers", response_model=MessageResponse)
+async def create_voip_provider(
+    request: CreateVoIPProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new VoIP provider"""
+    try:
+        provider_id = database.create_voip_provider(
+            name=request.name,
+            type=request.type,
+            config=request.config,
+            is_active=request.is_active
+        )
+        return MessageResponse(message=f"VoIP provider created successfully with ID {provider_id}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create VoIP provider: {str(e)}"
+        )
+
+
+@router.put("/voip-providers/{provider_id}", response_model=MessageResponse)
+async def update_voip_provider(
+    provider_id: int,
+    request: UpdateVoIPProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update an existing VoIP provider"""
+    success = database.update_voip_provider(
+        provider_id=provider_id,
+        name=request.name,
+        type=request.type,
+        config=request.config,
+        is_active=request.is_active
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return MessageResponse(message="VoIP provider updated successfully")
+
+
+@router.delete("/voip-providers/{provider_id}", response_model=MessageResponse)
+async def delete_voip_provider(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete a VoIP provider"""
+    success = database.delete_voip_provider(provider_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return MessageResponse(message="VoIP provider deleted successfully")
 
 
 # Analytics endpoints

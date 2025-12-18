@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.db_config import get_db
 from app.orm_models import (
     Admin, Agent, Tool, AgentTool, AgentHandoff,
-    FileStore, FileStoreFile,
+    FileStore, FileStoreFile, VoIPProvider,
     Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary
 )
 
@@ -504,7 +504,103 @@ def update_file_count(file_store_id: int) -> bool:
         if not store:
             return False
         store.file_count = db.query(FileStoreFile).filter_by(file_store_id=file_store_id).count()
+    return True
+
+
+# ============================================================================
+# VoIP Provider Operations
+# ============================================================================
+
+def get_all_voip_providers() -> List[Dict[str, Any]]:
+    """Get all VoIP providers"""
+    with get_db() as db:
+        providers = db.query(VoIPProvider).order_by(VoIPProvider.created_at.desc()).all()
+        return [
+            {
+                "id": provider.id,
+                "name": provider.name,
+                "type": provider.type,
+                "config": provider.config,
+                "is_active": provider.is_active,
+                "created_at": provider.created_at.isoformat() if provider.created_at else None,
+                "updated_at": provider.updated_at.isoformat() if provider.updated_at else None
+            }
+            for provider in providers
+        ]
+
+
+def get_voip_provider_by_id(provider_id: int) -> Optional[Dict[str, Any]]:
+    """Get a single VoIP provider by ID"""
+    with get_db() as db:
+        provider = db.query(VoIPProvider).filter_by(id=provider_id).first()
+        if not provider:
+            return None
+        return {
+            "id": provider.id,
+            "name": provider.name,
+            "type": provider.type,
+            "config": provider.config,
+            "is_active": provider.is_active,
+            "created_at": provider.created_at.isoformat() if provider.created_at else None,
+            "updated_at": provider.updated_at.isoformat() if provider.updated_at else None
+        }
+
+
+def create_voip_provider(name: str, type: str, config: Dict[str, Any], is_active: bool = True) -> int:
+    """Create a new VoIP provider"""
+    with get_db() as db:
+        provider = VoIPProvider(
+            name=name,
+            type=type,
+            config=config,
+            is_active=is_active,
+            updated_at=datetime.utcnow()
+        )
+        db.add(provider)
+        db.flush()
+        return provider.id
+
+
+def update_voip_provider(
+    provider_id: int,
+    name: str,
+    type: str,
+    config: Dict[str, Any],
+    is_active: bool
+) -> bool:
+    """Update an existing VoIP provider"""
+    with get_db() as db:
+        provider = db.query(VoIPProvider).filter_by(id=provider_id).first()
+        if not provider:
+            return False
+
+        provider.name = name
+        provider.type = type
+        provider.config = config
+        provider.is_active = is_active
+        provider.updated_at = datetime.utcnow()
+
         return True
+
+
+def delete_voip_provider(provider_id: int) -> bool:
+    """Delete a VoIP provider"""
+    with get_db() as db:
+        provider = db.query(VoIPProvider).filter_by(id=provider_id).first()
+        if not provider:
+            return False
+        db.delete(provider)
+        return True
+
+
+def get_active_voip_config(provider_type: str = "twilio") -> Optional[Dict[str, Any]]:
+    """Get the configuration of the active VoIP provider of a certain type"""
+    with get_db() as db:
+        provider = db.query(VoIPProvider).filter_by(type=provider_type, is_active=True).first()
+        if not provider:
+            return None
+        return provider.config
+
 
 
 # ============================================================================

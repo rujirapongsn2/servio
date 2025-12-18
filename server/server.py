@@ -48,6 +48,19 @@ app = FastAPI()
 from app.admin_routes import router as admin_router
 app.include_router(admin_router)
 
+# Database initialization
+from app.database import init_database
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Starting up server...")
+    try:
+        init_database()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+
+
 logger = getLogger(__name__)
 
 # Configure CORS with environment variable support for production

@@ -114,6 +114,7 @@ class FileStore(Base):
     )
 
 
+
 class FileStoreFile(Base):
     """Files within file stores"""
     __tablename__ = "file_store_files"
@@ -127,6 +128,20 @@ class FileStoreFile(Base):
 
     # Relationships
     file_store: Mapped["FileStore"] = relationship(back_populates="files")
+
+
+class VoIPProvider(Base):
+    """VoIP Providers configuration (e.g. Twilio)"""
+    __tablename__ = "voip_providers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(50), default="twilio")
+    config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 
 # ============================================================================
