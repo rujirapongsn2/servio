@@ -335,13 +335,13 @@ export default function AnalyticsPage() {
                   >
                     {Object.entries(summary.outcome_breakdown).map(([name], index) => {
                       const colors: Record<string, string> = {
-                        resolved: "#10b981",
-                        escalated: "#f59e0b",
-                        abandoned: "#ef4444",
-                        ongoing: "#3b82f6",
-                        completed: "#8b5cf6",
+                        resolved: "#9BC53D",
+                        escalated: "#F39C4F",
+                        abandoned: "#FDD835",
+                        ongoing: "#2E8BC0",
+                        completed: "#9BC53D",
                       };
-                      return <Cell key={`cell-${index}`} fill={colors[name] || "#6b7280"} />;
+                      return <Cell key={`cell-${index}`} fill={colors[name] || "#9BC53D"} />;
                     })}
                   </Pie>
                   <Tooltip />
@@ -372,11 +372,11 @@ export default function AnalyticsPage() {
                   >
                     {Object.entries(summary.sentiment_breakdown).map(([name], index) => {
                       const colors: Record<string, string> = {
-                        positive: "#10b981",
-                        neutral: "#6b7280",
-                        negative: "#ef4444",
+                        positive: "#9BC53D",
+                        neutral: "#2E8BC0",
+                        negative: "#F39C4F",
                       };
-                      return <Cell key={`cell-${index}`} fill={colors[name] || "#6b7280"} />;
+                      return <Cell key={`cell-${index}`} fill={colors[name] || "#2E8BC0"} />;
                     })}
                   </Pie>
                   <Tooltip />
@@ -407,7 +407,7 @@ export default function AnalyticsPage() {
               <XAxis dataKey="topic" angle={-45} textAnchor="end" height={100} />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="count" fill="#3b82f6" />
+              <Bar dataKey="count" fill="#2E8BC0" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -454,10 +454,10 @@ export default function AnalyticsPage() {
                     <Line
                       type="monotone"
                       dataKey="count"
-                      stroke="#3b82f6"
+                      stroke="#2E8BC0"
                       strokeWidth={2}
-                      name="Conversations"
-                      dot={{ fill: "#3b82f6" }}
+                      activeDot={{ r: 6 }}
+                      dot={{ fill: "#2E8BC0" }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -486,10 +486,10 @@ export default function AnalyticsPage() {
                     <Line
                       type="monotone"
                       dataKey="sentiment"
-                      stroke="#10b981"
+                      stroke="#9BC53D"
                       strokeWidth={2}
-                      name="Avg Sentiment"
-                      dot={{ fill: "#10b981" }}
+                      activeDot={{ r: 6 }}
+                      dot={{ fill: "#9BC53D" }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -511,10 +511,10 @@ export default function AnalyticsPage() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="performance" fill="#3b82f6" name="Performance %" />
-                  <Bar dataKey="empathy" fill="#10b981" name="Empathy %" />
-                  <Bar dataKey="clarity" fill="#f59e0b" name="Clarity %" />
-                  <Bar dataKey="resolution_rate" fill="#8b5cf6" name="Resolution %" />
+                  <Bar dataKey="performance" fill="#2E8BC0" name="Performance %" />
+                  <Bar dataKey="empathy" fill="#9BC53D" name="Empathy %" />
+                  <Bar dataKey="clarity" fill="#FDD835" name="Clarity %" />
+                  <Bar dataKey="resolution_rate" fill="#F39C4F" name="Resolution %" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

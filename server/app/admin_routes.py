@@ -911,7 +911,7 @@ async def get_conversations(
                 ca.urgency_level
             FROM conversations c
             LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
-            WHERE 1=1
+            WHERE c.enrichment_status != 'skipped'
         """
         params = []
 
@@ -946,7 +946,7 @@ async def get_conversations(
             conversations.append(conv_dict)
 
         # Get total count for pagination (PostgreSQL syntax)
-        count_query = "SELECT COUNT(*) FROM conversations c LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id WHERE 1=1"
+        count_query = "SELECT COUNT(*) FROM conversations c LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id WHERE c.enrichment_status != 'skipped'"
         count_params = []
         if outcome:
             count_query += " AND c.outcome = %s"
@@ -1079,6 +1079,7 @@ async def get_analytics_trends(
             SELECT DATE(started_at) as date, COUNT(*) as count
             FROM conversations
             WHERE DATE(started_at) >= CURRENT_DATE - INTERVAL '{days} days'
+            AND enrichment_status != 'skipped'
             GROUP BY DATE(started_at)
             ORDER BY date ASC
             """
@@ -1093,6 +1094,7 @@ async def get_analytics_trends(
             FROM conversation_analytics ca
             JOIN conversations c ON ca.conversation_id = c.id
             WHERE DATE(c.started_at) >= CURRENT_DATE - INTERVAL '{days} days'
+            AND c.enrichment_status != 'skipped'
             AND ca.sentiment_score IS NOT NULL
             GROUP BY DATE(c.started_at)
             ORDER BY date ASC
@@ -1115,6 +1117,7 @@ async def get_analytics_trends(
             LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
             WHERE c.agents_involved IS NOT NULL
             AND c.agents_involved::text != '[]'
+            AND c.enrichment_status != 'skipped'
             GROUP BY c.agents_involved->>0
             HAVING COUNT(*) >= 1
             ORDER BY total_conversations DESC

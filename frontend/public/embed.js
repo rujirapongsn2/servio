@@ -4,6 +4,7 @@
     position: document.currentScript.getAttribute('data-position') || 'bottom-right', // bottom-right, bottom-left
     serverUrl: document.currentScript.getAttribute('data-server-url') || 'http://localhost:3000',
     type: document.currentScript.getAttribute('data-type') || 'voice', // voice, chat
+    allowToggle: document.currentScript.getAttribute('data-allow-toggle') !== 'false', // Default true
   };
 
   // Create Styles
@@ -91,9 +92,9 @@
   // Create Iframe
   const iframe = document.createElement('iframe');
   iframe.className = 'dvoice-widget-frame';
-  iframe.src = `${config.serverUrl}/widget?type=${config.type}`;
-  // Only request microphone permission for voice mode
-  if (config.type === 'voice') {
+  iframe.src = `${config.serverUrl}/widget?type=${config.type}&allowToggle=${config.allowToggle}`;
+  // Always request microphone permission if toggle is enabled, or if type is voice
+  if (config.allowToggle || config.type === 'voice') {
     iframe.allow = "microphone";
   }
 

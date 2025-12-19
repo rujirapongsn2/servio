@@ -803,17 +803,24 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
 
         # Total conversations
         total_conversations = db.query(Conversation).filter(
-            Conversation.started_at >= start_date
+            and_(
+                Conversation.started_at >= start_date,
+                Conversation.enrichment_status != 'skipped'
+            )
         ).count()
 
         # Resolution rate
         total_with_outcome = db.query(Conversation).filter(
-            Conversation.started_at >= start_date
+            and_(
+                Conversation.started_at >= start_date,
+                Conversation.enrichment_status != 'skipped'
+            )
         ).count()
         resolved_count = db.query(Conversation).filter(
             and_(
                 Conversation.started_at >= start_date,
-                Conversation.outcome == 'resolved'
+                Conversation.outcome == 'resolved',
+                Conversation.enrichment_status != 'skipped'
             )
         ).count()
         resolution_rate = (resolved_count * 100.0 / total_with_outcome) if total_with_outcome > 0 else 0
@@ -822,7 +829,8 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
         avg_messages_result = db.query(func.avg(Conversation.total_messages)).filter(
             and_(
                 Conversation.started_at >= start_date,
-                Conversation.total_messages > 0
+                Conversation.total_messages > 0,
+                Conversation.enrichment_status != 'skipped'
             )
         ).scalar()
         avg_messages = float(avg_messages_result) if avg_messages_result else 0
@@ -833,7 +841,8 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
         ).filter(
             and_(
                 Conversation.started_at >= start_date,
-                ConversationAnalytics.sentiment_score.isnot(None)
+                ConversationAnalytics.sentiment_score.isnot(None),
+                Conversation.enrichment_status != 'skipped'
             )
         ).scalar()
         avg_sentiment = float(avg_sentiment_result) if avg_sentiment_result else 0
@@ -843,7 +852,10 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
             Conversation.outcome,
             func.count(Conversation.id).label('count')
         ).filter(
-            Conversation.started_at >= start_date
+            and_(
+                Conversation.started_at >= start_date,
+                Conversation.enrichment_status != 'skipped'
+            )
         ).group_by(Conversation.outcome).all()
         outcome_breakdown = {row.outcome: row.count for row in outcome_results}
 
@@ -854,7 +866,8 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
         ).join(Conversation).filter(
             and_(
                 Conversation.started_at >= start_date,
-                ConversationAnalytics.overall_sentiment.isnot(None)
+                ConversationAnalytics.overall_sentiment.isnot(None),
+                Conversation.enrichment_status != 'skipped'
             )
         ).group_by(ConversationAnalytics.overall_sentiment).all()
         sentiment_breakdown = {row.overall_sentiment: row.count for row in sentiment_results}
@@ -866,7 +879,8 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
         ).join(Conversation).filter(
             and_(
                 Conversation.started_at >= start_date,
-                ConversationAnalytics.primary_topic.isnot(None)
+                ConversationAnalytics.primary_topic.isnot(None),
+                Conversation.enrichment_status != 'skipped'
             )
         ).group_by(ConversationAnalytics.primary_topic).order_by(
             func.count(ConversationAnalytics.id).desc()
