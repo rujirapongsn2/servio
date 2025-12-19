@@ -34,7 +34,7 @@ Please analyze this conversation and provide a comprehensive assessment in the f
   "sentiment": {{
     "overall": "positive" | "neutral" | "negative",
     "score": <float between -1.0 and 1.0>,
-    "explanation": "<brief explanation of sentiment>"
+    "explanation": "<brief explanation of sentiment in Thai language (ภาษาไทย)>"
   }},
   "topics": {{
     "primary": "product_inquiry" | "technical_support" | "billing" | "complaint" | "general_inquiry" | "order_management" | "other",
@@ -45,20 +45,22 @@ Please analyze this conversation and provide a comprehensive assessment in the f
     "agent_performance_score": <float 0.0 to 1.0>,
     "response_clarity_score": <float 0.0 to 1.0>,
     "empathy_score": <float 0.0 to 1.0>,
-    "explanation": "<brief quality assessment>"
+    "explanation": "<brief quality assessment in Thai language (ภาษาไทย)>"
   }},
   "issues": {{
-    "identified": ["<issue1>", "<issue2>", ...],
-    "customer_pain_points": ["<pain_point1>", "<pain_point2>", ...],
-    "suggestions": ["<improvement1>", "<improvement2>", ...]
+    "identified": ["<issue1 in Thai (ภาษาไทย)>", "<issue2 in Thai (ภาษาไทย)>", ...],
+    "customer_pain_points": ["<pain_point1 in Thai (ภาษาไทย)>", "<pain_point2 in Thai (ภาษาไทย)>", ...],
+    "suggestions": ["<improvement1 in Thai (ภาษาไทย)>", "<improvement2 in Thai (ภาษาไทย)>", ...]
   }},
   "business_intelligence": {{
     "customer_intent": "purchase" | "support" | "inquiry" | "complaint" | "feedback",
     "urgency_level": "critical" | "high" | "medium" | "low",
     "follow_up_needed": true | false,
-    "follow_up_reason": "<reason if follow-up needed, null otherwise>"
+    "follow_up_reason": "<reason in Thai (ภาษาไทย) if follow-up needed, null otherwise>"
   }}
 }}
+
+IMPORTANT: All text explanations, descriptions, issues, identified points, and suggestions MUST be written in Thai language (ภาษาไทย).
 
 Focus on:
 1. Accurate sentiment detection (consider context, not just keywords)
@@ -90,10 +92,14 @@ class EnrichmentService:
             Dictionary with enrichment results, or None if failed
         """
         try:
+            # Set status to processing
+            database.update_enrichment_status(conversation_id, 'processing')
+            
             # Prepare conversation data
             conversation_data = database.get_conversation_messages(conversation_id)
             if not conversation_data:
                 print(f"No messages found for conversation {conversation_id}")
+                database.update_enrichment_status(conversation_id, 'failed')
                 return None
 
             # Get conversation metadata directly from conversations table (PostgreSQL)
@@ -108,6 +114,7 @@ class EnrichmentService:
 
             if not row:
                 print(f"No conversation found for ID {conversation_id}")
+                database.update_enrichment_status(conversation_id, 'failed')
                 return None
 
             # RealDictCursor returns dict-like rows
@@ -131,22 +138,28 @@ class EnrichmentService:
 
             if not analysis:
                 print(f"❌ LLM analysis failed for conversation {conversation_id}")
+                database.update_enrichment_status(conversation_id, 'failed')
                 return None
 
             # Parse and validate response
             parsed = self._parse_analysis(analysis)
             if not parsed:
                 print(f"❌ Failed to parse analysis for conversation {conversation_id}")
+                database.update_enrichment_status(conversation_id, 'failed')
                 return None
 
             # Save to database
             self._save_enrichment(conversation_id, parsed)
+            
+            # Set status to completed
+            database.update_enrichment_status(conversation_id, 'completed')
 
             print(f"✅ Successfully enriched conversation {conversation_id}")
             return parsed
 
         except Exception as e:
             print(f"❌ Error enriching conversation {conversation_id}: {e}")
+            database.update_enrichment_status(conversation_id, 'failed')
             return None
 
     def _format_conversation(self, messages: list) -> str:
@@ -226,14 +239,14 @@ class EnrichmentService:
                 'sentiment_score': sentiment.get('score'),
                 'sentiment_explanation': sentiment.get('explanation'),
                 'primary_topic': topics.get('primary'),
-                'topics': json.dumps(topics.get('all', [])),
+                'topics': topics.get('all', []),
                 'resolution_quality': quality.get('resolution_quality'),
                 'agent_performance_score': quality.get('agent_performance_score'),
                 'response_clarity_score': quality.get('response_clarity_score'),
                 'empathy_score': quality.get('empathy_score'),
-                'issues_identified': json.dumps(issues.get('identified', [])),
-                'customer_pain_points': json.dumps(issues.get('customer_pain_points', [])),
-                'suggestions': json.dumps(issues.get('suggestions', [])),
+                'issues_identified': issues.get('identified', []),
+                'customer_pain_points': issues.get('customer_pain_points', []),
+                'suggestions': issues.get('suggestions', []),
                 'customer_intent': bi.get('customer_intent'),
                 'urgency_level': bi.get('urgency_level'),
                 'follow_up_needed': bi.get('follow_up_needed', False),

@@ -55,7 +55,10 @@ class SessionManager:
             # Admin monitoring specific session
             if session_id not in self.admin_connections:
                 self.admin_connections[session_id] = []
-            self.admin_connections[session_id].append(websocket)
+            
+            # Force single connection per session to prevent duplicates
+            # This handles React Strict Mode (double connect) and zombie connections
+            self.admin_connections[session_id] = [websocket]
             # Send initial history if available
             if session_id in self.sessions:
                 await websocket.send_json({

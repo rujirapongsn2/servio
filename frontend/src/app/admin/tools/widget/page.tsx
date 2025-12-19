@@ -8,11 +8,12 @@ import WriteIcon from "@/components/icons/WriteIcon";
 export default function WidgetGeneratorPage() {
     const [position, setPosition] = useState("bottom-right");
     const [widgetType, setWidgetType] = useState("voice"); // voice, chat
+    const [allowToggle, setAllowToggle] = useState(true); // Allow mode switching
     const [copied, setCopied] = useState(false);
 
     const serverUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 
-    const embedCode = `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-server-url="${serverUrl}"></script>`;
+    const embedCode = `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}"></script>`;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(embedCode);
@@ -106,6 +107,24 @@ export default function WidgetGeneratorPage() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Allow Toggle Option */}
+                        <div>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={allowToggle}
+                                    onChange={(e) => setAllowToggle(e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                />
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Allow users to switch between voice and text chat
+                                </span>
+                            </label>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
+                                When enabled, users can toggle between voice and text modes within the widget.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
@@ -142,7 +161,7 @@ export default function WidgetGeneratorPage() {
                             The widget will appear in the {position.replace("-", " ")} corner of your website.
                         </p>
                         <a
-                            href={`/test_widget.html?type=${widgetType}&position=${position}`}
+                            href={`/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-block"

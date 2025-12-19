@@ -27,7 +27,11 @@ from app.models import (
     FileStoreFileResponse,
     CreateFileStoreRequest,
     TestFileStoreRequest,
+    TestFileStoreRequest,
     TestFileStoreResponse,
+    VoIPProviderResponse,
+    CreateVoIPProviderRequest,
+    UpdateVoIPProviderRequest,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -745,6 +749,101 @@ async def test_file_store(
         )
 
 
+# VoIP Provider endpoints
+@router.get("/voip-providers", response_model=List[VoIPProviderResponse])
+async def get_voip_providers(current_user: str = Depends(get_current_user)):
+    """Get all VoIP providers"""
+    providers = database.get_all_voip_providers()
+    
+    # Initialize default Twilio provider if none exist
+    if not providers:
+        default_config = {
+            "account_sid": "",
+            "auth_token": "",
+            "phone_number": ""
+        }
+        database.create_voip_provider("Twilio", "twilio", default_config, is_active=True)
+        providers = database.get_all_voip_providers()
+
+    return providers
+
+
+@router.get("/voip-providers/{provider_id}", response_model=VoIPProviderResponse)
+async def get_voip_provider(provider_id: int, current_user: str = Depends(get_current_user)):
+    """Get a single VoIP provider by ID"""
+    provider = database.get_voip_provider_by_id(provider_id)
+
+    if not provider:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return provider
+
+
+@router.post("/voip-providers", response_model=MessageResponse)
+async def create_voip_provider(
+    request: CreateVoIPProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new VoIP provider"""
+    try:
+        provider_id = database.create_voip_provider(
+            name=request.name,
+            type=request.type,
+            config=request.config,
+            is_active=request.is_active
+        )
+        return MessageResponse(message=f"VoIP provider created successfully with ID {provider_id}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create VoIP provider: {str(e)}"
+        )
+
+
+@router.put("/voip-providers/{provider_id}", response_model=MessageResponse)
+async def update_voip_provider(
+    provider_id: int,
+    request: UpdateVoIPProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update an existing VoIP provider"""
+    success = database.update_voip_provider(
+        provider_id=provider_id,
+        name=request.name,
+        type=request.type,
+        config=request.config,
+        is_active=request.is_active
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return MessageResponse(message="VoIP provider updated successfully")
+
+
+@router.delete("/voip-providers/{provider_id}", response_model=MessageResponse)
+async def delete_voip_provider(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete a VoIP provider"""
+    success = database.delete_voip_provider(provider_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return MessageResponse(message="VoIP provider deleted successfully")
+
+
 # Analytics endpoints
 @router.get("/analytics/summary")
 async def get_analytics_summary(
@@ -804,6 +903,7 @@ async def get_conversations(
                 c.agents_involved,
                 c.tools_used,
                 c.outcome,
+                c.enrichment_status,
                 ca.overall_sentiment,
                 ca.sentiment_score,
                 ca.primary_topic,
@@ -811,7 +911,7 @@ async def get_conversations(
                 ca.urgency_level
             FROM conversations c
             LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
-            WHERE 1=1
+            WHERE c.enrichment_status != 'skipped'
         """
         params = []
 
@@ -846,7 +946,7 @@ async def get_conversations(
             conversations.append(conv_dict)
 
         # Get total count for pagination (PostgreSQL syntax)
-        count_query = "SELECT COUNT(*) FROM conversations c LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id WHERE 1=1"
+        count_query = "SELECT COUNT(*) FROM conversations c LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id WHERE c.enrichment_status != 'skipped'"
         count_params = []
         if outcome:
             count_query += " AND c.outcome = %s"
@@ -979,6 +1079,7 @@ async def get_analytics_trends(
             SELECT DATE(started_at) as date, COUNT(*) as count
             FROM conversations
             WHERE DATE(started_at) >= CURRENT_DATE - INTERVAL '{days} days'
+            AND enrichment_status != 'skipped'
             GROUP BY DATE(started_at)
             ORDER BY date ASC
             """
@@ -993,6 +1094,7 @@ async def get_analytics_trends(
             FROM conversation_analytics ca
             JOIN conversations c ON ca.conversation_id = c.id
             WHERE DATE(c.started_at) >= CURRENT_DATE - INTERVAL '{days} days'
+            AND c.enrichment_status != 'skipped'
             AND ca.sentiment_score IS NOT NULL
             GROUP BY DATE(c.started_at)
             ORDER BY date ASC
@@ -1015,6 +1117,7 @@ async def get_analytics_trends(
             LEFT JOIN conversation_analytics ca ON c.id = ca.conversation_id
             WHERE c.agents_involved IS NOT NULL
             AND c.agents_involved::text != '[]'
+            AND c.enrichment_status != 'skipped'
             GROUP BY c.agents_involved->>0
             HAVING COUNT(*) >= 1
             ORDER BY total_conversations DESC

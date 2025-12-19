@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { getApiBaseUrl } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 function formatTimeAgo(timestamp: number) {
     const seconds = Math.floor((Date.now() - timestamp * 1000) / 1000);
@@ -236,13 +237,15 @@ export default function MonitorPage() {
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50 dark:bg-gray-900/50">
                             {messages.map((msg, idx) => (
                                 <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                                    <div className={`max-w-[80%] p-3 rounded-lg ${msg.role === "user"
+                                    <div className={`max-w-[85%] p-3 rounded-lg ${msg.role === "user"
                                         ? "bg-blue-600 text-white rounded-br-none"
-                                        : "bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-bl-none"
+                                        : "bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-bl-none shadow-sm"
                                         }`}>
-                                        <p className="text-sm">{renderMessageContent(msg.content)}</p>
-                                        <span className="text-[10px] opacity-70 mt-1 block">
-                                            {msg.role} • {new Date(msg.timestamp * 1000).toLocaleTimeString()}
+                                        <div className={`text-sm prose prose-sm max-w-none ${msg.role === "user" ? "prose-invert" : "dark:prose-invert"}`}>
+                                            <ReactMarkdown>{renderMessageContent(msg.content)}</ReactMarkdown>
+                                        </div>
+                                        <span className={`text-[10px] mt-1 block ${msg.role === "user" ? "text-blue-100" : "text-gray-400"}`}>
+                                            {msg.role === "user" ? "You" : msg.agent_name || "Assistant"} • {new Date(msg.timestamp * 1000).toLocaleTimeString()}
                                         </span>
                                     </div>
                                 </div>

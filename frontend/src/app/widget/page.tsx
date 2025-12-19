@@ -9,15 +9,27 @@ import { useState, Suspense } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/Button";
 import WriteIcon from "@/components/icons/WriteIcon";
+import MicIcon from "@/components/icons/MicIcon";
 import ArrowUpIcon from "@/components/icons/ArrowUpIcon";
 import { useSearchParams } from "next/navigation";
 
 import "../globals.css";
 
 function WidgetContent() {
-    const [collapsed, setCollapsed] = useState(false);
     const searchParams = useSearchParams();
-    const widgetType = searchParams.get("type") || "voice";
+    const initialType = searchParams.get("type") || "voice";
+    const allowToggle = searchParams.get("allowToggle") !== "false"; // Default true
+
+    // Initialize mode from localStorage or URL param
+    const [currentMode, setCurrentMode] = useState<"voice" | "chat">(() => {
+        if (typeof window !== "undefined" && allowToggle) {
+            const saved = localStorage.getItem("servio-widget-mode");
+            return (saved === "voice" || saved === "chat") ? saved : initialType as "voice" | "chat";
+        }
+        return initialType as "voice" | "chat";
+    });
+
+    const [collapsed, setCollapsed] = useState(false);
 
     const {
         isReady: audioIsReady,
@@ -25,7 +37,7 @@ function WidgetContent() {
         startRecording,
         stopRecording,
         frequencies,
-    } = useAudio({ enabled: widgetType === "voice" });
+    } = useAudio({ enabled: currentMode === "voice" });
 
     const {
         isReady: websocketReady,
@@ -41,6 +53,14 @@ function WidgetContent() {
 
     const toggleCollapsed = () => setCollapsed((prev) => !prev);
 
+    const toggleMode = () => {
+        const newMode = currentMode === "voice" ? "chat" : "voice";
+        setCurrentMode(newMode);
+        if (typeof window !== "undefined") {
+            localStorage.setItem("servio-widget-mode", newMode);
+        }
+    };
+
     return (
         <div className="w-full h-screen flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
             {/* Widget Header */}
@@ -50,11 +70,30 @@ function WidgetContent() {
                         <Image src="/servio_logo.png" alt="Logo" width={20} height={20} className="rounded" />
                     </div>
                     <span className="font-semibold text-sm truncate max-w-[150px]">
-                        {agentName || (widgetType === "chat" ? "Chat Agent" : "Voice Agent")}
+                        {agentName || (currentMode === "chat" ? "Chat Agent" : "Voice Agent")}
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {widgetType !== "chat" && (
+                    {allowToggle && (
+                        <button
+                            onClick={toggleMode}
+                            className="text-white/90 hover:text-white hover:bg-white/10 px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
+                            title={currentMode === "voice" ? "Switch to Text Chat" : "Switch to Voice Chat"}
+                        >
+                            {currentMode === "voice" ? (
+                                <>
+                                    <WriteIcon width={14} height={14} />
+                                    <span className="text-xs">Text</span>
+                                </>
+                            ) : (
+                                <>
+                                    <MicIcon className="w-3.5 h-3.5" />
+                                    <span className="text-xs">Voice</span>
+                                </>
+                            )}
+                        </button>
+                    )}
+                    {currentMode !== "chat" && (
                         <button
                             onClick={toggleCollapsed}
                             className="text-white/90 hover:text-white hover:bg-white/10 text-xs px-2.5 py-1.5 rounded-lg transition-all"
@@ -82,7 +121,7 @@ function WidgetContent() {
             <div className="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
                 <Composer
                     audioChat={
-                        widgetType === "chat" ? (
+                        currentMode === "chat" ? (
                             <form
                                 onSubmit={(e) => {
                                     e.preventDefault();

@@ -106,13 +106,20 @@ class AnalyticsService:
             total_messages=total_messages,
             user_messages=user_messages,
             agent_messages=agent_messages,
-            agents_involved=json.dumps(list(self.agents_used)),
-            tools_used=json.dumps(self.tools_called),
+            agents_involved=list(self.agents_used),
+            tools_used=self.tools_called,
             outcome=outcome
         )
 
-        # Trigger enrichment in background (Phase 2)
-        await self.enqueue_enrichment()
+        # Check if there are enough messages to enrich
+        if total_messages < 2:
+            # Skip enrichment for very short conversations
+            database.update_enrichment_status(self.conversation_id, 'skipped')
+            print(f"⏭️ Skipped enrichment for conversation {self.conversation_id} (only {total_messages} messages)")
+        else:
+            # Set status to pending and trigger enrichment in background
+            database.update_enrichment_status(self.conversation_id, 'pending')
+            await self.enqueue_enrichment()
 
         # Reset state
         self.session_id = None

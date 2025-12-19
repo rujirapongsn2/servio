@@ -157,8 +157,35 @@ class TestFileStoreRequest(BaseModel):
     query: str
 
 
+
 class TestFileStoreResponse(BaseModel):
     response: str
     grounding_sources: List[str] = []
     metadata: Optional[Dict[str, Any]] = None
     response_time: float
+
+
+# VoIP Provider models
+class VoIPProviderResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    config: Optional[Dict[str, Any]] = None
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class CreateVoIPProviderRequest(BaseModel):
+    name: str
+    type: str = "twilio"
+    config: Dict[str, Any]
+    is_active: bool = True
+
+
+class UpdateVoIPProviderRequest(BaseModel):
+    name: str
+    type: str
+    config: Dict[str, Any]
+    is_active: bool
+
