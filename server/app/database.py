@@ -679,6 +679,21 @@ def update_conversation(
         return True
 
 
+def update_enrichment_status(conversation_id: int, status: str) -> bool:
+    """Update enrichment status for a conversation
+    
+    Args:
+        conversation_id: ID of the conversation
+        status: One of 'pending', 'processing', 'completed', 'failed', 'skipped'
+    """
+    with get_db() as db:
+        conversation = db.query(Conversation).filter_by(id=conversation_id).first()
+        if not conversation:
+            return False
+        conversation.enrichment_status = status
+        return True
+
+
 def add_conversation_message(
     conversation_id: int,
     role: str,

@@ -18,6 +18,7 @@ import {
   Line,
 } from "recharts";
 import { getApiBaseUrl } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 interface AnalyticsSummary {
   total_conversations: number;
@@ -40,6 +41,7 @@ interface Conversation {
   agent_messages: number;
   agents_involved: string[];
   outcome: string;
+  enrichment_status?: string;
   overall_sentiment?: string;
   sentiment_score?: number;
   primary_topic?: string;
@@ -221,6 +223,31 @@ export default function AnalyticsPage() {
     }
   };
 
+  const getEnrichmentStatusColor = (status?: string) => {
+    switch (status) {
+      case "pending": return "text-yellow-600 bg-yellow-50";
+      case "processing": return "text-blue-600 bg-blue-50";
+      case "completed": return "text-green-600 bg-green-50";
+      case "failed": return "text-red-600 bg-red-50";
+      case "skipped": return "text-gray-500 bg-gray-50";
+      default: return "text-gray-400 bg-gray-50";
+    }
+  };
+
+  const ensureArray = (data: any) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === "string") {
+      try {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  };
+
   if (error) {
     return (
       <div className="p-8">
@@ -241,8 +268,8 @@ export default function AnalyticsPage() {
           {["today", "week", "month", "all"].map((p) => (
             <Button
               key={p}
-              size="small"
-              variant={period === p ? "primary" : "secondary"}
+              size="sm"
+              variant={period === p ? "primary" : "outline"}
               onClick={() => setPeriod(p)}
             >
               {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -301,7 +328,7 @@ export default function AnalyticsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -338,7 +365,7 @@ export default function AnalyticsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -395,8 +422,8 @@ export default function AnalyticsPage() {
             {["week", "month"].map((p) => (
               <Button
                 key={p}
-                size="small"
-                variant={trendPeriod === p ? "primary" : "secondary"}
+                size="sm"
+                variant={trendPeriod === p ? "primary" : "outline"}
                 onClick={() => setTrendPeriod(p)}
               >
                 {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -503,6 +530,8 @@ export default function AnalyticsPage() {
               Outcome
             </label>
             <select
+              id="filterOutcome"
+              title="Filter by Outcome"
               value={filterOutcome}
               onChange={(e) => setFilterOutcome(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -520,6 +549,8 @@ export default function AnalyticsPage() {
               Sentiment
             </label>
             <select
+              id="filterSentiment"
+              title="Filter by Sentiment"
               value={filterSentiment}
               onChange={(e) => setFilterSentiment(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -567,6 +598,9 @@ export default function AnalyticsPage() {
                     Outcome
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    AI Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -607,9 +641,14 @@ export default function AnalyticsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getEnrichmentStatusColor(conv.enrichment_status)}`}>
+                        {conv.enrichment_status || "N/A"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <Button
-                        size="small"
-                        variant="secondary"
+                        size="sm"
+                        variant="outline"
                         onClick={() => fetchConversationDetail(conv.id)}
                       >
                         View Details
@@ -633,8 +672,8 @@ export default function AnalyticsPage() {
                 Conversation Details
               </h2>
               <Button
-                size="small"
-                variant="secondary"
+                size="sm"
+                variant="outline"
                 onClick={() => setSelectedConversation(null)}
               >
                 Close
@@ -688,7 +727,7 @@ export default function AnalyticsPage() {
                   <div className="mb-4">
                     <div className="text-sm text-gray-600 mb-1">Topics</div>
                     <div className="flex flex-wrap gap-2">
-                      {selectedConversation.analytics.topics?.map((topic: string, i: number) => (
+                      {ensureArray(selectedConversation.analytics.topics).map((topic: string, i: number) => (
                         <span key={i} className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
                           {topic.replace(/_/g, " ")}
                         </span>
@@ -720,22 +759,22 @@ export default function AnalyticsPage() {
                   </div>
 
                   {/* Issues & Suggestions */}
-                  {selectedConversation.analytics.issues_identified?.length > 0 && (
+                  {ensureArray(selectedConversation.analytics.issues_identified).length > 0 && (
                     <div className="mb-4">
                       <div className="text-sm text-gray-600 mb-1">Issues Identified</div>
                       <ul className="list-disc list-inside text-sm text-gray-700">
-                        {selectedConversation.analytics.issues_identified.map((issue: string, i: number) => (
+                        {ensureArray(selectedConversation.analytics.issues_identified).map((issue: string, i: number) => (
                           <li key={i}>{issue}</li>
                         ))}
                       </ul>
                     </div>
                   )}
 
-                  {selectedConversation.analytics.suggestions?.length > 0 && (
+                  {ensureArray(selectedConversation.analytics.suggestions).length > 0 && (
                     <div className="mb-4">
                       <div className="text-sm text-gray-600 mb-1">Suggestions</div>
                       <ul className="list-disc list-inside text-sm text-gray-700">
-                        {selectedConversation.analytics.suggestions.map((suggestion: string, i: number) => (
+                        {ensureArray(selectedConversation.analytics.suggestions).map((suggestion: string, i: number) => (
                           <li key={i}>{suggestion}</li>
                         ))}
                       </ul>
@@ -748,19 +787,20 @@ export default function AnalyticsPage() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Messages</h3>
                 <div className="space-y-3">
-                  {selectedConversation.messages.map((msg: any, i: number) => (
+                  {ensureArray(selectedConversation.messages).map((msg: any, i: number) => (
                     <div
                       key={i}
-                      className={`p-3 rounded-lg ${
-                        msg.role === "user"
-                          ? "bg-gray-100 ml-8"
-                          : "bg-blue-50 mr-8"
-                      }`}
+                      className={`p-3 rounded-lg ${msg.role === "user"
+                        ? "bg-gray-100 ml-8"
+                        : "bg-blue-50 mr-8"
+                        }`}
                     >
                       <div className="text-xs text-gray-600 mb-1">
                         {msg.role === "user" ? "User" : msg.agent_name || "Agent"}
                       </div>
-                      <div className="text-sm text-gray-900">{msg.content}</div>
+                      <div className="text-sm text-gray-900 prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
                     </div>
                   ))}
                 </div>

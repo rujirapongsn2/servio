@@ -163,6 +163,7 @@ class Conversation(Base):
     agents_involved: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     tools_used: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     outcome: Mapped[str] = mapped_column(String(50), default="ongoing", index=True)
+    enrichment_status: Mapped[str] = mapped_column(String(50), default="pending", index=True)  # pending, processing, completed, failed, skipped
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships

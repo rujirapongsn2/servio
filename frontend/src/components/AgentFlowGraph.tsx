@@ -48,13 +48,8 @@ function AgentNode({ data, targetPosition = Position.Top, sourcePosition = Posit
       <div className="text-center text-base font-semibold text-slate-900">
         {data.label}
       </div>
-      {data.description ? (
-        <div className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-          {data.description}
-        </div>
-      ) : null}
       {data.tools ? (
-        <div className="text-[10px] text-slate-400 mt-1">Tools: {data.tools}</div>
+        <div className="text-[10px] text-slate-400 mt-1 text-center">Tools: {data.tools}</div>
       ) : null}
       <Handle type="source" position={sourcePosition} isConnectable={false} style={{ opacity: 0 }} />
     </div>
@@ -78,7 +73,7 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
     nodes.push({
       id: "coordinator",
       type: "agentNode",
-      data: { label: "Coordinator Agent", description: "Start of every conversation" },
+      data: { label: "Coordinator Agent" },
       position: { x: baseX, y: baseY },
       sourcePosition: Position.Bottom,
       targetPosition: Position.Bottom,
@@ -96,7 +91,6 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
         type: "agentNode",
         data: {
           label: agent.name,
-          description: truncate(agent.instructions || "", 110),
           tools:
             agent.tools && agent.tools.length > 0
               ? agent.tools.map((t) => t.name).join(", ")
@@ -116,8 +110,8 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
         target: `agent-${agent.id}`,
         type: "smoothstep",
         animated: false,
-        style: { stroke: "#0D1B2A", strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#0D1B2A" },
+        style: { stroke: "#94a3b8", strokeWidth: 1 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
       });
     });
 
@@ -135,8 +129,8 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
           target: targetId,
           type: "smoothstep",
           animated: false,
-          style: { stroke: "#0D1B2A", strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#0D1B2A" },
+          style: { stroke: "#94a3b8", strokeWidth: 1 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
         });
       });
     });
@@ -185,8 +179,8 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
         defaultEdgeOptions={{
           type: "smoothstep",
           animated: false,
-          style: { stroke: "#0D1B2A", strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#0D1B2A" },
+          style: { stroke: "#94a3b8", strokeWidth: 1 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
         }}
         connectionLineType={ConnectionLineType.Bezier}
         className="!bg-transparent"

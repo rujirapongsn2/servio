@@ -903,6 +903,7 @@ async def get_conversations(
                 c.agents_involved,
                 c.tools_used,
                 c.outcome,
+                c.enrichment_status,
                 ca.overall_sentiment,
                 ca.sentiment_score,
                 ca.primary_topic,
