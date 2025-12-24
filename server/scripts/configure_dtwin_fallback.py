@@ -16,7 +16,7 @@ import sqlite3
 
 def db_path() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "..", "agents.db")
+    return os.path.join(here, "..", "data", "agents.db")
 
 
 def main():

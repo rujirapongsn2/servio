@@ -442,7 +442,7 @@ CSAgent/
 ├── server/
 │   ├── Dockerfile            # Backend container definition
 │   ├── .dockerignore        # Exclude unnecessary files
-│   └── data/                # (Legacy) SQLite volume ถ้ายังใช้แบบเก่า
+│   └── data/                # Data volume
 └── frontend/
     ├── Dockerfile           # Frontend container definition (multi-stage)
     └── .dockerignore       # Exclude node_modules, .next, etc.
@@ -476,7 +476,6 @@ SOFTNIX_API_INPUTS=product_id,customer_id
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/voice_agents
-# DATABASE_PATH=/app/data/agents.db # ใช้ถ้ายังรัน SQLite ในบางจุด
 TOOL_TIMEOUT_SECONDS=60
 SQL_ECHO=false
 
@@ -487,7 +486,6 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 ### Database Persistence
 
 - **PostgreSQL**: ข้อมูลหลักทั้งหมดจะถูกเก็บใน PostgreSQL service ที่กำหนดใน docker-compose หรือ external DB
-- **SQLite** (Legacy/Backup): ถ้ามีการใช้งาน SQLite ข้อมูลจะถูกเก็บผ่าน Volume mount: `./server/data:/app/data`
 
 ### การใช้สคริปต์จัดการ Docker
 

@@ -4,7 +4,7 @@
 - Root: `Makefile`, `.env` (local only), `README.md`.
 - Frontend (Next.js + TS): `frontend/` → App Router in `src/app/**`, config in `next.config.ts`, `tailwind.config.mjs`.
 - Backend (FastAPI): `server/` → entry `server.py`, routes and utils in `server/app/**`, Python deps in `pyproject.toml` (managed by `uv`).
-- Data: ephemeral SQLite `server/agents.db` (do not commit).
+- Data: ephemeral SQLite (do not commit).
 
 ## Build, Test, and Development Commands
 - Install deps (frontend + backend): `make sync`
@@ -28,5 +28,5 @@
 - PRs: include summary, motivation, and scope; link issues; add screenshots/GIFs for UI changes; note env or migration impacts. Ensure `make sync` and `make serve` succeed locally.
 
 ## Security & Configuration Tips
-- Secrets: set `OPENAI_API_KEY` via `.env` (untracked) or environment. Never commit secrets or `server/agents.db`.
+- Secrets: set `OPENAI_API_KEY` via `.env` (untracked) or environment. Never commit secrets.
 - CORS/origins: backend enables CORS for local dev—tighten for deployments.
