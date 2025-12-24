@@ -98,7 +98,8 @@ export default function MonitorPage() {
             wsRef.current.close();
         }
 
-        const wsUrl = `${websocketBase}/admin/monitor?session_id=${selectedSessionId}`;
+        const token = localStorage.getItem("adminToken");
+        const wsUrl = `${websocketBase}/admin/monitor?session_id=${selectedSessionId}&token=${token}`;
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {

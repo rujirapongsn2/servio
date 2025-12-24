@@ -40,6 +40,15 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# server
+server/data/*.db
+server/data/agents.db*
+
+# nginx
+nginx/certs/*.crt
+nginx/certs/*.key
+nginx/certs/
+
 __pycache__
 .venv/
 
