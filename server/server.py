@@ -29,7 +29,7 @@ from app.utils import (
 )
 from app.telephony_utils import TelephonyUtils, TwilioHelper
 from app.session_manager import session_manager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 import os
@@ -97,6 +97,10 @@ def softnix_logo_png():
     if os.path.exists(path):
         return FileResponse(path)
     return HTMLResponse("Softnix.png not found", status_code=404)
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy"}
 
 class Workflow(VoiceWorkflowBase):
     def __init__(self, connection: WebsocketHelper, session_id: str):
