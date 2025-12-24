@@ -13,10 +13,9 @@ export function getApiBaseUrl(): string {
   }
 
   if (typeof window !== "undefined") {
-    const { origin, hostname } = window.location;
-    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-      return origin.replace(/\/$/, "");
-    }
+    const { origin } = window.location;
+    // Always prefer the current origin when using a reverse proxy/localhost setup
+    return origin.replace(/\/$/, "");
   }
 
   return "http://localhost:8000";

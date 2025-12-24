@@ -284,16 +284,50 @@ check_and_kill_ports() {
     return 0
 }
 
+# Function to check and generate SSL certificates
+check_and_generate_certs() {
+    local cert_dir="nginx/certs"
+    local cert_file="$cert_dir/server.crt"
+    local key_file="$cert_dir/server.key"
+
+    if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
+        echo -e "${YELLOW}🔒 SSL certificates not found in $cert_dir${NC}"
+        echo -e "${BLUE}Generating self-signed certificates for local development...${NC}"
+        
+        # Check if openssl is installed
+        if ! command -v openssl &> /dev/null; then
+            echo -e "${RED}ERROR: openssl is not installed!${NC}"
+            echo -e "${YELLOW}Please install openssl or provide certificates manually in $cert_dir${NC}"
+            return 1
+        fi
+
+        mkdir -p "$cert_dir"
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout "$key_file" \
+            -out "$cert_file" \
+            -subj "/C=TH/ST=Bangkok/L=Bangkok/O=Softnix/CN=localhost" &>/dev/null
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Self-signed certificates generated successfully${NC}"
+            echo ""
+        else
+            echo -e "${RED}✗ Failed to generate certificates${NC}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 # Function to show service URLs
 show_urls() {
     echo ""
     echo -e "${GREEN}✓ Services are running!${NC}"
     echo ""
     echo -e "${CYAN}Access your application at:${NC}"
-    echo -e "  ${GREEN}Frontend:${NC}   http://localhost:3000"
-    echo -e "  ${GREEN}Backend:${NC}    http://localhost:8000"
-    echo -e "  ${GREEN}WebSocket:${NC}  ws://localhost:8000/ws"
-    echo -e "  ${GREEN}Admin:${NC}      http://localhost:3000/admin"
+    echo -e "  ${GREEN}Frontend:${NC}   https://localhost"
+    echo -e "  ${GREEN}Backend API:${NC} https://localhost/api"
+    echo -e "  ${GREEN}WebSocket:${NC}  wss://localhost/ws"
+    echo -e "  ${GREEN}Admin:${NC}      https://localhost/admin"
     echo ""
 }
 
@@ -354,6 +388,10 @@ while true; do
             if ! check_and_kill_ports; then
                 continue
             fi
+            # Check for SSL certificates
+            if ! check_and_generate_certs; then
+                continue
+            fi
             echo -e "${YELLOW}Press Ctrl+C to stop${NC}"
             echo ""
             docker compose up
@@ -363,6 +401,10 @@ while true; do
             echo ""
             # Check and kill conflicting ports
             if ! check_and_kill_ports; then
+                continue
+            fi
+            # Check for SSL certificates
+            if ! check_and_generate_certs; then
                 continue
             fi
             docker compose up -d
@@ -385,6 +427,10 @@ while true; do
             echo ""
             # Check and kill conflicting ports
             if ! check_and_kill_ports; then
+                continue
+            fi
+            # Check for SSL certificates
+            if ! check_and_generate_certs; then
                 continue
             fi
             docker compose restart

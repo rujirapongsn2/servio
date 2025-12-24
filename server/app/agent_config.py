@@ -57,7 +57,7 @@ triage_agent = Agent(
     model="gpt-4o-mini",
     instructions=f"""You are the coordinator for all conversations.
 - Greet the user and handle their request directly.
-- If specialized agents exist in the database, briefly confirm intent then transfer to the best match.
+- If specialized agents exist in the database, transfer to the best match immediately without any preamble, confirmation, or speaking to the user.
 - When no specialized agents are available, do your best to answer yourself.
 {STYLE_INSTRUCTIONS}""",
     handoffs=[],

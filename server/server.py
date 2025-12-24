@@ -15,6 +15,7 @@ from agents.voice import (
     VoiceWorkflowBase,
 )
 from app.agent_config import get_runtime_starting_agent
+from app.auth import get_current_user, decode_access_token
 from app.utils import (
     WebsocketHelper,
     concat_audio_chunks,
@@ -28,7 +29,7 @@ from app.utils import (
 )
 from app.telephony_utils import TelephonyUtils, TwilioHelper
 from app.session_manager import session_manager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 import os
@@ -65,18 +66,17 @@ logger = getLogger(__name__)
 
 # Configure CORS with environment variable support for production
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else [
+    "https://localhost",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3002",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
     "http://127.0.0.1:3002",
-    "http://frontend:3000",  # Docker internal network
 ]
 
-# For development: allow all origins if in development mode
-# Check if running in Docker or development
-if os.getenv("ENVIRONMENT") == "development" or not os.getenv("ALLOWED_ORIGINS"):
+# For development: allow all origins ONLY if explicitly in development mode
+if os.getenv("ENVIRONMENT") == "development":
     # In development, be more permissive
     ALLOWED_ORIGINS = ["*"]
 
@@ -372,8 +372,21 @@ async def twilio_stream_endpoint(websocket: WebSocket):
 
 
 @app.websocket("/ws/admin/monitor")
-async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(None)):
-    # In a real app, validate admin token here
+async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(None), token: str = Query(None)):
+    if not token:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "Authentication required"})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    
+    try:
+        decode_access_token(token)
+    except Exception as e:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": f"Invalid token: {str(e)}"})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await session_manager.connect_admin(websocket, session_id)
     try:
         while True:
@@ -401,7 +414,7 @@ async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(N
 
 
 @app.get("/api/admin/sessions")
-async def get_active_sessions():
+async def get_active_sessions(current_user: str = Depends(get_current_user)):
     return session_manager.get_all_sessions()
 
 

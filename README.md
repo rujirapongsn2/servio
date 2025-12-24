@@ -117,7 +117,7 @@ Servio มี Widget ที่คุณสามารถนำไปแปะ�
 2. **ตั้งค่า Widget**:
    - เลือกประเภท: `voice` (พร้อมปุ่ม Push-to-talk) หรือ `chat` (พิมพ์คุยอย่างเดียว)
    - เลือกตำแหน่ง: ขวาล่าง (`bottom-right`) หรือ ซ้ายล่าง (`bottom-left`)
-   - ตั้งค่า Server URL (ค่าเริ่มต้น: `http://localhost:3000`)
+   - ตั้งค่า Server URL (ค่าเริ่มต้น: `https://localhost`)
 3. **คัดลอกและนำไปใช้**: นำโค้ดที่ได้ไปวางใน HTML ของเว็บไซต์คุณ
 
 ### ตัวอย่างโค้ด Widget
@@ -125,10 +125,10 @@ Servio มี Widget ที่คุณสามารถนำไปแปะ�
 ```html
 <!-- Servio Chat Widget -->
 <script
-  src="http://localhost:3000/embed.js"
+  src="https://localhost/embed.js"
   data-type="chat"
   data-position="bottom-right"
-  data-server-url="http://localhost:3000">
+  data-server-url="https://localhost">
 </script>
 ```
 
@@ -322,10 +322,10 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    - ✅ ล้าง Containers และ Volumes
 
    **ช่องทางเข้าใช้งาน:**
-   - Frontend: [`http://localhost:3000`](http://localhost:3000)
-   - Backend API: [`http://localhost:8000`](http://localhost:8000)
-   - Admin Console: [`http://localhost:3000/admin`](http://localhost:3000/admin)
-   - WebSocket: `ws://localhost:8000/ws`
+   - Frontend: [`https://localhost`](https://localhost)
+   - Admin Console: [`https://localhost/admin`](https://localhost/admin)
+   - Backend API: [`https://localhost/api`](https://localhost/api)
+   - WebSocket: `wss://localhost/ws`
 
    **คำสั่ง Docker Direct** (ถ้าคุณถนัดแบบพิมพ์เอง):
    ```bash
@@ -655,6 +655,26 @@ docker compose up -d
 - [ ] ตั้ง `ALLOWED_ORIGINS` ให้รับเฉพาะโดเมนเรา
 - [ ] ใช้ `wss://` สำหรับ WebSocket
 - [ ] Backup Database สม่ำเสมอ
+- [ ] ตั้งค่า `ALLOWED_ORIGINS` ให้ครอบคลุม `https://yourdomain.com`
+
+---
+
+### โครงสร้างความปลอดภัยแบบใหม่ (Security Hardening & Infrastructure)
+
+ระบบปัจจุบันถูกปรับปรุงให้มีความปลอดภัยระดับ Enterprise ดังนี้:
+
+- **Reverse Proxy (Nginx)**: บริการทั้งหมดถูกซ่อนไว้หลัง Nginx Proxy (Port 80/443)
+- **SSL by Default**: รองรับ HTTPS และ WSS (Secure WebSocket) พร้อมระบบสร้าง Self-signed certificate อัตโนมัติใน `start.sh`
+- **Service Isolation**: พอร์ตภายใน (3000, 8000, 5432) จะไม่ถูกเปิดออกสู่ภายนอก เข้าถึงได้เฉพาะผ่าน Proxy เท่านั้น
+- **Read-only Filesystem**: Backend container ทำงานในโหมด Read-only เพื่อป้องกันการเขียนไฟล์ไม่พึงประสงค์ โดยมีการแยก `tmpfs` สำหรับงานชั่วคราว
+- **Unified Origin**: Frontend และ Backend ทำงานบนโดเมนและพอร์ตเดียวกัน ลดปัญหา CORS และ Mixed Content
+
+**ช่องทางการเข้าใช้งานแบบใหม่:**
+- **Frontend & Admin**: `https://localhost`
+- **Backend API**: `https://localhost/api`
+- **WebSocket**: `wss://localhost/ws`
+
+---
 
 ## การใช้งาน Admin & Agents
 
