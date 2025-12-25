@@ -143,7 +143,31 @@ class Workflow(VoiceWorkflowBase):
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
+    # Validate API key before accepting connection
+    from app import database
+
+    if not api_key:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "API key is required"})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # Extract Origin header for domain validation
+    origin = websocket.headers.get("origin") or websocket.headers.get("Origin")
+
+    if not database.validate_api_key(api_key, origin=origin):
+        await websocket.accept()
+        error_message = "Invalid or expired API key"
+        if origin:
+            error_message += f" or unauthorized origin: {origin}"
+        await websocket.send_json({"type": "error", "message": error_message})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # Increment usage count for this API key
+    database.increment_api_key_usage(api_key)
+
     session_id = str(uuid.uuid4())
     await session_manager.connect(websocket, session_id)
 
@@ -425,14 +449,50 @@ async def get_active_sessions(current_user: str = Depends(get_current_user)):
 @app.post("/incoming-call")
 async def incoming_call_endpoint(request: Request):
     """
-    Dynamic endpoint for Twilio Webhook.
+    Dynamic endpoint for Twilio Webhook with signature validation.
     Returns TwiML that connects to the WebSocket on the same host.
     """
+    from app.auth import validate_twilio_signature
+    from app import database
+
+    # Get Twilio configuration
+    twilio_config = database.get_active_voip_config("twilio")
+
+    # Validate Twilio signature if auth_token is configured
+    if twilio_config and twilio_config.get("auth_token"):
+        # Get signature from headers
+        twilio_signature = request.headers.get("X-Twilio-Signature", "")
+
+        if not twilio_signature:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing Twilio signature"
+            )
+
+        # Get full URL
+        url = str(request.url)
+
+        # Get form data
+        form_data = await request.form()
+        params = dict(form_data)
+
+        # Validate signature
+        if not validate_twilio_signature(
+            signature=twilio_signature,
+            url=url,
+            params=params,
+            auth_token=twilio_config["auth_token"]
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Twilio signature"
+            )
+
     host = request.headers.get("host") or "localhost:8000"
     # If behind ngrok, header 'host' is usually the ngrok domain.
     # Protocol: if https is used, web socket should be wss.
     # We can assume wss for ngrok.
-    
+
     xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>

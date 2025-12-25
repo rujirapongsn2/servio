@@ -6,17 +6,27 @@ import { getApiBaseUrl } from "@/lib/api";
 
 export function useWebsocket({
   url,
+  apiKey,
   onNewAudio,
   onAudioDone,
 }: {
   url?: string;
+  apiKey?: string;
   onNewAudio?: (audio: Int16Array<ArrayBuffer>) => void;
   onAudioDone?: () => void;
 } = {}) {
   const defaultWs = (process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT
     ? process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT.replace(/\/$/, "")
     : `${getApiBaseUrl().replace(/^http/, "ws")}/ws`);
-  url = url ?? defaultWs;
+
+  // Add API key to URL if provided
+  let wsUrl = url ?? defaultWs;
+  if (apiKey) {
+    const separator = wsUrl.includes('?') ? '&' : '?';
+    wsUrl = `${wsUrl}${separator}api_key=${encodeURIComponent(apiKey)}`;
+  }
+
+  url = wsUrl;
   const [isReady, setIsReady] = useState(false);
   const [history, setHistory] = useState<Message[]>([]);
   const [agentName, setAgentName] = useState<string | null>(null);
@@ -30,6 +40,7 @@ export function useWebsocket({
     });
     ws.addEventListener("close", () => {
       setIsReady(false);
+      setIsLoading(false); // Stop loading on close
     });
     ws.addEventListener("error", (event) => {
       setIsReady(false);
@@ -38,6 +49,13 @@ export function useWebsocket({
     });
     ws.addEventListener("message", (event) => {
       const data = JSON.parse(event.data);
+      if (data.type === "error") {
+        console.error("WebSocket Error:", data.message);
+        alert(data.message); // Alert the user
+        setIsLoading(false);
+        return;
+      }
+
       if (data.type === "history.updated") {
         if (data.inputs[data.inputs.length - 1].role !== "user") {
           setIsLoading(false);

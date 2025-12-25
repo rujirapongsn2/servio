@@ -23,6 +23,8 @@
             const params = new URLSearchParams(window.location.search);
             const type = params.get('type') || 'voice';
             const position = params.get('position') || 'bottom-right';
+            const apiKey = params.get('apiKey') || '';
+            const allowToggle = params.get('allowToggle') || 'true';
             const serverUrl = window.location.origin;
 
             const script = document.createElement('script');
@@ -30,6 +32,8 @@
             script.setAttribute('data-position', position);
             script.setAttribute('data-server-url', serverUrl);
             script.setAttribute('data-type', type);
+            script.setAttribute('data-api-key', apiKey);
+            script.setAttribute('data-allow-toggle', allowToggle);
             document.body.appendChild(script);
         })();
     </script>

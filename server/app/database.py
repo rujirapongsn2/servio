@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.db_config import get_db
 from app.orm_models import (
     Admin, Agent, Tool, AgentTool, AgentHandoff,
-    FileStore, FileStoreFile, VoIPProvider,
+    FileStore, FileStoreFile, VoIPProvider, ApiKey,
     Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary
 )
 
@@ -601,6 +601,178 @@ def get_active_voip_config(provider_type: str = "twilio") -> Optional[Dict[str, 
             return None
         return provider.config
 
+
+# ============================================================================
+# API Key Operations
+# ============================================================================
+
+def get_all_api_keys() -> List[Dict[str, Any]]:
+    """Get all API keys"""
+    with get_db() as db:
+        keys = db.query(ApiKey).order_by(ApiKey.created_at.desc()).all()
+        return [
+            {
+                "id": key.id,
+                "name": key.name,
+                "key": key.key,
+                "is_active": key.is_active,
+                "usage_count": key.usage_count,
+                "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+                "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+                "created_by": key.created_by,
+                "allowed_domains": key.allowed_domains,
+                "created_at": key.created_at.isoformat() if key.created_at else None,
+                "updated_at": key.updated_at.isoformat() if key.updated_at else None
+            }
+            for key in keys
+        ]
+
+
+def get_api_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
+    """Get a single API key by ID"""
+    with get_db() as db:
+        key = db.query(ApiKey).filter_by(id=key_id).first()
+        if not key:
+            return None
+        return {
+            "id": key.id,
+            "name": key.name,
+            "key": key.key,
+            "is_active": key.is_active,
+            "usage_count": key.usage_count,
+            "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+            "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+            "created_by": key.created_by,
+            "allowed_domains": key.allowed_domains,
+            "created_at": key.created_at.isoformat() if key.created_at else None,
+            "updated_at": key.updated_at.isoformat() if key.updated_at else None
+        }
+
+
+def get_api_key_by_key(key_value: str) -> Optional[Dict[str, Any]]:
+    """Get an API key by its key value (for validation)"""
+    with get_db() as db:
+        key = db.query(ApiKey).filter_by(key=key_value).first()
+        if not key:
+            return None
+        return {
+            "id": key.id,
+            "name": key.name,
+            "key": key.key,
+            "is_active": key.is_active,
+            "usage_count": key.usage_count,
+            "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+            "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+            "created_by": key.created_by,
+            "created_at": key.created_at.isoformat() if key.created_at else None,
+            "updated_at": key.updated_at.isoformat() if key.updated_at else None
+        }
+
+
+def create_api_key(
+    name: str,
+    key: str,
+    expires_at: Optional[datetime] = None,
+    created_by: Optional[str] = None,
+    allowed_domains: Optional[List[str]] = None
+) -> int:
+    """Create a new API key"""
+    with get_db() as db:
+        api_key = ApiKey(
+            name=name,
+            key=key,
+            expires_at=expires_at,
+            created_by=created_by,
+            allowed_domains=allowed_domains
+        )
+        db.add(api_key)
+        db.flush()
+        return api_key.id
+
+
+def update_api_key(
+    key_id: int,
+    name: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    expires_at: Optional[datetime] = None,
+    allowed_domains: Optional[List[str]] = None
+) -> bool:
+    """Update an API key"""
+    with get_db() as db:
+        api_key = db.query(ApiKey).filter_by(id=key_id).first()
+        if not api_key:
+            return False
+
+        if name is not None:
+            api_key.name = name
+        if is_active is not None:
+            api_key.is_active = is_active
+        if expires_at is not None:
+            api_key.expires_at = expires_at
+        if allowed_domains is not None:
+            api_key.allowed_domains = allowed_domains
+
+        api_key.updated_at = datetime.utcnow()
+        return True
+
+
+def delete_api_key(key_id: int) -> bool:
+    """Delete an API key"""
+    with get_db() as db:
+        api_key = db.query(ApiKey).filter_by(id=key_id).first()
+        if not api_key:
+            return False
+        db.delete(api_key)
+        return True
+
+
+def increment_api_key_usage(key_value: str) -> bool:
+    """Increment usage count and update last_used_at for an API key"""
+    with get_db() as db:
+        api_key = db.query(ApiKey).filter_by(key=key_value).first()
+        if not api_key:
+            return False
+        api_key.usage_count += 1
+        api_key.last_used_at = datetime.utcnow()
+        return True
+
+
+def validate_api_key(key_value: str, origin: Optional[str] = None) -> bool:
+    """Validate an API key - check if it exists, is active, not expired, and origin is allowed"""
+    with get_db() as db:
+        api_key = db.query(ApiKey).filter_by(key=key_value).first()
+
+        if not api_key:
+            return False
+
+        if not api_key.is_active:
+            return False
+
+        # Check expiration
+        if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+            return False
+
+        # Check origin against allowed domains
+        if api_key.allowed_domains and origin:
+            # Extract domain from origin (e.g., "https://example.com" -> "example.com")
+            import re
+            origin_domain = re.sub(r'^https?://', '', origin).split(':')[0].split('/')[0]
+            
+            # Check if origin matches any allowed domain
+            allowed = False
+            for allowed_domain in api_key.allowed_domains:
+                # Support wildcards and exact matches
+                if allowed_domain == '*' or origin_domain == allowed_domain or origin_domain.endswith('.' + allowed_domain):
+                    allowed = True
+                    break
+            
+            if not allowed:
+                return False
+        elif api_key.allowed_domains and not origin:
+            # If domains are restricted but no origin provided, reject
+            return False
+
+        return True
 
 
 # ============================================================================

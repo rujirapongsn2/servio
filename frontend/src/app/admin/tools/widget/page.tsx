@@ -4,16 +4,21 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import MicIcon from "@/components/icons/MicIcon";
 import WriteIcon from "@/components/icons/WriteIcon";
+import { ApiKeyManager } from "@/components/ApiKeyManager";
 
 export default function WidgetGeneratorPage() {
     const [position, setPosition] = useState("bottom-right");
     const [widgetType, setWidgetType] = useState("voice"); // voice, chat
     const [allowToggle, setAllowToggle] = useState(true); // Allow mode switching
     const [copied, setCopied] = useState(false);
+    const [selectedApiKey, setSelectedApiKey] = useState("");
 
     const serverUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 
-    const embedCode = `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}"></script>`;
+    const embedCode = selectedApiKey
+        ? `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}" data-api-key="${selectedApiKey}"></script>`
+        : `<!-- Please select or create an API key first -->
+<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}" data-api-key="YOUR_API_KEY_HERE"></script>`;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(embedCode);
@@ -22,14 +27,19 @@ export default function WidgetGeneratorPage() {
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8">
+        <div className="max-w-6xl mx-auto space-y-8">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                     Widget Generator
                 </h1>
                 <p className="mt-2 text-gray-600 dark:text-gray-400">
-                    Create an embeddable chat widget for your website.
+                    Create an embeddable chat widget for your website with secure API key authentication.
                 </p>
+            </div>
+
+            {/* API Key Management - Full Width */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700">
+                <ApiKeyManager onApiKeySelect={setSelectedApiKey} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -138,6 +148,14 @@ export default function WidgetGeneratorPage() {
                             Copy and paste this code into your website's HTML, just before the closing <code>&lt;/body&gt;</code> tag.
                         </p>
 
+                        {!selectedApiKey && (
+                            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                                    ⚠️ Please select or create an API key above to get the complete embed code.
+                                </p>
+                            </div>
+                        )}
+
                         <div className="relative">
                             <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto whitespace-pre-wrap break-all">
                                 {embedCode}
@@ -147,6 +165,7 @@ export default function WidgetGeneratorPage() {
                                 size="sm"
                                 className="absolute top-2 right-2"
                                 variant={copied ? "primary" : "outline"}
+                                disabled={!selectedApiKey}
                             >
                                 {copied ? "Copied!" : "Copy Code"}
                             </Button>
@@ -161,7 +180,7 @@ export default function WidgetGeneratorPage() {
                             The widget will appear in the {position.replace("-", " ")} corner of your website.
                         </p>
                         <a
-                            href={`/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}`}
+                            href={`/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}&apiKey=${selectedApiKey}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-block"

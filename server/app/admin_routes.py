@@ -32,6 +32,9 @@ from app.models import (
     VoIPProviderResponse,
     CreateVoIPProviderRequest,
     UpdateVoIPProviderRequest,
+    ApiKeyResponse,
+    CreateApiKeyRequest,
+    UpdateApiKeyRequest,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1178,3 +1181,112 @@ async def delete_conversations(current_user: str = Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete conversations: {str(e)}"
         )
+
+
+# API Key endpoints
+@router.get("/api-keys", response_model=List[ApiKeyResponse])
+async def get_api_keys(current_user: str = Depends(get_current_user)):
+    """Get all API keys"""
+    keys = database.get_all_api_keys()
+    return keys
+
+
+@router.get("/api-keys/{key_id}", response_model=ApiKeyResponse)
+async def get_api_key(key_id: int, current_user: str = Depends(get_current_user)):
+    """Get a single API key by ID"""
+    key = database.get_api_key_by_id(key_id)
+
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found"
+        )
+
+    return key
+
+
+@router.post("/api-keys", response_model=MessageResponse)
+async def create_api_key(
+    request: CreateApiKeyRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new API key"""
+    import secrets
+    from datetime import timedelta
+
+    try:
+        # Generate a secure random API key
+        api_key = f"sk_{secrets.token_urlsafe(32)}"
+
+        # Calculate expiration date if specified
+        expires_at = None
+        if request.expires_days:
+            from datetime import datetime
+            expires_at = datetime.utcnow() + timedelta(days=request.expires_days)
+
+        # Create the API key
+        key_id = database.create_api_key(
+            name=request.name,
+            key=api_key,
+            expires_at=expires_at,
+            created_by=current_user,
+            allowed_domains=request.allowed_domains
+        )
+
+        return MessageResponse(
+            message=f"API key created successfully. Key: {api_key} (Save this key securely - it won't be shown again!)"
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create API key: {str(e)}"
+        )
+
+
+@router.put("/api-keys/{key_id}", response_model=MessageResponse)
+async def update_api_key(
+    key_id: int,
+    request: UpdateApiKeyRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update an API key"""
+    from datetime import datetime
+
+    # Parse expires_at if provided
+    expires_at = None
+    if request.expires_at:
+        expires_at = datetime.fromisoformat(request.expires_at)
+
+    success = database.update_api_key(
+        key_id=key_id,
+        name=request.name,
+        is_active=request.is_active,
+        expires_at=expires_at,
+        allowed_domains=request.allowed_domains
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found"
+        )
+
+    return MessageResponse(message="API key updated successfully")
+
+
+@router.delete("/api-keys/{key_id}", response_model=MessageResponse)
+async def delete_api_key(
+    key_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete an API key"""
+    success = database.delete_api_key(key_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="API key not found"
+        )
+
+    return MessageResponse(message="API key deleted successfully")

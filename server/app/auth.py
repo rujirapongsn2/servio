@@ -75,3 +75,45 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
         )
 
     return username
+
+
+def validate_twilio_signature(
+    signature: str,
+    url: str,
+    params: dict,
+    auth_token: str
+) -> bool:
+    """
+    Validate Twilio request signature
+
+    Args:
+        signature: X-Twilio-Signature header value
+        url: Full URL of the request
+        params: Request parameters (form data or query params)
+        auth_token: Twilio Auth Token
+
+    Returns:
+        bool: True if signature is valid, False otherwise
+    """
+    import hmac
+    import hashlib
+    from urllib.parse import urlencode
+
+    # Create the signature string
+    # Sort params and concatenate with URL
+    sorted_params = sorted(params.items())
+    data = url + ''.join(f'{k}{v}' for k, v in sorted_params)
+
+    # Compute HMAC-SHA1
+    mac = hmac.new(
+        auth_token.encode('utf-8'),
+        data.encode('utf-8'),
+        hashlib.sha1
+    )
+    expected_signature = mac.digest().hex()
+
+    # Compare signatures (base64 encoded for Twilio)
+    import base64
+    expected_b64 = base64.b64encode(mac.digest()).decode('utf-8')
+
+    return hmac.compare_digest(expected_b64, signature)

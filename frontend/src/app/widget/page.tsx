@@ -19,6 +19,7 @@ function WidgetContent() {
     const searchParams = useSearchParams();
     const initialType = searchParams.get("type") || "voice";
     const allowToggle = searchParams.get("allowToggle") !== "false"; // Default true
+    const apiKey = searchParams.get("apiKey") || searchParams.get("api_key") || "";
 
     // Initialize mode from localStorage or URL param
     const [currentMode, setCurrentMode] = useState<"voice" | "chat">(() => {
@@ -48,6 +49,7 @@ function WidgetContent() {
         isLoading,
         agentName,
     } = useWebsocket({
+        apiKey: apiKey,
         onNewAudio: playAudio,
     });
 

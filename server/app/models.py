@@ -189,3 +189,31 @@ class UpdateVoIPProviderRequest(BaseModel):
     config: Dict[str, Any]
     is_active: bool
 
+
+# API Key models
+class ApiKeyResponse(BaseModel):
+    id: int
+    name: str
+    key: str
+    is_active: bool
+    usage_count: int
+    last_used_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    created_by: Optional[str] = None
+    allowed_domains: Optional[List[str]] = None
+    created_at: str
+    updated_at: str
+
+
+class CreateApiKeyRequest(BaseModel):
+    name: str
+    expires_days: Optional[int] = None
+    allowed_domains: Optional[List[str]] = None  # Number of days until expiration (None = never expires)
+
+
+class UpdateApiKeyRequest(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    expires_at: Optional[str] = None
+    allowed_domains: Optional[List[str]] = None
+

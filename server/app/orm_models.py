@@ -143,6 +143,24 @@ class VoIPProvider(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ApiKey(Base):
+    """API Keys for WebSocket authentication"""
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)  # Friendly name for the key
+    key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)  # The actual API key
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)  # Track usage
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Optional expiration
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Admin username
+    allowed_domains: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Domain whitelist for Origin validation
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+
 
 # ============================================================================
 # Analytics Models
