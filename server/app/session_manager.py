@@ -10,6 +10,7 @@ class SessionInfo(BaseModel):
     start_time: float
     last_message_time: float
     mode: str = "AI"  # "AI" or "MANUAL"
+    source: str = "text_widget"  # "text_widget", "voice_widget", or "phone"
     last_message_preview: str = ""
     messages: List[Dict] = []
 
@@ -24,14 +25,15 @@ class SessionManager:
         # Map session_id -> List[Admin WebSocket]
         self.admin_connections: Dict[str, List[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, session_id: str):
+    async def connect(self, websocket: WebSocket, session_id: str, source: str = "text_widget"):
         await websocket.accept()
         self.active_connections[session_id] = websocket
         if session_id not in self.sessions:
             self.sessions[session_id] = SessionInfo(
                 session_id=session_id,
                 start_time=time.time(),
-                last_message_time=time.time()
+                last_message_time=time.time(),
+                source=source
             )
         # Notify admins of new session
         await self.broadcast_sessions_list()

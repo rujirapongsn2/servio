@@ -12,10 +12,13 @@ import secrets
 from agents import Runner, trace
 from agents.voice import (
     TTSModelSettings,
+    VoiceStreamEventAudio,
     VoicePipeline,
     VoicePipelineConfig,
     VoiceWorkflowBase,
 )
+from openai import AsyncOpenAI
+import numpy as np
 from app.agent_config import get_runtime_starting_agent
 from app.auth import get_current_user, decode_access_token
 from app.utils import (
@@ -178,7 +181,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
     database.increment_api_key_usage(api_key)
 
     session_id = str(uuid.uuid4())
-    await session_manager.connect(websocket, session_id)
+    await session_manager.connect(websocket, session_id, source="text_widget")
 
     try:
         with trace("Voice Agent Chat"):
@@ -209,6 +212,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
 
                 # Handle a new audio chunk
                 elif is_new_audio_chunk(message):
+                    # Update source to voice_widget if it's the first audio chunk
+                    if session_manager.sessions.get(session_id) and session_manager.sessions[session_id].source == "text_widget":
+                        session_manager.sessions[session_id].source = "voice_widget"
+                        await session_manager.broadcast_sessions_list()
+                    
                     audio_buffer.append(extract_audio_chunk(message))
 
                 # Send full audio to the agent
@@ -270,7 +278,7 @@ async def twilio_stream_endpoint(websocket: WebSocket):
     # Register session with tracking for Admin Dashboard
     # We create a dummy connection object or use the TwilioHelper once initialized
     # But tracking requires 'connect' first.
-    await session_manager.connect(websocket, session_id)
+    await session_manager.connect(websocket, session_id, source="phone")
     # Set mode to AI by default
     session_manager.set_mode(session_id, "AI")
     
@@ -323,6 +331,43 @@ async def twilio_stream_endpoint(websocket: WebSocket):
             connection = TwilioHelper(websocket, [], dynamic_starting_agent, session_id, stream_sid)
             # Register helper so session manager can control it (e.g. view transcripts)
             session_manager.register_helper(session_id, connection)
+            
+            # --- Welcome Message (Server-Side TTS) ---
+            from app import database
+            twilio_config = database.get_active_voip_config("twilio")
+            if twilio_config and twilio_config.get("welcome_message"):
+                welcome_text = twilio_config["welcome_message"]
+                print(f"Playing Welcome Message: {welcome_text}")
+                try:
+                    client = AsyncOpenAI()
+                    # Generate speech using OpenAI TTS (alloy is a good general purpose voice)
+                    # response_format='pcm' returns 16-bit PCM at 24kHz
+                    response = await client.audio.speech.create(
+                        model="tts-1",
+                        voice="alloy",
+                        input=welcome_text,
+                        response_format="pcm"
+                    )
+                    
+                    # Read binary content
+                    audio_bytes = response.content
+                    
+                    # Convert raw bytes (int16) to float32 numpy array
+                    audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
+                    audio_float32 = audio_int16.astype(np.float32) / 32768.0
+                    
+                    # Send to user
+                    await connection.send_audio_chunk(VoiceStreamEventAudio(data=audio_float32))
+                    
+                    # Optional: Add to history as assistant message (so it shows in transcript)
+                    # But since it's "system" generated, maybe just log it.
+                    # Or add it so the agent knows it was said? 
+                    # Generally, adding it to history is good context for the Agent.
+                    await session_manager.update_session(session_id, {"content": welcome_text}, is_user=False)
+                    
+                except Exception as e:
+                    print(f"Failed to play welcome message: {e}")
+            # -----------------------------------------
             
             workflow = Workflow(connection, session_id)
             
@@ -438,8 +483,11 @@ async def twilio_stream_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"Twilio Endpoint Error: {e}")
     finally:
-        # Note: We don't have session_manager for this custom session yet
-        pass
+        if connection:
+            await connection.end_conversation(outcome="completed")
+        if session_id:
+            session_manager.disconnect(session_id)
+        print(f"Twilio Stream Session Cleaned Up: {session_id}")
 
 
 @app.websocket("/ws/admin/monitor")

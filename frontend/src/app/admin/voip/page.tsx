@@ -15,6 +15,7 @@ interface VoIPProvider {
         account_sid: string;
         auth_token: string;
         phone_number: string;
+        welcome_message?: string;
     } | null;
     is_active: boolean;
     updated_at: string;
@@ -34,6 +35,7 @@ export default function VoIPPage() {
         account_sid: "",
         auth_token: "",
         phone_number: "",
+        welcome_message: "",
     });
 
     const [webhookUrl, setWebhookUrl] = useState("");
@@ -68,6 +70,7 @@ export default function VoIPPage() {
                             account_sid: config?.account_sid || "",
                             auth_token: config?.auth_token || "",
                             phone_number: config?.phone_number || "",
+                            welcome_message: config?.welcome_message || "",
                         });
                     }
                 }
@@ -213,6 +216,16 @@ export default function VoIPPage() {
                                 value={editConfig.phone_number}
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditConfig({ ...editConfig, phone_number: e.target.value })}
                                 placeholder="+1234567890"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="welcome">Welcome Message (Optional)</Label>
+                            <Input
+                                id="welcome"
+                                value={editConfig.welcome_message}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditConfig({ ...editConfig, welcome_message: e.target.value })}
+                                placeholder="Hello! How can I help you today?"
                             />
                         </div>
 

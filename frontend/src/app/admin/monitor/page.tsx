@@ -46,6 +46,7 @@ interface Session {
     start_time: number;
     last_message_time: number;
     mode: "AI" | "MANUAL";
+    source: "text_widget" | "voice_widget" | "phone";
     last_message_preview: string;
     messages: any[];
 }
@@ -188,6 +189,20 @@ export default function MonitorPage() {
                                     : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
                                     }`}>
                                     {session.mode}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2">
+                                {session.source === "phone" && (
+                                    <span title="Phone Call" className="text-gray-600 dark:text-gray-400">📞</span>
+                                )}
+                                {session.source === "voice_widget" && (
+                                    <span title="Voice Chat" className="text-gray-600 dark:text-gray-400">🎙️</span>
+                                )}
+                                {session.source === "text_widget" && (
+                                    <span title="Text Chat" className="text-gray-600 dark:text-gray-400">💬</span>
+                                )}
+                                <span className="text-[10px] text-gray-500 uppercase font-bold">
+                                    {session.source.replace('_', ' ')}
                                 </span>
                             </div>
                             <p className="text-xs text-gray-500 dark:text-gray-400 truncate mb-1">
