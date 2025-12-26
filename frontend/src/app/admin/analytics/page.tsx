@@ -81,6 +81,11 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const itemsPerPage = 10;
+
   // Fetch analytics summary
   useEffect(() => {
     fetchSummary();
@@ -94,6 +99,11 @@ export default function AnalyticsPage() {
   // Fetch conversations
   useEffect(() => {
     fetchConversations();
+  }, [filterOutcome, filterSentiment, currentPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
   }, [filterOutcome, filterSentiment]);
 
   const fetchSummary = async () => {
@@ -144,8 +154,8 @@ export default function AnalyticsPage() {
       const token = localStorage.getItem("adminToken");
 
       const params = new URLSearchParams({
-        limit: "50",
-        offset: "0",
+        limit: itemsPerPage.toString(),
+        offset: ((currentPage - 1) * itemsPerPage).toString(),
       });
 
       if (filterOutcome) params.append("outcome", filterOutcome);
@@ -164,6 +174,7 @@ export default function AnalyticsPage() {
 
       const data = await response.json();
       setConversations(data.conversations);
+      setTotalCount(data.total);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -575,90 +586,137 @@ export default function AnalyticsPage() {
         ) : conversations.length === 0 ? (
           <div className="p-8 text-center text-gray-500">No conversations found</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Started
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Duration
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Messages
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Topic
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Sentiment
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Outcome
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    AI Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {conversations.map((conv) => (
-                  <tr key={conv.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDate(conv.started_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {formatDuration(conv.duration_seconds)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {conv.total_messages}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {conv.primary_topic ? (
-                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
-                          {conv.primary_topic.replace(/_/g, " ")}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">N/A</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {conv.overall_sentiment ? (
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSentimentColor(conv.overall_sentiment)}`}>
-                          {conv.overall_sentiment}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">N/A</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getOutcomeColor(conv.outcome)}`}>
-                        {conv.outcome}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getEnrichmentStatusColor(conv.enrichment_status)}`}>
-                        {conv.enrichment_status || "N/A"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => fetchConversationDetail(conv.id)}
-                      >
-                        View Details
-                      </Button>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Started
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Duration
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Messages
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Topic
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Sentiment
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Outcome
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      AI Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {conversations.map((conv) => (
+                    <tr key={conv.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatDate(conv.started_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {formatDuration(conv.duration_seconds)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {conv.total_messages}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {conv.primary_topic ? (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
+                            {conv.primary_topic.replace(/_/g, " ")}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">N/A</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {conv.overall_sentiment ? (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSentimentColor(conv.overall_sentiment)}`}>
+                            {conv.overall_sentiment}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">N/A</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getOutcomeColor(conv.outcome)}`}>
+                          {conv.outcome}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getEnrichmentStatusColor(conv.enrichment_status)}`}>
+                          {conv.enrichment_status || "N/A"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => fetchConversationDetail(conv.id)}
+                        >
+                          View Details
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Showing <span className="font-medium">{Math.min((currentPage - 1) * itemsPerPage + 1, totalCount)}</span> to{" "}
+                <span className="font-medium">{Math.min(currentPage * itemsPerPage, totalCount)}</span> of{" "}
+                <span className="font-medium">{totalCount}</span> results
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage === 1 || loading}
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, Math.ceil(totalCount / itemsPerPage)) }, (_, i) => {
+                    const pageNum = i + 1;
+                    // Simple pagination logic for now (just show first 5 pages if many)
+                    return (
+                      <Button
+                        key={pageNum}
+                        size="sm"
+                        variant={currentPage === pageNum ? "primary" : "outline"}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-10"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                  {Math.ceil(totalCount / itemsPerPage) > 5 && <span className="px-2">...</span>}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage >= Math.ceil(totalCount / itemsPerPage) || loading}
+                  onClick={() => setCurrentPage((prev) => prev + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
