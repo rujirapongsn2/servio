@@ -328,7 +328,9 @@ async def twilio_stream_endpoint(websocket: WebSocket):
         # 2. Init Agent
         with trace("Voice Agent Phone Call"):
             dynamic_starting_agent = get_runtime_starting_agent()
-            connection = TwilioHelper(websocket, [], dynamic_starting_agent, session_id, stream_sid)
+            # Initialize history list to track context
+            history = []
+            connection = TwilioHelper(websocket, history, dynamic_starting_agent, session_id, stream_sid)
             # Register helper so session manager can control it (e.g. view transcripts)
             session_manager.register_helper(session_id, connection)
             
@@ -359,17 +361,27 @@ async def twilio_stream_endpoint(websocket: WebSocket):
                     # Send to user
                     await connection.send_audio_chunk(VoiceStreamEventAudio(data=audio_float32))
                     
-                    # Optional: Add to history as assistant message (so it shows in transcript)
-                    # But since it's "system" generated, maybe just log it.
-                    # Or add it so the agent knows it was said? 
-                    # Generally, adding it to history is good context for the Agent.
+                    # Update Session Manager (for Admin UI)
                     await session_manager.update_session(session_id, {"content": welcome_text}, is_user=False)
+                    
+                    # Update Agent Context (Critical for Language Consistency)
+                    # This tells the Agent that it has already spoken this text.
+                    history.append({
+                        "role": "assistant",
+                        "content": welcome_text
+                    })
                     
                 except Exception as e:
                     print(f"Failed to play welcome message: {e}")
             # -----------------------------------------
             
             workflow = Workflow(connection, session_id)
+            
+            # Init state for main loop
+            audio_buffer = []
+            silence_frames = 0
+            has_spoken = False
+            ignore_until = 0
             
             # 3. Media Loop
             while True:
@@ -383,26 +395,17 @@ async def twilio_stream_endpoint(websocket: WebSocket):
                     break
 
                 if data['event'] == 'media':
+                    # Echo Cancellation Check
+                    if time.time() < ignore_until:
+                        # Drain/Skip this packet as it is likely echo
+                        continue
+                        
                     payload = data['media']['payload']
                     # Decode Twilio audio -> Float32
                     # We keep raw ULW/PCM for VAD check before decoding to full float32 for model
                     ulaw_data = base64.b64decode(payload)
                     pcm_8k_chunk = TelephonyUtils.ulaw_to_pcm16(ulaw_data) # 160 samples (20ms)
 
-                    # 1. VAD Check
-                    # Debug: Calculate RMS manually to check levels
-                    try:
-                        rms = audioop.rms(pcm_8k_chunk, 2)
-                    except:
-                        rms = 0
-                    
-                    # 1. VAD Check
-                    # Debug: Calculate RMS manually to check levels
-                    try:
-                        rms = audioop.rms(pcm_8k_chunk, 2)
-                    except:
-                        rms = 0
-                    
                     # 1. VAD Check
                     # Debug: Calculate RMS manually to check levels
                     try:
@@ -473,6 +476,34 @@ async def twilio_stream_endpoint(websocket: WebSocket):
                             await connection.send_audio_chunk(event)
                         print("Response stream done.")
                         
+                        # 4. Drain/Clear Echo Buffer (Crucial for Barge-in/Echo Cancellation)
+                        # After we finish speaking, any audio that arrived *during* our speech 
+                        # (or immediately after) is likely our own voice echo or delayed packets.
+                        # We must drain the websocket inputs for a short duration to prevent 
+                        # the AI from hearing itself and triggering again.
+                        
+                        IGNORE_DURATION = 1.2 # seconds to ignore new inputs after speaking
+                        drain_start = time.time()
+                        
+                        # Reset our internal buffer state completely
+                        audio_buffer = []  
+                        silence_frames = 0
+                        has_spoken = False
+                        
+                        print(f"Draining echo for {IGNORE_DURATION}s...")
+                        try:
+                            # We can't block strictly, but we can consume messages with a timeout
+                            # Since we are in the main 'async for msg in websocket', we can't easily 
+                            # call 'websocket.receive_json' here without breaking the outer loop iterator?
+                            # Actually, we CANNOT call receive_json inside an async for loop on the same iterator safely
+                            # in many frameworks, but passing 'websocket' iterator is tricky.
+                            #
+                            # BETTER APPROACH: Set a timestamp 'ignore_until'.
+                            ignore_until = time.time() + IGNORE_DURATION
+                            
+                        except Exception as e:
+                            print(f"Error draining: {e}")
+
                         # Signal end of turn (optional)
                         # await connection.send_audio_done()
 
