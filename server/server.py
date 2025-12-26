@@ -6,6 +6,8 @@ import uuid
 import json
 import base64
 import audioop
+import secrets
+
 
 from agents import Runner, trace
 from agents.voice import (
@@ -29,7 +31,7 @@ from app.utils import (
 )
 from app.telephony_utils import TelephonyUtils, TwilioHelper
 from app.session_manager import session_manager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 import os
@@ -142,6 +144,13 @@ class Workflow(VoiceWorkflowBase):
              await session_manager.update_session(self.session_id, {"content": self.connection.history[-1]["content"]}, is_user=False)
 
 
+# In-memory store for pending stream tokens
+# Format: {token: timestamp}
+PENDING_STREAM_TOKENS: Dict[str, float] = {}
+STREAM_TOKEN_EXPIRY = 60  # Token valid for 60 seconds
+
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
     # Validate API key before accepting connection
@@ -244,6 +253,16 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
 
 @app.websocket("/ws/twilio-stream")
 async def twilio_stream_endpoint(websocket: WebSocket):
+    # Remove early query param check
+    # We will validate in the 'start' event
+
+    # Clean up old tokens occasionally
+    current_time = time.time()
+    to_remove = [k for k, v in PENDING_STREAM_TOKENS.items() if current_time - v > STREAM_TOKEN_EXPIRY]
+    for k in to_remove:
+        if k in PENDING_STREAM_TOKENS:
+            del PENDING_STREAM_TOKENS[k]
+
     # session_manager.connect will handle accept()
     stream_sid = None
     session_id = str(uuid.uuid4())
@@ -263,13 +282,37 @@ async def twilio_stream_endpoint(websocket: WebSocket):
     has_spoken = False
 
     try:
-        # 1. Wait for 'start' event to get streamSid and init
+        # 1. Wait for 'start' event to get streamSid, token, and init
         while True:
             data_str = await websocket.receive_text()
             data = json.loads(data_str)
             if data['event'] == 'start':
                 stream_sid = data['start']['streamSid']
                 print(f"Twilio Stream started: {stream_sid}")
+                
+                # Extract and Validate Token from customParameters
+                custom_params = data['start'].get('customParameters', {})
+                token = custom_params.get('token')
+                
+                print(f"--- Debug WebSocket Token (Start Event) ---")
+                print(f"Received Token: {token}")
+                
+                if not token or token not in PENDING_STREAM_TOKENS:
+                    print("Twilio Stream Rejecting: Invalid or missing token")
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
+
+                token_time = PENDING_STREAM_TOKENS[token]
+                # Check expiry
+                if time.time() - token_time > STREAM_TOKEN_EXPIRY:
+                     print("Twilio Stream Rejecting: Expired token")
+                     del PENDING_STREAM_TOKENS[token]
+                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                     return
+                
+                # Consume token
+                del PENDING_STREAM_TOKENS[token]
+                print("Twilio Stream Authenticated Successfully")
                 break
             elif data['event'] == 'connected':
                 continue
@@ -471,22 +514,42 @@ async def incoming_call_endpoint(request: Request):
 
         # Get full URL
         url = str(request.url)
+        
+        # FIX: Force https if behind proxy/ngrok (Twilio signs with https)
+        # Nginx/ngrok sends http internally, causing mismatch
+        if request.headers.get("X-Forwarded-Proto") == "https" and url.startswith("http://"):
+            url = url.replace("http://", "https://", 1)
 
         # Get form data
         form_data = await request.form()
         params = dict(form_data)
 
         # Validate signature
-        if not validate_twilio_signature(
+        print(f"--- Debug Twilio Signature ---")
+        print(f"Request URL: {url}")
+
+        print(f"Twilio Signature: {twilio_signature}")
+        print(f"Auth Token: {twilio_config['auth_token'][:5]}...") # Hide full token
+        
+        is_valid = validate_twilio_signature(
             signature=twilio_signature,
             url=url,
             params=params,
             auth_token=twilio_config["auth_token"]
-        ):
+        )
+        print(f"Is Valid: {is_valid}")
+        print(f"------------------------------")
+
+        if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid Twilio signature"
             )
+
+
+    # Generate a short-lived token for the stream
+    stream_token = secrets.token_urlsafe(16)
+    PENDING_STREAM_TOKENS[stream_token] = time.time()
 
     host = request.headers.get("host") or "localhost:8000"
     # If behind ngrok, header 'host' is usually the ngrok domain.
@@ -496,10 +559,16 @@ async def incoming_call_endpoint(request: Request):
     xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="wss://{host}/ws/twilio-stream" />
+        <Stream url="wss://{host}/ws/twilio-stream">
+            <Parameter name="token" value="{stream_token}" />
+        </Stream>
     </Connect>
 </Response>
 """
+    # Debug XML
+    print(f"--- TwiML Response ---")
+    print(xml_content)
+    print(f"----------------------")
     return Response(content=xml_content, media_type="application/xml")
 
 

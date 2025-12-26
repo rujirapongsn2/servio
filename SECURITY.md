@@ -119,9 +119,12 @@ This endpoint now validates Twilio request signatures to prevent spoofing attack
 This endpoint receives audio streams from Twilio phone calls.
 
 **Security Considerations**:
-- This endpoint is designed for Twilio's use and should not be publicly accessible
-- Consider implementing IP whitelisting for Twilio's IP ranges in production
-- Use environment variables to control access
+- **Token Authentication**: We implemented a Secure Token mechanism (Dec 2025).
+    1. `/incoming-call` generates a short-lived (60s), single-use token.
+    2. The token is appended to the WebSocket URL in the TwiML response: `wss://.../ws/twilio-stream?token=xyz`.
+    3. The WebSocket endpoint validates this token immediately upon connection.
+- **IP Whitelisting**: Note that Twilio uses dynamic IP ranges for Media Streams, so IP whitelisting is NOT reliable and is no longer recommended.
+- **No Direct Access**: Connections without a valid token are rejected with `403 Policy Violation`.
 
 ## 3. Database Schema Changes
 
