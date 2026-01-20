@@ -6,6 +6,8 @@
     type: document.currentScript.getAttribute('data-type') || 'voice', // voice, chat
     apiKey: document.currentScript.getAttribute('data-api-key') || '',
   };
+  const allowToggleAttr = document.currentScript.getAttribute('data-allow-toggle');
+  config.allowToggle = allowToggleAttr === null ? true : allowToggleAttr !== 'false';
 
   // Create Styles
   const style = document.createElement('style');

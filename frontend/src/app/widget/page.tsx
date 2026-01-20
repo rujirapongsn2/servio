@@ -99,9 +99,9 @@ function WidgetContent() {
                         <button
                             onClick={toggleCollapsed}
                             className="text-white/90 hover:text-white hover:bg-white/10 text-xs px-2.5 py-1.5 rounded-lg transition-all"
-                            title={collapsed ? "แสดงบทสนทนา" : "ซ่อนบทสนทนา"}
+                            title={collapsed ? "Show conversation" : "Hide conversation"}
                         >
-                            {collapsed ? "แสดง" : "ซ่อน"}
+                            {collapsed ? "Show" : "Hide"}
                         </button>
                     )}
                     <button
