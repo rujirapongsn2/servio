@@ -180,14 +180,24 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
     # Increment usage count for this API key
     database.increment_api_key_usage(api_key)
 
+    # Fetch API key settings including voice_response_enabled
+    api_key_data = database.get_api_key_by_key(api_key)
+    voice_response_enabled = api_key_data.get("voice_response_enabled", True) if api_key_data else True
+
     session_id = str(uuid.uuid4())
     await session_manager.connect(websocket, session_id, source="text_widget")
+
+    # Send session config to widget
+    await websocket.send_json({
+        "type": "session.config",
+        "voice_response_enabled": voice_response_enabled
+    })
 
     try:
         with trace("Voice Agent Chat"):
             # Compose a fresh coordinator agent that includes DB-defined agents as handoffs
             dynamic_starting_agent = get_runtime_starting_agent()
-            connection = WebsocketHelper(websocket, [], dynamic_starting_agent, session_id)
+            connection = WebsocketHelper(websocket, [], dynamic_starting_agent, session_id, voice_response_enabled)
             session_manager.register_helper(session_id, connection)
             audio_buffer = []
 

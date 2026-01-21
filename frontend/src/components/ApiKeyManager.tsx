@@ -21,6 +21,7 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyExpireDays, setNewKeyExpireDays] = useState<number | "">("");
   const [newKeyDomains, setNewKeyDomains] = useState("localhost");
+  const [newKeyVoiceResponse, setNewKeyVoiceResponse] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [error, setError] = useState<string>("");
@@ -29,6 +30,7 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
   // Edit state
   const [editingKeyId, setEditingKeyId] = useState<number | null>(null);
   const [editDomains, setEditDomains] = useState("");
+  const [editVoiceResponse, setEditVoiceResponse] = useState(true);
 
   // Check for token on mount and when storage changes
   useEffect(() => {
@@ -119,6 +121,7 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
         name: newKeyName.trim(),
         expires_days: newKeyExpireDays || undefined,
         allowed_domains: allowedDomains.length > 0 ? allowedDomains : undefined,
+        voice_response_enabled: newKeyVoiceResponse,
       });
 
       // Extract API key from message
@@ -142,6 +145,7 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
       setNewKeyName("");
       setNewKeyExpireDays("");
       setNewKeyDomains("");
+      setNewKeyVoiceResponse(true);
 
       // Reload keys
       await loadApiKeys();
@@ -202,11 +206,13 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
     setEditDomains(
       apiKey.allowed_domains ? apiKey.allowed_domains.join(", ") : ""
     );
+    setEditVoiceResponse(apiKey.voice_response_enabled ?? true);
   };
 
   const handleEditCancel = () => {
     setEditingKeyId(null);
     setEditDomains("");
+    setEditVoiceResponse(true);
   };
 
   const handleEditSave = async (keyId: number) => {
@@ -221,10 +227,12 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
 
       await updateApiKey(token, keyId, {
         allowed_domains: allowedDomains.length > 0 ? allowedDomains : undefined,
+        voice_response_enabled: editVoiceResponse,
       });
 
       setEditingKeyId(null);
       setEditDomains("");
+      setEditVoiceResponse(true);
       await loadApiKeys();
     } catch (err) {
       setError(
@@ -326,6 +334,22 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
               origins.
             </p>
           </div>
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newKeyVoiceResponse}
+                onChange={(e) => setNewKeyVoiceResponse(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Enable Voice Responses (TTS)
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6">
+              When disabled, the AI will respond with text only. Users can still use voice input.
+            </p>
+          </div>
           <Button
             type="submit"
             disabled={creating || !newKeyName.trim()}
@@ -411,19 +435,34 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
                       )}
                     </div>
 
-                    {/* Allowed Domains Section */}
+                    {/* Allowed Domains & Voice Response Section */}
                     {editingKeyId === apiKey.id ? (
-                      <div className="mt-2">
-                        <label className="text-xs font-medium text-gray-700 dark:text-gray-300 block mb-1">
-                          Edit Allowed Domains (Comma-separated)
-                        </label>
-                        <input
-                          type="text"
-                          value={editDomains}
-                          onChange={(e) => setEditDomains(e.target.value)}
-                          className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500"
-                        />
-                        <div className="flex gap-2 mt-2">
+                      <div className="mt-2 space-y-3">
+                        <div>
+                          <label className="text-xs font-medium text-gray-700 dark:text-gray-300 block mb-1">
+                            Edit Allowed Domains (Comma-separated)
+                          </label>
+                          <input
+                            type="text"
+                            value={editDomains}
+                            onChange={(e) => setEditDomains(e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editVoiceResponse}
+                              onChange={(e) => setEditVoiceResponse(e.target.checked)}
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                              Enable Voice Responses (TTS)
+                            </span>
+                          </label>
+                        </div>
+                        <div className="flex gap-2">
                           <button
                             onClick={() => handleEditSave(apiKey.id)}
                             className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"

@@ -73,6 +73,22 @@ def init_database():
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created successfully")
 
+    # [Fix] Explicitly add missing columns that SQLAlchemy create_all doesn't add to existing tables
+    with engine.connect() as conn:
+        # Check if voice_response_enabled exists in api_keys
+        result = conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='api_keys' AND column_name='voice_response_enabled'"
+        ))
+        if not result.fetchone():
+            logger.info("Adding missing column 'voice_response_enabled' to 'api_keys' table...")
+            try:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN voice_response_enabled BOOLEAN DEFAULT TRUE"))
+                conn.commit()
+                logger.info("Column 'voice_response_enabled' added successfully")
+            except Exception as e:
+                logger.error(f"Failed to add column 'voice_response_enabled': {e}")
+
     # Insert default data
     with get_db() as db:
         # Insert default admin if not exists

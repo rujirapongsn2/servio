@@ -321,6 +321,23 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    - ✅ Build/Rebuild images
    - ✅ ล้าง Containers และ Volumes
 
+5. **แก้ไขปัญหา SSL Certificate Permissions (ถ้าจำเป็น):**
+
+   หากพบปัญหา Nginx ไม่สามารถอ่านไฟล์ SSL certificates ได้ (Permission denied) ให้รันสคริปต์แก้ไข:
+
+   ```bash
+   # แก้ไข permissions ของ SSL certificates
+   ./fix_certs_permissions.sh
+
+   # หลังจากนั้นรีสตาร์ท Nginx
+   docker compose restart nginx
+   ```
+
+   สคริปต์นี้จะ:
+   - ตรวจสอบว่ามีไฟล์ `nginx/certs/server.crt` และ `server.key` อยู่หรือไม่
+   - เปลี่ยน permissions เป็น 644 เพื่อให้ Nginx container อ่านได้
+   - แสดงผลลัพธ์การดำเนินการ
+
    **ช่องทางเข้าใช้งาน:**
    - Frontend: [`https://localhost`](https://localhost)
    - Admin Console: [`https://localhost/admin`](https://localhost/admin)

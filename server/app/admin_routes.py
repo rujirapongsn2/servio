@@ -1230,7 +1230,8 @@ async def create_api_key(
             key=api_key,
             expires_at=expires_at,
             created_by=current_user,
-            allowed_domains=request.allowed_domains
+            allowed_domains=request.allowed_domains,
+            voice_response_enabled=request.voice_response_enabled
         )
 
         return MessageResponse(
@@ -1263,7 +1264,8 @@ async def update_api_key(
         name=request.name,
         is_active=request.is_active,
         expires_at=expires_at,
-        allowed_domains=request.allowed_domains
+        allowed_domains=request.allowed_domains,
+        voice_response_enabled=request.voice_response_enabled
     )
 
     if not success:

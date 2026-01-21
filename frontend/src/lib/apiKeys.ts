@@ -10,6 +10,7 @@ export interface ApiKey {
   expires_at: string | null;
   created_by: string | null;
   allowed_domains: string[] | null;
+  voice_response_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +19,7 @@ export interface CreateApiKeyRequest {
   name: string;
   expires_days?: number;
   allowed_domains?: string[];
+  voice_response_enabled?: boolean;
 }
 
 export interface UpdateApiKeyRequest {
@@ -25,6 +27,7 @@ export interface UpdateApiKeyRequest {
   is_active?: boolean;
   expires_at?: string;
   allowed_domains?: string[];
+  voice_response_enabled?: boolean;
 }
 
 export async function getAllApiKeys(token: string): Promise<ApiKey[]> {

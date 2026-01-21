@@ -74,12 +74,13 @@ def concat_audio_chunks(chunks) -> AudioInput:
 
 
 class WebsocketHelper:
-    def __init__(self, websocket: WebSocket, history: list, initial_agent: Agent, session_id: str):
+    def __init__(self, websocket: WebSocket, history: list, initial_agent: Agent, session_id: str, voice_response_enabled: bool = True):
         self.websocket = websocket
         self.history = history or []
         self.latest_agent = initial_agent
         self.partial_response = ""
         self.session_id = session_id
+        self.voice_response_enabled = voice_response_enabled
 
         # Initialize analytics tracking
         self.analytics = get_analytics_service()
@@ -230,6 +231,10 @@ class WebsocketHelper:
         )
 
     async def send_audio_chunk(self, event: VoiceStreamEvent):
+        # Skip audio output if voice response is disabled
+        if not self.voice_response_enabled:
+            return
+
         if isinstance(event, VoiceStreamEventAudio):
             await self.websocket.send_text(
                 json.dumps(transform_data_to_events(event.data))  # type: ignore

@@ -48,10 +48,15 @@ function WidgetContent() {
         resetHistory,
         isLoading,
         agentName,
+        voiceResponseEnabled,
     } = useWebsocket({
         apiKey: apiKey,
         onNewAudio: playAudio,
     });
+
+    // Determine if toggle should be shown
+    // Hide toggle when voice response is disabled (admin setting)
+    const showToggle = allowToggle && voiceResponseEnabled;
 
     const toggleCollapsed = () => setCollapsed((prev) => !prev);
 
@@ -76,7 +81,7 @@ function WidgetContent() {
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {allowToggle && (
+                    {showToggle && (
                         <button
                             onClick={toggleMode}
                             className="text-white/90 hover:text-white hover:bg-white/10 px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5"

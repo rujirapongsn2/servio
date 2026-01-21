@@ -621,6 +621,7 @@ def get_all_api_keys() -> List[Dict[str, Any]]:
                 "expires_at": key.expires_at.isoformat() if key.expires_at else None,
                 "created_by": key.created_by,
                 "allowed_domains": key.allowed_domains,
+                "voice_response_enabled": key.voice_response_enabled,
                 "created_at": key.created_at.isoformat() if key.created_at else None,
                 "updated_at": key.updated_at.isoformat() if key.updated_at else None
             }
@@ -644,6 +645,7 @@ def get_api_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
             "expires_at": key.expires_at.isoformat() if key.expires_at else None,
             "created_by": key.created_by,
             "allowed_domains": key.allowed_domains,
+            "voice_response_enabled": key.voice_response_enabled,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -664,6 +666,8 @@ def get_api_key_by_key(key_value: str) -> Optional[Dict[str, Any]]:
             "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
             "expires_at": key.expires_at.isoformat() if key.expires_at else None,
             "created_by": key.created_by,
+            "allowed_domains": key.allowed_domains,
+            "voice_response_enabled": key.voice_response_enabled,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -674,7 +678,8 @@ def create_api_key(
     key: str,
     expires_at: Optional[datetime] = None,
     created_by: Optional[str] = None,
-    allowed_domains: Optional[List[str]] = None
+    allowed_domains: Optional[List[str]] = None,
+    voice_response_enabled: bool = True
 ) -> int:
     """Create a new API key"""
     with get_db() as db:
@@ -683,7 +688,8 @@ def create_api_key(
             key=key,
             expires_at=expires_at,
             created_by=created_by,
-            allowed_domains=allowed_domains
+            allowed_domains=allowed_domains,
+            voice_response_enabled=voice_response_enabled
         )
         db.add(api_key)
         db.flush()
@@ -695,7 +701,8 @@ def update_api_key(
     name: Optional[str] = None,
     is_active: Optional[bool] = None,
     expires_at: Optional[datetime] = None,
-    allowed_domains: Optional[List[str]] = None
+    allowed_domains: Optional[List[str]] = None,
+    voice_response_enabled: Optional[bool] = None
 ) -> bool:
     """Update an API key"""
     with get_db() as db:
@@ -711,6 +718,8 @@ def update_api_key(
             api_key.expires_at = expires_at
         if allowed_domains is not None:
             api_key.allowed_domains = allowed_domains
+        if voice_response_enabled is not None:
+            api_key.voice_response_enabled = voice_response_enabled
 
         api_key.updated_at = datetime.utcnow()
         return True

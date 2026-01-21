@@ -20,7 +20,8 @@ COPY . .
 RUN groupadd -g 1001 voiceagent && \
   useradd -u 1001 -g voiceagent -s /bin/sh voiceagent && \
   mkdir -p /app/data && \
-  chown -R voiceagent:voiceagent /app/data
+  chmod -R 755 /app && \
+  chown -R voiceagent:voiceagent /app
 
 # Switch to non-root user
 USER voiceagent
@@ -33,4 +34,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
 # Run the application
-CMD ["uv", "run", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

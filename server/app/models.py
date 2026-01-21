@@ -201,6 +201,7 @@ class ApiKeyResponse(BaseModel):
     expires_at: Optional[str] = None
     created_by: Optional[str] = None
     allowed_domains: Optional[List[str]] = None
+    voice_response_enabled: bool = True
     created_at: str
     updated_at: str
 
@@ -209,6 +210,7 @@ class CreateApiKeyRequest(BaseModel):
     name: str
     expires_days: Optional[int] = None
     allowed_domains: Optional[List[str]] = None  # Number of days until expiration (None = never expires)
+    voice_response_enabled: bool = True  # Enable TTS voice responses
 
 
 class UpdateApiKeyRequest(BaseModel):
@@ -216,4 +218,5 @@ class UpdateApiKeyRequest(BaseModel):
     is_active: Optional[bool] = None
     expires_at: Optional[str] = None
     allowed_domains: Optional[List[str]] = None
+    voice_response_enabled: Optional[bool] = None
 

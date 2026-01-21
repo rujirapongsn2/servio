@@ -156,6 +156,7 @@ class ApiKey(Base):
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Optional expiration
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Admin username
     allowed_domains: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Domain whitelist for Origin validation
+    voice_response_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # Enable TTS voice responses
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

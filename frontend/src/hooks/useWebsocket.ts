@@ -32,6 +32,7 @@ export function useWebsocket({
   const [agentName, setAgentName] = useState<string | null>(null);
   const websocket = useRef<WebSocket | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [voiceResponseEnabled, setVoiceResponseEnabled] = useState(true);
 
   useEffect(() => {
     const ws = new WebSocket(url);
@@ -53,6 +54,14 @@ export function useWebsocket({
         console.error("WebSocket Error:", data.message);
         alert(data.message); // Alert the user
         setIsLoading(false);
+        return;
+      }
+
+      // Handle session config from server
+      if (data.type === "session.config") {
+        if (typeof data.voice_response_enabled === "boolean") {
+          setVoiceResponseEnabled(data.voice_response_enabled);
+        }
         return;
       }
 
@@ -147,5 +156,6 @@ export function useWebsocket({
     resetHistory,
     agentName,
     isLoading,
+    voiceResponseEnabled,
   };
 }
