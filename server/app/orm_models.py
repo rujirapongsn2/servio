@@ -36,6 +36,23 @@ class Admin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+
+class LLMProvider(Base):
+    """Configuration for external LLM providers (OpenAI compatible)"""
+    __tablename__ = "llm_providers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    api_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    agents: Mapped[List["Agent"]] = relationship(back_populates="llm_provider")
+
+
 class Agent(Base):
     """AI agent configurations with instructions and model settings"""
     __tablename__ = "agents"
@@ -44,11 +61,13 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     instructions: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(String(100), default="gpt-4o-mini")
+    llm_provider_id: Mapped[Optional[int]] = mapped_column(ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True)
     is_starting_agent: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    llm_provider: Mapped[Optional["LLMProvider"]] = relationship(back_populates="agents")
     tools: Mapped[List["Tool"]] = relationship(
         secondary="agent_tools",
         back_populates="agents",

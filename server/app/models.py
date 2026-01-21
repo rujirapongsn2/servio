@@ -32,11 +32,17 @@ class AgentHandoff(BaseModel):
     name: str
 
 
+class AgentLLMProvider(BaseModel):
+    id: int
+    name: str
+
+
 class AgentResponse(BaseModel):
     id: int
     name: str
     instructions: str
     model: str
+    llm_provider: Optional[AgentLLMProvider] = None
     is_starting_agent: bool
     tools: List[AgentTool]
     handoffs: List[AgentHandoff]
@@ -48,6 +54,7 @@ class CreateAgentRequest(BaseModel):
     name: str
     instructions: str
     model: str = "gpt-4o-mini"
+    llm_provider_id: Optional[int] = None
     tool_ids: List[int] = []
     handoff_agent_ids: List[int] = []
     is_starting_agent: bool = False
@@ -57,6 +64,7 @@ class UpdateAgentRequest(BaseModel):
     name: str
     instructions: str
     model: str
+    llm_provider_id: Optional[int] = None
     tool_ids: List[int]
     handoff_agent_ids: List[int]
     is_starting_agent: bool = False
@@ -105,6 +113,7 @@ class OptimizePromptRequest(BaseModel):
     instructions: str
     agent_name: str = ""
     model: str = ""
+    llm_provider_id: Optional[int] = None
 
 
 class OptimizePromptResponse(BaseModel):
@@ -212,6 +221,37 @@ class CreateApiKeyRequest(BaseModel):
     allowed_domains: Optional[List[str]] = None  # Number of days until expiration (None = never expires)
     voice_response_enabled: bool = True  # Enable TTS voice responses
 
+
+# LLM Provider models
+class LLMProviderResponse(BaseModel):
+    id: int
+    name: str
+    base_url: str
+    api_key: str
+    is_default: bool
+    created_at: str
+    updated_at: str
+
+
+class CreateLLMProviderRequest(BaseModel):
+    name: str
+    base_url: str
+    api_key: str
+    is_default: bool = False
+
+
+class UpdateLLMProviderRequest(BaseModel):
+    name: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class LLMModelResponse(BaseModel):
+    id: str
+    object: str = "model"
+    created: int
+    owned_by: str
 
 class UpdateApiKeyRequest(BaseModel):
     name: Optional[str] = None

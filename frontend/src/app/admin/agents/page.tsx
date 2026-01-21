@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Play, Pencil, Trash2, Plus, Bot } from "lucide-react";
+import { Play, Pencil, Trash2, Plus, Bot, Sparkles } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface Agent {
@@ -86,13 +86,21 @@ export default function AgentsPage() {
             Manage your AI agents
           </p>
         </div>
-        <Link
-          href="/admin/agents/new"
-          className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <Plus className="w-4 h-4" />
-          New Agent
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/admin/providers"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <Sparkles className="w-4 h-4" />
+            LLM Providers
+          </Link>
+          <Link
+            href="/admin/agents/new"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <Plus className="w-4 h-4" />
+            New Agent
+          </Link>
+        </div>
       </div>
 
       {agents.length === 0 ? (

@@ -114,7 +114,8 @@ def get_all_agents() -> List[Dict[str, Any]]:
     with get_db() as db:
         agents = db.query(Agent).options(
             selectinload(Agent.tools),
-            selectinload(Agent.handoff_to)
+            selectinload(Agent.handoff_to),
+            selectinload(Agent.llm_provider)  # Added
         ).order_by(Agent.created_at.desc()).all()
 
         return [
@@ -124,6 +125,12 @@ def get_all_agents() -> List[Dict[str, Any]]:
                 "instructions": agent.instructions,
                 "model": agent.model,
                 "is_starting_agent": agent.is_starting_agent,
+                "llm_provider": {  # Added
+                    "id": agent.llm_provider.id,
+                    "name": agent.llm_provider.name,
+                    "base_url": agent.llm_provider.base_url,
+                    "api_key": agent.llm_provider.api_key
+                } if agent.llm_provider else None,
                 "created_at": agent.created_at.isoformat() if agent.created_at else None,
                 "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
                 "tools": [
@@ -152,7 +159,8 @@ def get_agent_by_id(agent_id: int) -> Optional[Dict[str, Any]]:
     with get_db() as db:
         agent = db.query(Agent).options(
             selectinload(Agent.tools),
-            selectinload(Agent.handoff_to)
+            selectinload(Agent.handoff_to),
+            selectinload(Agent.llm_provider)  # Added
         ).filter_by(id=agent_id).first()
 
         if not agent:
@@ -164,6 +172,12 @@ def get_agent_by_id(agent_id: int) -> Optional[Dict[str, Any]]:
             "instructions": agent.instructions,
             "model": agent.model,
             "is_starting_agent": agent.is_starting_agent,
+            "llm_provider": {  # Added
+                "id": agent.llm_provider.id,
+                "name": agent.llm_provider.name,
+                "base_url": agent.llm_provider.base_url,
+                "api_key": agent.llm_provider.api_key
+            } if agent.llm_provider else None,
             "created_at": agent.created_at.isoformat() if agent.created_at else None,
             "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
             "tools": [
@@ -191,7 +205,8 @@ def create_agent(
     model: str,
     tool_ids: List[int],
     handoff_agent_ids: List[int],
-    is_starting_agent: bool = False
+    is_starting_agent: bool = False,
+    llm_provider_id: Optional[int] = None  # Added
 ) -> int:
     """Create a new agent"""
     with get_db() as db:
@@ -205,6 +220,7 @@ def create_agent(
             instructions=instructions,
             model=model,
             is_starting_agent=is_starting_agent,
+            llm_provider_id=llm_provider_id,  # Added
             updated_at=datetime.utcnow()
         )
         db.add(agent)
@@ -230,23 +246,24 @@ def update_agent(
     model: str,
     tool_ids: List[int],
     handoff_agent_ids: List[int],
-    is_starting_agent: bool = False
+    is_starting_agent: bool,
+    llm_provider_id: Optional[int] = None  # Added
 ) -> bool:
     """Update an existing agent"""
     with get_db() as db:
-        agent = db.query(Agent).filter_by(id=agent_id).first()
+        agent = db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
             return False
 
-        # If this is a starting agent, unset other starting agents
-        if is_starting_agent:
-            db.query(Agent).filter(Agent.id != agent_id).update({"is_starting_agent": False})
+        # If setting as starting agent, unset others
+        if is_starting_agent and not agent.is_starting_agent:
+            db.query(Agent).update({"is_starting_agent": False})
 
-        # Update agent
         agent.name = name
         agent.instructions = instructions
         agent.model = model
         agent.is_starting_agent = is_starting_agent
+        agent.llm_provider_id = llm_provider_id  # Added
         agent.updated_at = datetime.utcnow()
 
         # Remove old tools and handoffs

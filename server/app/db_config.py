@@ -65,7 +65,7 @@ def init_database():
 
     Creates all tables and inserts default admin user and builtin tools.
     """
-    from app.orm_models import Base, Admin, Tool
+    from app.orm_models import Base, Admin, Tool, LLMProvider
 
     logger.info("Initializing database schema...")
 
@@ -88,6 +88,20 @@ def init_database():
                 logger.info("Column 'voice_response_enabled' added successfully")
             except Exception as e:
                 logger.error(f"Failed to add column 'voice_response_enabled': {e}")
+
+        # Check if llm_provider_id exists in agents
+        result = conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='agents' AND column_name='llm_provider_id'"
+        ))
+        if not result.fetchone():
+            logger.info("Adding missing column 'llm_provider_id' to 'agents' table...")
+            try:
+                conn.execute(text("ALTER TABLE agents ADD COLUMN llm_provider_id INTEGER REFERENCES llm_providers(id) ON DELETE SET NULL"))
+                conn.commit()
+                logger.info("Column 'llm_provider_id' added successfully")
+            except Exception as e:
+                logger.error(f"Failed to add column 'llm_provider_id': {e}")
 
     # Insert default data
     with get_db() as db:

@@ -12,6 +12,11 @@ interface Tool {
   type: string;
 }
 
+interface Provider {
+  id: number;
+  name: string;
+}
+
 interface Agent {
   id?: number;
   name: string;
@@ -20,6 +25,8 @@ interface Agent {
   is_starting_agent: boolean;
   tools: Tool[];
   handoffs: { id: number; name: string }[];
+  llm_provider_id?: number | null;
+  llm_provider?: Provider | null;
 }
 
 export default function AgentEditorPage() {
@@ -31,17 +38,22 @@ export default function AgentEditorPage() {
 
   const [formData, setFormData] = useState<Agent>({
     name: "",
-    model: "gpt-4o-mini",
+    model: "",
     instructions: "",
     is_starting_agent: false,
     tools: [],
     handoffs: [],
+    llm_provider_id: undefined,
   });
 
   const [availableTools, setAvailableTools] = useState<Tool[]>([]);
   const [availableAgents, setAvailableAgents] = useState<
     { id: number; name: string }[]
   >([]);
+  const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
@@ -50,10 +62,46 @@ export default function AgentEditorPage() {
   useEffect(() => {
     fetchTools();
     fetchAgents();
+    fetchProviders();
     if (!isNew && agentId) {
       fetchAgent();
     }
   }, []);
+
+  const fetchProviders = async () => {
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      setAvailableProviders(data);
+    } catch (error) {
+      console.error("Failed to fetch providers:", error);
+    }
+  };
+
+  const fetchModels = async (providerId: number) => {
+    setFetchingModels(true);
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers/${providerId}/models`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      // Expecting list of objects with 'id' field, or just strings?
+      // provider_service returns model objects. OpenAIChatCompletionsModel expects string ID.
+      // Usually OpenAI models list has 'id' field.
+      const modelIds = data.map((m: any) => m.id || m);
+      setAvailableModels(modelIds);
+    } catch (error) {
+      console.error("Failed to fetch models:", error);
+      // Fallback or keep empty
+      setAvailableModels([]);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   const fetchTools = async () => {
     try {
@@ -93,7 +141,22 @@ export default function AgentEditorPage() {
         }
       );
       const data = await response.json();
-      setFormData(data);
+
+      // Extract provider ID from nested object if present
+      const providerId = data.llm_provider?.id || null;
+
+      setFormData({
+        ...data,
+        llm_provider_id: providerId
+      });
+
+      // Load models if provider is set
+      if (providerId) {
+        fetchModels(providerId);
+      } else {
+        // Default OpenAI models
+        setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
+      }
     } catch (error) {
       console.error("Failed to fetch agent:", error);
     } finally {
@@ -115,6 +178,7 @@ export default function AgentEditorPage() {
         tool_ids: formData.tools.map((t) => t.id),
         handoff_agent_ids: formData.handoffs.map((h) => h.id),
         is_starting_agent: formData.is_starting_agent,
+        llm_provider_id: formData.llm_provider_id,
       };
 
       const url = isNew
@@ -171,6 +235,28 @@ export default function AgentEditorPage() {
     }
   };
 
+  const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    const providerId = (value === "default" || value === "") ? null : parseInt(value);
+
+    // Explicitly set undefined if it's the placeholder "Select Provider"
+    const finalProviderId = value === "" ? undefined : providerId;
+
+    setFormData({
+      ...formData,
+      llm_provider_id: finalProviderId,
+      model: "", // Reset model when provider changes
+    });
+
+    if (providerId) {
+      fetchModels(providerId);
+    } else if (value === "default") {
+      setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
+    } else {
+      setAvailableModels([]);
+    }
+  };
+
   const handleOptimizePrompt = async () => {
     if (!formData.instructions.trim()) {
       alert("Please enter some instructions first");
@@ -194,6 +280,7 @@ export default function AgentEditorPage() {
             instructions: formData.instructions,
             agent_name: formData.name,
             model: formData.model,
+            llm_provider_id: formData.llm_provider_id,
           }),
         }
       );
@@ -257,18 +344,63 @@ export default function AgentEditorPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Model
+                LLM Provider <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.llm_provider_id === undefined ? "" : (formData.llm_provider_id === null ? "default" : formData.llm_provider_id)}
+                onChange={handleProviderChange}
+                required
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white ${formData.llm_provider_id === undefined ? "border-red-300 dark:border-red-900" : "border-gray-300 dark:border-gray-700"
+                  }`}
+              >
+                <option value="" disabled>-- Please Select LLM Provider --</option>
+                <option value="default">Default (OpenAI)</option>
+                {availableProviders.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              {formData.llm_provider_id === undefined && (
+                <p className="mt-1 text-xs text-red-500">
+                  Please select an LLM provider to continue
+                </p>
+              )}
+              {availableProviders.length === 0 && (
+                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                  Tip: You can add more providers in the{" "}
+                  <a href="/admin/llm-providers" className="underline font-medium">
+                    LLM Providers
+                  </a>{" "}
+                  settings.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Model {fetchingModels && <span className="text-xs text-gray-400 ml-2">(Loading...)</span>}
               </label>
               <select
                 value={formData.model}
                 onChange={(e) =>
                   setFormData({ ...formData, model: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                disabled={fetchingModels || formData.llm_provider_id === undefined}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white disabled:opacity-50"
+                required
               >
-                <option value="gpt-4o-mini">gpt-4o-mini</option>
-                <option value="gpt-4o">gpt-4o</option>
-                <option value="gpt-4-turbo">gpt-4-turbo</option>
+                {formData.llm_provider_id === undefined ? (
+                  <option value="">-- Select Provider First --</option>
+                ) : (
+                  <option value="" disabled>-- Select Model --</option>
+                )}
+                {availableModels.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+                {!availableModels.includes(formData.model) && formData.model && (
+                  <option value={formData.model}>{formData.model} (Current)</option>
+                )}
               </select>
             </div>
 

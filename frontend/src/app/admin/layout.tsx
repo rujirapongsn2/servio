@@ -14,6 +14,7 @@ import {
   Puzzle,
   Settings,
   Phone,
+  Sparkles,
 } from "lucide-react";
 
 export default function AdminLayout({

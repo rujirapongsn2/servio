@@ -35,6 +35,9 @@ from app.models import (
     ApiKeyResponse,
     CreateApiKeyRequest,
     UpdateApiKeyRequest,
+    LLMProviderResponse,
+    CreateLLMProviderRequest,
+    UpdateLLMProviderRequest,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -125,7 +128,8 @@ async def create_agent(
             model=request.model,
             tool_ids=request.tool_ids,
             handoff_agent_ids=request.handoff_agent_ids,
-            is_starting_agent=request.is_starting_agent
+            is_starting_agent=request.is_starting_agent,
+            llm_provider_id=request.llm_provider_id
         )
         return MessageResponse(message=f"Agent created successfully with ID {agent_id}")
     except Exception as e:
@@ -149,7 +153,8 @@ async def update_agent(
         model=request.model,
         tool_ids=request.tool_ids,
         handoff_agent_ids=request.handoff_agent_ids,
-        is_starting_agent=request.is_starting_agent
+        is_starting_agent=request.is_starting_agent,
+        llm_provider_id=request.llm_provider_id
     )
 
     if not success:
@@ -341,9 +346,30 @@ async def optimize_prompt(
     """Optimize agent instructions using AI"""
     import os
     from openai import OpenAI
+    from app import provider_service, database
 
     try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # Determine which provider and model to use
+        api_key = os.getenv("OPENAI_API_KEY")
+        base_url = None
+        model = request.model or "gpt-4o-mini"
+
+        if request.llm_provider_id:
+            with database.get_db() as db:
+                provider = provider_service.get_provider_by_id(db, request.llm_provider_id)
+                if provider:
+                    api_key = provider.api_key
+                    base_url = provider.base_url
+                    # Use the provider's default model if request.model is empty? 
+                    # Usually request.model is set by the UI.
+        
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No API key found for the selected provider and no default OpenAI key set."
+            )
+
+        client = OpenAI(api_key=api_key, base_url=base_url)
 
         # Construct the optimization prompt
         system_prompt = """You are an expert at writing agent instructions for conversational AI systems.
@@ -371,7 +397,7 @@ Current Instructions:
 Provide optimized instructions that are clear, actionable, and follow best practices for conversational AI agents."""
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -804,6 +830,148 @@ async def create_voip_provider(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create VoIP provider: {str(e)}"
         )
+
+
+@router.put("/voip-providers/{provider_id}", response_model=MessageResponse)
+async def update_voip_provider(
+    provider_id: int,
+    request: UpdateVoIPProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update a VoIP provider"""
+    success = database.update_voip_provider(
+        provider_id=provider_id,
+        name=request.name,
+        type=request.type,
+        config=request.config,
+        is_active=request.is_active
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return MessageResponse(message="VoIP provider updated successfully")
+
+
+@router.delete("/voip-providers/{provider_id}", response_model=MessageResponse)
+async def delete_voip_provider(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete a VoIP provider"""
+    success = database.delete_voip_provider(provider_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VoIP provider not found"
+        )
+
+    return MessageResponse(message="VoIP provider deleted successfully")
+
+
+# LLM Provider endpoints
+@router.get("/llm-providers", response_model=List[LLMProviderResponse])
+async def get_llm_providers(current_user: str = Depends(get_current_user)):
+    """Get all LLM providers"""
+    from app import provider_service
+    with database.get_db() as db:
+        providers = provider_service.get_all_providers(db)
+        return [
+            LLMProviderResponse(
+                id=p.id,
+                name=p.name,
+                base_url=p.base_url,
+                api_key=p.api_key,
+                is_default=p.is_default,
+                created_at=p.created_at.isoformat(),
+                updated_at=p.updated_at.isoformat()
+            )
+            for p in providers
+        ]
+
+
+@router.post("/llm-providers", response_model=MessageResponse)
+async def create_llm_provider(
+    request: CreateLLMProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new LLM provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        try:
+            provider = provider_service.create_provider(db, request)
+            return MessageResponse(message=f"Provider created successfully with ID {provider.id}")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create provider: {str(e)}"
+            )
+
+
+@router.put("/llm-providers/{provider_id}", response_model=MessageResponse)
+async def update_llm_provider(
+    provider_id: int,
+    request: UpdateLLMProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update an LLM provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        provider = provider_service.update_provider(db, provider_id, request)
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        return MessageResponse(message="Provider updated successfully")
+
+
+@router.delete("/llm-providers/{provider_id}", response_model=MessageResponse)
+async def delete_llm_provider(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete an LLM provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        success = provider_service.delete_provider(db, provider_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        return MessageResponse(message="Provider deleted successfully")
+
+
+@router.get("/llm-providers/{provider_id}/models", response_model=List[dict])
+async def get_provider_models(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Fetch available models from the provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        provider = provider_service.get_provider_by_id(db, provider_id)
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        
+        try:
+            models = await provider_service.get_available_models(provider)
+            # Return raw model data (usually list of objects or dicts)
+            # If models are pydantic objects, dump them
+            return [m.model_dump() if hasattr(m, 'model_dump') else m for m in models]
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to fetch models: {str(e)}"
+            )
 
 
 @router.put("/voip-providers/{provider_id}", response_model=MessageResponse)
@@ -1292,3 +1460,103 @@ async def delete_api_key(
         )
 
     return MessageResponse(message="API key deleted successfully")
+
+
+# LLM Provider endpoints
+@router.get("/llm-providers", response_model=List[LLMProviderResponse])
+async def get_llm_providers(current_user: str = Depends(get_current_user)):
+    """Get all LLM providers"""
+    from app import provider_service
+    with database.get_db() as db:
+        providers = provider_service.get_all_providers(db)
+        return [
+            LLMProviderResponse(
+                id=p.id,
+                name=p.name,
+                base_url=p.base_url,
+                api_key=p.api_key,
+                is_default=p.is_default,
+                created_at=p.created_at.isoformat(),
+                updated_at=p.updated_at.isoformat()
+            )
+            for p in providers
+        ]
+
+
+@router.post("/llm-providers", response_model=MessageResponse)
+async def create_llm_provider(
+    request: CreateLLMProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new LLM provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        try:
+            provider = provider_service.create_provider(db, request)
+            return MessageResponse(message=f"Provider created successfully with ID {provider.id}")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create provider: {str(e)}"
+            )
+
+
+@router.put("/llm-providers/{provider_id}", response_model=MessageResponse)
+async def update_llm_provider(
+    provider_id: int,
+    request: UpdateLLMProviderRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update an LLM provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        provider = provider_service.update_provider(db, provider_id, request)
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        return MessageResponse(message="Provider updated successfully")
+
+
+@router.delete("/llm-providers/{provider_id}", response_model=MessageResponse)
+async def delete_llm_provider(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete an LLM provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        success = provider_service.delete_provider(db, provider_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        return MessageResponse(message="Provider deleted successfully")
+
+
+@router.get("/llm-providers/{provider_id}/models", response_model=List[dict])
+async def get_provider_models(
+    provider_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Fetch available models from the provider"""
+    from app import provider_service
+    with database.get_db() as db:
+        provider = provider_service.get_provider_by_id(db, provider_id)
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider not found"
+            )
+        
+        try:
+            models = await provider_service.get_available_models(provider)
+            # Return raw model data (usually list of objects or dicts)
+            return [m.model_dump() if hasattr(m, 'model_dump') else m for m in models]
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to fetch models: {str(e)}"
+            )

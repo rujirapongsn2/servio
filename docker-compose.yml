@@ -52,7 +52,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SOFTNIX_API_KEY=${SOFTNIX_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/voice_agents}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-voice_agents}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - UV_CACHE_DIR=/tmp/uv_cache
     volumes:

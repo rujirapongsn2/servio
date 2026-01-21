@@ -6,7 +6,8 @@ from typing import Dict, Any, List, Optional
 from contextvars import ContextVar
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
-from agents import Agent, WebSearchTool, function_tool
+from openai import AsyncOpenAI
+from agents import Agent, WebSearchTool, function_tool, OpenAIChatCompletionsModel
 from agents.tool import UserLocation
 from app.softnix_api import query_softnix_genai, SoftnixAPIError
 
@@ -564,10 +565,30 @@ def build_agent_from_db(agent_data: Dict[str, Any], all_agents: Dict[int, Agent]
             if handoff_agent:
                 handoffs.append(handoff_agent)
 
+    # Configure Model
+    model = agent_data.get("model", "gpt-4o-mini")
+    
+    # Configure custom LLM provider if set
+    llm_provider = agent_data.get("llm_provider")
+    if llm_provider and llm_provider.get("base_url") and llm_provider.get("api_key"):
+        try:
+            client = AsyncOpenAI(
+                base_url=llm_provider["base_url"],
+                api_key=llm_provider["api_key"]
+            )
+            # Create model instance with custom client
+            model = OpenAIChatCompletionsModel(
+                model=model,
+                openai_client=client
+            )
+        except Exception as e:
+            print(f"Error configuring LLM provider for agent {agent_data['name']}: {e}")
+            # Fallback to default model string
+
     # Create agent
     agent = Agent(
         name=agent_data["name"],
-        model=agent_data.get("model", "gpt-4o-mini"),
+        model=model,
         instructions=agent_data["instructions"],
         tools=tools,
         handoffs=handoffs,
