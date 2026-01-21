@@ -155,7 +155,10 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
                 "Content-Type": "application/json",
             }
             if auth_token:
-                headers["Authorization"] = f"Bearer {auth_token}"
+                if auth_token.lower().startswith("bearer "):
+                    headers["Authorization"] = auth_token
+                else:
+                    headers["Authorization"] = f"Bearer {auth_token}"
 
             # Clone the payload template and substitute query
             payload = json.loads(json.dumps(config.get("payload_template", {"query": query})))
