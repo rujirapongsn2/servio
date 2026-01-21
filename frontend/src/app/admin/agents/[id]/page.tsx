@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface Tool {
@@ -460,9 +461,20 @@ export default function AgentEditorPage() {
 
         {/* Tools */}
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Tools
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-white">
+              Tools
+            </h2>
+            <Link
+              href="/admin/tools"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/20 hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              Manage Tools
+            </Link>
+          </div>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
             Select the tools this agent can use
           </p>

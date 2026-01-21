@@ -145,14 +145,6 @@ export default function AdminLayout({
               Analytics
             </NavLink>
             <NavLink
-              href="/admin/tools"
-              active={pathname === "/admin/tools"}
-              collapsed={collapsed}
-              icon={Wrench}
-            >
-              Tools
-            </NavLink>
-            <NavLink
               href="/admin/tools/widget"
               active={pathname.startsWith("/admin/tools/widget")}
               collapsed={collapsed}
