@@ -1560,3 +1560,35 @@ async def get_provider_models(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to fetch models: {str(e)}"
             )
+
+
+# ============================================================================
+# Public Endpoints (No Authentication Required)
+# ============================================================================
+
+public_router = APIRouter(prefix="/api/public", tags=["public"])
+
+@public_router.get("/widget-config/{slug}")
+async def get_widget_config_by_slug(slug: str):
+    """
+    Publicly accessible endpoint to get widget configuration by slug.
+    This hides the API key from the frontend until the page loads.
+    """
+    key_data = database.get_api_key_by_slug(slug)
+    
+    if not key_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Shortcut not found"
+        )
+        
+    if not key_data.get("is_active"):
+         raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Shortcut is inactive"
+        )
+
+    return {
+        "apiKey": key_data["key"],
+        "voice_response_enabled": key_data.get("voice_response_enabled", True)
+    }

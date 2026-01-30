@@ -89,6 +89,20 @@ def init_database():
             except Exception as e:
                 logger.error(f"Failed to add column 'voice_response_enabled': {e}")
 
+        # Check if slug exists in api_keys
+        result = conn.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='api_keys' AND column_name='slug'"
+        ))
+        if not result.fetchone():
+            logger.info("Adding missing column 'slug' to 'api_keys' table...")
+            try:
+                conn.execute(text("ALTER TABLE api_keys ADD COLUMN slug VARCHAR(50) UNIQUE"))
+                conn.commit()
+                logger.info("Column 'slug' added successfully")
+            except Exception as e:
+                logger.error(f"Failed to add column 'slug': {e}")
+
         # Check if llm_provider_id exists in agents
         result = conn.execute(text(
             "SELECT column_name FROM information_schema.columns "

@@ -50,9 +50,10 @@ if not os.getenv("OPENAI_API_KEY"):
 
 app = FastAPI()
 
-# Import and include admin routes
-from app.admin_routes import router as admin_router
+# Import and include admin and public routes
+from app.admin_routes import router as admin_router, public_router
 app.include_router(admin_router)
+app.include_router(public_router)
 
 # Database initialization
 from app.database import init_database

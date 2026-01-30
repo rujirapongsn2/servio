@@ -15,19 +15,39 @@ import { useSearchParams } from "next/navigation";
 
 import "../globals.css";
 
-function WidgetContent() {
+interface WidgetContentProps {
+    overrideApiKey?: string;
+    overrideType?: string;
+    overrideAllowToggle?: boolean;
+}
+
+function WidgetContent({ overrideApiKey, overrideType, overrideAllowToggle }: WidgetContentProps) {
     const searchParams = useSearchParams();
-    const initialType = searchParams.get("type") || "voice";
-    const allowToggle = searchParams.get("allowToggle") !== "false"; // Default true
-    const apiKey = searchParams.get("apiKey") || searchParams.get("api_key") || "";
+
+    // Prioritize overrides, then searchParams, then defaults
+    const explicitType = overrideType || searchParams.get("type");
+    const type = explicitType || "voice";
+
+    // For allowToggle: override -> searchParam -> default true
+    // Explicit check for "false" string from URL
+    const paramAllowToggle = searchParams.get("allowToggle");
+    const allowToggle = overrideAllowToggle !== undefined
+        ? overrideAllowToggle
+        : (paramAllowToggle === "false" ? false : true);
+
+    const apiKey = overrideApiKey || searchParams.get("apiKey") || searchParams.get("api_key") || "";
 
     // Initialize mode from localStorage or URL param
     const [currentMode, setCurrentMode] = useState<"voice" | "chat">(() => {
+        if (explicitType === "chat" || explicitType === "voice") {
+            return explicitType as "voice" | "chat";
+        }
+
         if (typeof window !== "undefined" && allowToggle) {
             const saved = localStorage.getItem("servio-widget-mode");
-            return (saved === "voice" || saved === "chat") ? saved : initialType as "voice" | "chat";
+            return (saved === "voice" || saved === "chat") ? saved : type as "voice" | "chat";
         }
-        return initialType as "voice" | "chat";
+        return type as "voice" | "chat";
     });
 
     const [collapsed, setCollapsed] = useState(false);
@@ -69,7 +89,7 @@ function WidgetContent() {
     };
 
     return (
-        <div className="w-full h-screen flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        <div className="w-full h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
             {/* Widget Header */}
             <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shrink-0">
                 <div className="flex items-center gap-2">
@@ -168,10 +188,10 @@ function WidgetContent() {
     );
 }
 
-export default function WidgetPage() {
+export default function WidgetPage(props: WidgetContentProps) {
     return (
         <Suspense fallback={<div>Loading...</div>}>
-            <WidgetContent />
+            <WidgetContent {...props} />
         </Suspense>
     );
 }

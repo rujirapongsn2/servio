@@ -12,9 +12,10 @@ import {
 
 interface ApiKeyManagerProps {
   onApiKeySelect?: (apiKey: string) => void;
+  onSlugSelect?: (slug: string) => void;
 }
 
-export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
+export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerProps) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -59,7 +60,7 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
     loadApiKeys();
   }, [token]); // Re-load when token changes
 
-  const loadApiKeys = async () => {
+  const loadApiKeys = async (): Promise<ApiKey[] | undefined> => {
     setError("");
     if (!token) {
       setError("Not authenticated");
@@ -71,13 +72,16 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
       setLoading(true);
       const keys = await getAllApiKeys(token);
       setApiKeys(keys);
+      // ... logic continues ...
 
       // Auto-select the first active key
       const firstActive = keys.find((k) => k.is_active);
       if (firstActive && !selectedKey) {
         setSelectedKey(firstActive.key);
         onApiKeySelect?.(firstActive.key);
+        onSlugSelect?.(firstActive.slug || "");
       }
+      return keys;
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to load API keys";
@@ -136,9 +140,19 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
           `API Key created successfully!\n\n${newKey}\n\nThe key has been copied to your clipboard. Save it now - it won't be shown again!`
         );
 
-        // Set as selected
-        setSelectedKey(newKey);
-        onApiKeySelect?.(newKey);
+        // We need to reload keys to get the slug for this new key
+        const updatedKeys = await loadApiKeys();
+
+        // Find the new key to select it properly with slug
+        const createdKeyData = updatedKeys?.find(k => k.key === newKey);
+        if (createdKeyData) {
+          setSelectedKey(createdKeyData.key);
+          onApiKeySelect?.(createdKeyData.key);
+          onSlugSelect?.(createdKeyData.slug || "");
+        }
+      } else {
+        // Fallback if we can't parse the key (shouldn't happen)
+        await loadApiKeys();
       }
 
       // Reset form
@@ -146,9 +160,6 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
       setNewKeyExpireDays("");
       setNewKeyDomains("");
       setNewKeyVoiceResponse(true);
-
-      // Reload keys
-      await loadApiKeys();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create API key");
     } finally {
@@ -195,9 +206,10 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSelectKey = (key: string) => {
+  const handleSelectKey = (key: string, slug: string = "") => {
     setSelectedKey(key);
     onApiKeySelect?.(key);
+    onSlugSelect?.(slug);
   };
 
   // Edit Handlers
@@ -501,7 +513,11 @@ export function ApiKeyManager({ onApiKeySelect }: ApiKeyManagerProps) {
 
                   <div className="flex flex-col gap-2">
                     <Button
-                      onClick={() => handleSelectKey(apiKey.key)}
+                      onClick={() => {
+                        setSelectedKey(apiKey.key);
+                        onApiKeySelect?.(apiKey.key);
+                        onSlugSelect?.(apiKey.slug || "");
+                      }}
                       size="sm"
                       variant={
                         selectedKey === apiKey.key ? "primary" : "outline"

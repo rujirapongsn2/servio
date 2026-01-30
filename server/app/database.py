@@ -639,6 +639,7 @@ def get_all_api_keys() -> List[Dict[str, Any]]:
                 "created_by": key.created_by,
                 "allowed_domains": key.allowed_domains,
                 "voice_response_enabled": key.voice_response_enabled,
+                "slug": key.slug,
                 "created_at": key.created_at.isoformat() if key.created_at else None,
                 "updated_at": key.updated_at.isoformat() if key.updated_at else None
             }
@@ -663,6 +664,7 @@ def get_api_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
             "created_by": key.created_by,
             "allowed_domains": key.allowed_domains,
             "voice_response_enabled": key.voice_response_enabled,
+            "slug": key.slug,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -685,6 +687,30 @@ def get_api_key_by_key(key_value: str) -> Optional[Dict[str, Any]]:
             "created_by": key.created_by,
             "allowed_domains": key.allowed_domains,
             "voice_response_enabled": key.voice_response_enabled,
+            "slug": key.slug,
+            "created_at": key.created_at.isoformat() if key.created_at else None,
+            "updated_at": key.updated_at.isoformat() if key.updated_at else None
+        }
+
+
+def get_api_key_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """Get an API key by its slug"""
+    with get_db() as db:
+        key = db.query(ApiKey).filter_by(slug=slug).first()
+        if not key:
+            return None
+        return {
+            "id": key.id,
+            "name": key.name,
+            "key": key.key,
+            "is_active": key.is_active,
+            "usage_count": key.usage_count,
+            "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+            "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+            "created_by": key.created_by,
+            "allowed_domains": key.allowed_domains,
+            "voice_response_enabled": key.voice_response_enabled,
+            "slug": key.slug,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -696,9 +722,18 @@ def create_api_key(
     expires_at: Optional[datetime] = None,
     created_by: Optional[str] = None,
     allowed_domains: Optional[List[str]] = None,
-    voice_response_enabled: bool = True
+    voice_response_enabled: bool = True,
+    slug: Optional[str] = None
 ) -> int:
     """Create a new API key"""
+    import secrets
+    import string
+
+    # Generate a random 10-char slug if not provided
+    if not slug:
+        alphabet = string.ascii_lowercase + string.digits
+        slug = ''.join(secrets.choice(alphabet) for _ in range(10))
+
     with get_db() as db:
         api_key = ApiKey(
             name=name,
@@ -706,7 +741,8 @@ def create_api_key(
             expires_at=expires_at,
             created_by=created_by,
             allowed_domains=allowed_domains,
-            voice_response_enabled=voice_response_enabled
+            voice_response_enabled=voice_response_enabled,
+            slug=slug
         )
         db.add(api_key)
         db.flush()

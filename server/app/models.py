@@ -211,6 +211,7 @@ class ApiKeyResponse(BaseModel):
     created_by: Optional[str] = None
     allowed_domains: Optional[List[str]] = None
     voice_response_enabled: bool = True
+    slug: Optional[str] = None
     created_at: str
     updated_at: str
 

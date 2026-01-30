@@ -169,6 +169,7 @@ class ApiKey(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)  # Friendly name for the key
     key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)  # The actual API key
+    slug: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True, index=True)  # URL-friendly alias
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)  # Track usage
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

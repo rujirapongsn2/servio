@@ -11,6 +11,7 @@ export interface ApiKey {
   created_by: string | null;
   allowed_domains: string[] | null;
   voice_response_enabled: boolean;
+  slug?: string;
   created_at: string;
   updated_at: string;
 }

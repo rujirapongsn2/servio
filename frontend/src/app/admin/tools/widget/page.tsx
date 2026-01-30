@@ -26,6 +26,21 @@ export default function WidgetGeneratorPage() {
         setTimeout(() => setCopied(false), 2000);
     };
 
+    // Shareable Link Logic
+    const [selectedSlug, setSelectedSlug] = useState("");
+    const [linkCopied, setLinkCopied] = useState(false);
+
+    const shareUrl = selectedSlug
+        ? `${serverUrl}/c/${selectedSlug}?type=${widgetType}${allowToggle ? "" : "&allowToggle=false"}`
+        : "";
+
+    const handleCopyLink = () => {
+        if (!shareUrl) return;
+        navigator.clipboard.writeText(shareUrl);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+    };
+
     return (
         <div className="max-w-6xl mx-auto space-y-8">
             <div>
@@ -37,9 +52,8 @@ export default function WidgetGeneratorPage() {
                 </p>
             </div>
 
-            {/* API Key Management - Full Width */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700">
-                <ApiKeyManager onApiKeySelect={setSelectedApiKey} />
+                <ApiKeyManager onApiKeySelect={setSelectedApiKey} onSlugSelect={setSelectedSlug} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -170,6 +184,49 @@ export default function WidgetGeneratorPage() {
                                 {copied ? "Copied!" : "Copy Code"}
                             </Button>
                         </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                            Shareable Link
+                        </h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            Direct link to a full-page chat interface. Useful for sharing via email, SMS, or QR codes.
+                        </p>
+
+                        {!selectedApiKey ? (
+                            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                                    ⚠️ Please select an API key to generate the link.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={shareUrl}
+                                    className="flex-1 p-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-600 dark:text-gray-300 focus:outline-none"
+                                />
+                                <Button
+                                    onClick={handleCopyLink}
+                                    size="sm"
+                                    variant={linkCopied ? "primary" : "outline"}
+                                    title="Copy Link"
+                                >
+                                    {linkCopied ? "Copied" : "Copy"}
+                                </Button>
+                                <a
+                                    href={shareUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <Button size="sm" variant="outline" title="Open in New Tab">
+                                        Open
+                                    </Button>
+                                </a>
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-100 dark:border-blue-800">
