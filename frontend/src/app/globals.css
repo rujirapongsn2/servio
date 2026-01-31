@@ -54,3 +54,27 @@ li {
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
 }
+
+/* Markdown Table Styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+th, td {
+  border: 1px solid var(--border-color);
+  padding: 0.75rem;
+  text-align: left;
+}
+
+th {
+  background-color: rgba(0, 0, 0, 0.05);
+  font-weight: 600;
+}
+
+.dark th {
+  background-color: rgba(255, 255, 255, 0.05);
+}

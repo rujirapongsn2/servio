@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import React from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type CustomLinkProps = {
   href?: string;
@@ -31,13 +32,18 @@ export function TextMessage({ text, isUser, collapsed = false }: TextMessageProp
       })}
     >
       <div
-        className={clsx("rounded-2xl py-3 px-4 shadow-sm", {
+        className={clsx("rounded-2xl py-3 px-4 shadow-sm overflow-hidden", {
           "max-w-[85%] text-white bg-blue-600 dark:bg-blue-600": isUser,
-          "max-w-[85%] text-gray-900 bg-gray-100 dark:bg-gray-700 dark:text-gray-100": !isUser,
+          "max-w-[95%] text-gray-900 bg-gray-100 dark:bg-gray-700 dark:text-gray-100": !isUser,
         })}
       >
-        <div className={clsx("text-[15px] leading-relaxed", { "clamp-1": collapsed })}>
-          <ReactMarkdown components={{ a: CustomLink }}>{text}</ReactMarkdown>
+        <div className={clsx("text-[15px] leading-relaxed markdown-content", { "clamp-1": collapsed })}>
+          <ReactMarkdown
+            components={{ a: CustomLink }}
+            remarkPlugins={[remarkGfm]}
+          >
+            {text}
+          </ReactMarkdown>
         </div>
       </div>
     </div>
