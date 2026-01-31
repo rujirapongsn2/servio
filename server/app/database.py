@@ -16,7 +16,9 @@ from app.db_config import get_db
 from app.orm_models import (
     Admin, Agent, Tool, AgentTool, AgentHandoff,
     FileStore, FileStoreFile, VoIPProvider, ApiKey,
-    Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary
+    FileStore, FileStoreFile, VoIPProvider, ApiKey,
+    Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary,
+    IntentRule
 )
 
 
@@ -76,6 +78,94 @@ def init_database():
     from app.db_config import init_database as db_init
     db_init()
 
+
+# ============================================================================
+# Intent Rule Operations
+# ============================================================================
+
+def get_all_intent_rules() -> List[Dict[str, Any]]:
+    """Get all intent rules"""
+    with get_db() as db:
+        rules = db.query(IntentRule).all()
+        return [
+            {
+                "id": r.id,
+                "group": r.group,
+                "keywords": r.keywords or [],
+                "color": r.color,
+                "description": r.description
+            }
+            for r in rules
+        ]
+
+def get_intent_rule(rule_id: int) -> Optional[Dict[str, Any]]:
+    """Get specific intent rule"""
+    with get_db() as db:
+        rule = db.query(IntentRule).filter(IntentRule.id == rule_id).first()
+        if not rule:
+            return None
+        return {
+            "id": rule.id,
+            "group": rule.group,
+            "keywords": rule.keywords or [],
+            "color": rule.color,
+            "description": rule.description
+        }
+
+def create_intent_rule(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a new intent rule"""
+    with get_db() as db:
+        rule = IntentRule(
+            group=data["group"],
+            keywords=data.get("keywords", []),
+            color=data.get("color", "#999999"),
+            description=data.get("description")
+        )
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+        return {
+            "id": rule.id,
+            "group": rule.group,
+            "keywords": rule.keywords or [],
+            "color": rule.color,
+            "description": rule.description
+        }
+
+def update_intent_rule(rule_id: int, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Update an intent rule"""
+    with get_db() as db:
+        rule = db.query(IntentRule).filter(IntentRule.id == rule_id).first()
+        if not rule:
+            return None
+        
+        if "keywords" in updates:
+            rule.keywords = updates["keywords"]
+        if "color" in updates:
+            rule.color = updates["color"]
+        if "description" in updates:
+            rule.description = updates["description"]
+            
+        db.commit()
+        db.refresh(rule)
+        return {
+            "id": rule.id,
+            "group": rule.group,
+            "keywords": rule.keywords or [],
+            "color": rule.color,
+            "description": rule.description
+        }
+
+
+def delete_intent_rule(rule_id: int) -> bool:
+    """Delete an intent rule"""
+    with get_db() as db:
+        rule = db.query(IntentRule).filter(IntentRule.id == rule_id).first()
+        if not rule:
+            return False
+        db.delete(rule)
+        db.commit()
+        return True
 
 # ============================================================================
 # Admin Operations

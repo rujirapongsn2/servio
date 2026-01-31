@@ -26,6 +26,17 @@ class Base(DeclarativeBase):
 # Core Configuration Models
 # ============================================================================
 
+class IntentRule(Base):
+    """Rules for manual intent classification overrides"""
+    __tablename__ = "intent_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    keywords: Mapped[Optional[list]] = mapped_column(JSON, default=list)  # List of strings
+    color: Mapped[str] = mapped_column(String(20), default="#999999")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class Admin(Base):
     """Admin user accounts for authentication"""
     __tablename__ = "admins"

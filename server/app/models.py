@@ -261,3 +261,32 @@ class UpdateApiKeyRequest(BaseModel):
     allowed_domains: Optional[List[str]] = None
     voice_response_enabled: Optional[bool] = None
 
+
+# Intent Rule models
+class IntentRuleResponse(BaseModel):
+    id: int
+    group: str
+    color: str
+    keywords: List[str]
+    description: Optional[str] = None
+
+
+class CreateIntentRuleRequest(BaseModel):
+    group: str
+    keywords: List[str]
+    color: str
+    description: Optional[str] = None
+
+
+class UpdateIntentRuleRequest(BaseModel):
+    group: Optional[str] = None
+    color: Optional[str] = None
+    keywords: Optional[List[str]] = None
+
+
+class IntentGroupResponse(BaseModel):
+    group: str
+    color: str
+    description: str
+    default_keywords: List[str]
+

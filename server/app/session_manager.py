@@ -13,6 +13,8 @@ class SessionInfo(BaseModel):
     source: str = "text_widget"  # "text_widget", "voice_widget", or "phone"
     last_message_preview: str = ""
     messages: List[Dict] = []
+    intent_group: Optional[str] = None
+    intent_color: Optional[str] = None
 
 class SessionManager:
     def __init__(self):
@@ -131,6 +133,13 @@ class SessionManager:
                     })
                 except:
                     pass
+
+    async def update_session_intent(self, session_id: str, group: str, color: str):
+        if session_id in self.sessions:
+            self.sessions[session_id].intent_group = group
+            self.sessions[session_id].intent_color = color
+            # Broadcast update to dashboard (which uses sessions list)
+            await self.broadcast_sessions_list()
 
     async def send_to_user(self, session_id: str, message: str):
         if session_id in self.active_helpers:

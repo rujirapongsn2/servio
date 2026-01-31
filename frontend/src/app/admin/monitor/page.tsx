@@ -49,6 +49,8 @@ interface Session {
     source: "text_widget" | "voice_widget" | "phone";
     last_message_preview: string;
     messages: any[];
+    intent_group?: string;
+    intent_color?: string;
 }
 
 export default function MonitorPage() {
@@ -184,12 +186,23 @@ export default function MonitorPage() {
                                 <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
                                     {session.session_id.substring(0, 8)}...
                                 </span>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${session.mode === "MANUAL"
-                                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                                    : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                                    }`}>
-                                    {session.mode}
-                                </span>
+                                <div className="flex gap-1">
+                                    {session.intent_group && (
+                                        <span
+                                            className="text-[10px] px-2 py-0.5 rounded-full text-white font-medium truncate max-w-[80px]"
+                                            style={{ backgroundColor: session.intent_color || '#999' }}
+                                            title={session.intent_group}
+                                        >
+                                            {session.intent_group}
+                                        </span>
+                                    )}
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${session.mode === "MANUAL"
+                                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                                        : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                                        }`}>
+                                        {session.mode}
+                                    </span>
+                                </div>
                             </div>
                             <div className="flex items-center gap-2 mb-2">
                                 {session.source === "phone" && (
@@ -303,6 +316,6 @@ export default function MonitorPage() {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

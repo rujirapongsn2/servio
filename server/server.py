@@ -34,8 +34,10 @@ from app.utils import (
 )
 from app.telephony_utils import TelephonyUtils, TwilioHelper
 from app.session_manager import session_manager
+from app.intent_service import intent_service
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 from fastapi.responses import FileResponse, HTMLResponse
 import os
 
@@ -146,6 +148,9 @@ class Workflow(VoiceWorkflowBase):
         # We can get the last message from history.
         if self.connection.history and self.connection.history[-1]["role"] == "assistant":
              await session_manager.update_session(self.session_id, {"content": self.connection.history[-1]["content"]}, is_user=False)
+             
+             # Trigger Real-Time Intent Analysis (Fire and Forget)
+             asyncio.create_task(intent_service.analyze_and_update(self.session_id, self.connection.history))
 
 
 # In-memory store for pending stream tokens

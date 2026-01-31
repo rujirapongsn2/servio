@@ -38,6 +38,10 @@ from app.models import (
     LLMProviderResponse,
     CreateLLMProviderRequest,
     UpdateLLMProviderRequest,
+    IntentRuleResponse,
+    CreateIntentRuleRequest,
+    UpdateIntentRuleRequest,
+    IntentGroupResponse
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -92,6 +96,86 @@ async def change_password(
 
     return MessageResponse(message="Password changed successfully")
 
+
+# Intent Rule endpoints
+@router.get("/intent-rules", response_model=List[IntentRuleResponse])
+async def get_intent_rules(current_user: str = Depends(get_current_user)):
+    """Get all intent detection rules"""
+    return database.get_all_intent_rules()
+
+@router.post("/intent-rules", response_model=IntentRuleResponse)
+async def create_intent_rule(
+    request: CreateIntentRuleRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Create a new intent rule"""
+    try:
+        rule = database.create_intent_rule(request.dict())
+        return rule
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.put("/intent-rules/{rule_id}", response_model=IntentRuleResponse)
+async def update_intent_rule(
+    rule_id: int,
+    request: UpdateIntentRuleRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """Update an intent rule"""
+    rule = database.update_intent_rule(rule_id, request.dict(exclude_unset=True))
+    if not rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Rule not found"
+        )
+    return rule
+
+@router.delete("/intent-rules/{rule_id}", response_model=MessageResponse)
+async def delete_intent_rule(
+    rule_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """Delete an intent rule"""
+    success = database.delete_intent_rule(rule_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Rule not found"
+        )
+    return MessageResponse(message="Rule deleted successfully")
+
+@router.get("/intent-groups", response_model=List[IntentGroupResponse])
+async def get_intent_groups(current_user: str = Depends(get_current_user)):
+    """Get standard intent groups for dropdown"""
+    from app.intent_service import STANDARD_INTENT_GROUPS
+    return STANDARD_INTENT_GROUPS
+
+@router.post("/intent-rules/init-defaults", response_model=MessageResponse)
+async def init_default_rules(current_user: str = Depends(get_current_user)):
+    """Initialize default intent rules if none exist"""
+    from app.intent_service import STANDARD_INTENT_GROUPS
+    
+    existing_rules = database.get_all_intent_rules()
+    if len(existing_rules) > 0:
+        return MessageResponse(message="Default rules already exist")
+    
+    created_count = 0
+    for group_info in STANDARD_INTENT_GROUPS:
+        try:
+            database.create_intent_rule({
+                "group": group_info["group"],
+                "color": group_info["color"],
+                "keywords": group_info["default_keywords"],
+                "description": group_info["description"]
+            })
+            created_count += 1
+        except Exception as e:
+            print(f"Error creating default rule for {group_info['group']}: {e}")
+    
+    return MessageResponse(message=f"Created {created_count} default intent rules")
 
 # Agent endpoints
 @router.get("/agents", response_model=List[AgentResponse])
