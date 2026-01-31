@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import { getApiBaseUrl } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
+import IntentMonitor from "./components/IntentMonitor";
 
 interface AnalyticsSummary {
   total_conversations: number;
@@ -321,6 +322,9 @@ export default function AnalyticsPage() {
           </div>
         </div>
       )}
+
+      {/* Real-Time Intent Monitor */}
+      <IntentMonitor />
 
       {/* Pie Charts */}
       {summary && (summary.outcome_breakdown || summary.sentiment_breakdown) && (

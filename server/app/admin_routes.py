@@ -153,6 +153,51 @@ async def get_intent_groups(current_user: str = Depends(get_current_user)):
     from app.intent_service import STANDARD_INTENT_GROUPS
     return STANDARD_INTENT_GROUPS
 
+@router.get("/intent-statistics")
+async def get_intent_statistics(current_user: str = Depends(get_current_user)):
+    """
+    Get real-time intent distribution statistics from active sessions
+
+    Returns:
+    {
+        "total_active_sessions": int,
+        "by_intent": {
+            "Smooth Resolution": int,
+            "Repetitive / Looping": int,
+            ...
+        },
+        "unclassified": int,
+        "timestamp": float,
+        "intent_groups": [
+            {
+                "group": str,
+                "color": str,
+                "count": int
+            }
+        ]
+    }
+    """
+    from app.session_manager import session_manager
+    from app.intent_service import STANDARD_INTENT_GROUPS
+
+    stats = session_manager.get_intent_statistics()
+
+    # Enrich with intent group metadata (color)
+    intent_groups = []
+    for group_config in STANDARD_INTENT_GROUPS:
+        group_name = group_config["group"]
+        count = stats["by_intent"].get(group_name, 0)
+        intent_groups.append({
+            "group": group_name,
+            "color": group_config["color"],
+            "count": count
+        })
+
+    return {
+        **stats,
+        "intent_groups": intent_groups
+    }
+
 @router.post("/intent-rules/init-defaults", response_model=MessageResponse)
 async def init_default_rules(current_user: str = Depends(get_current_user)):
     """Initialize default intent rules if none exist"""

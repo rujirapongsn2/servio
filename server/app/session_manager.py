@@ -148,4 +148,23 @@ class SessionManager:
             # Also update our local history tracking
             await self.update_session(session_id, {"content": message}, is_user=False)
 
+    def get_intent_statistics(self) -> dict:
+        """Get real-time intent distribution statistics from active sessions"""
+        stats = {
+            "total_active_sessions": len(self.sessions),
+            "by_intent": {},
+            "unclassified": 0,
+            "timestamp": time.time()
+        }
+
+        # Count sessions by intent group
+        for session_info in self.sessions.values():
+            intent = session_info.intent_group
+            if intent:
+                stats["by_intent"][intent] = stats["by_intent"].get(intent, 0) + 1
+            else:
+                stats["unclassified"] += 1
+
+        return stats
+
 session_manager = SessionManager()
