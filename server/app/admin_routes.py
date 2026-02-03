@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Response
 import json
 import os
+import re
 import time
 from typing import List
 from pathlib import Path
@@ -45,6 +46,33 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def sanitize_tool_name(name: str) -> str:
+    """
+    Sanitize a tool name to meet OpenAI API requirements.
+
+    OpenAI requires tool names to match pattern: ^[a-zA-Z0-9_-]+$
+    This function:
+    1. Removes all non-ASCII characters
+    2. Replaces spaces with underscores
+    3. Keeps only letters, numbers, underscores, and hyphens
+    4. Ensures the name is not empty (uses 'tool' as fallback)
+    """
+    # Remove non-ASCII characters
+    ascii_name = name.encode('ascii', 'ignore').decode('ascii')
+
+    # Replace spaces with underscores
+    ascii_name = ascii_name.replace(' ', '_')
+
+    # Keep only valid characters: a-z, A-Z, 0-9, _, -
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', ascii_name)
+
+    # If name is empty after sanitization, use a default
+    if not sanitized:
+        sanitized = 'file_store_tool'
+
+    return sanitized
 
 
 # Authentication endpoints
@@ -684,8 +712,8 @@ async def create_file_store(
         result = service.create_store(display_name=request.display_name)
         gemini_store_id = result["store_id"]
 
-        # Generate unique name from display name
-        name = request.display_name.lower().replace(" ", "_")
+        # Generate unique name from display name (sanitize for ASCII-only)
+        name = sanitize_tool_name(request.display_name.lower())
 
         # Save to database
         store_id = database.create_file_store(
@@ -798,7 +826,9 @@ async def upload_file(
 
         # Save uploaded file temporarily
         temp_dir = Path("/tmp")
-        temp_path = temp_dir / f"upload_{int(time.time())}_{file.filename}"
+        # Use safe ASCII-only temp filename to handle non-ASCII characters
+        safe_suffix = Path(file.filename).suffix if file.filename else ""
+        temp_path = temp_dir / f"upload_{int(time.time())}{safe_suffix}"
 
         with open(temp_path, "wb") as f:
             content = await file.read()
