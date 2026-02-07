@@ -52,11 +52,15 @@ export function ChatHistory({ messages, isLoading, collapsed = false }: ChatDial
     >
       <div className="flex flex-col gap-3 relative py-6 px-6 pb-12">
         {displayMessages.map((message, index) => {
-          // Check if next message is a function call (not transfer)
+          // Check if there is any subsequent message after this one,
+          // which means this handoff/function call has completed and the
+          // conversation has moved on (no spinner needed).
           const nextMessage = displayMessages[index + 1];
           const hasNextFunctionCall =
-            nextMessage?.type === "function_call" &&
-            !(nextMessage as ToolCall).name?.startsWith("transfer_to_");
+            nextMessage != null &&
+            (nextMessage.type === "function_call" ||
+              nextMessage.type === "function_call_output" ||
+              nextMessage.type === "message");
 
           return (
             <MessageBubble
