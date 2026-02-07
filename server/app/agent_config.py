@@ -642,15 +642,53 @@ def get_runtime_starting_agent() -> Agent:
     """
     from app import database
 
-    # Build DB agents (if any)
+    # Build DB agents (if any) using two-pass approach to resolve sub-agent handoffs
     db_agents_data = database.get_all_agents()
-    db_agents: list[Agent] = []
+
+    # First pass: create all agents without handoffs
+    all_agents: dict[int, Agent] = {}
     for a in db_agents_data:
         try:
-            db_agents.append(build_agent_from_db(a))
+            agent = build_agent_from_db(a, all_agents=None)
+            all_agents[a["id"]] = agent
         except Exception:
             # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
             continue
+
+    # Second pass: resolve sub-agent to sub-agent handoffs and inject handoff instructions
+    for a in db_agents_data:
+        agent = all_agents.get(a["id"])
+        if not agent:
+            continue
+        handoffs = []
+        for handoff_data in a.get("handoffs", []):
+            handoff_agent = all_agents.get(handoff_data["id"])
+            if handoff_agent:
+                handoffs.append(handoff_agent)
+            else:
+                print(f"[Handoff Warning] Agent '{a['name']}' handoff target id={handoff_data['id']} ('{handoff_data.get('name')}') not found in all_agents")
+        agent.handoffs = handoffs
+        if handoffs:
+            print(f"[Handoff] Agent '{agent.name}' -> {[h.name for h in handoffs]}")
+            # Inject handoff awareness into agent instructions so the LLM knows
+            # it should use the transfer tool instead of answering out-of-scope questions itself
+            handoff_names = ", ".join(h.name for h in handoffs)
+            handoff_details = "\n".join(
+                f"  - {h.name}: {(h.instructions[:120] + '...') if isinstance(h.instructions, str) and len(h.instructions) > 120 else h.instructions}"
+                for h in handoffs
+            )
+            agent.instructions = (
+                (agent.instructions or "")
+                + f"\n\n**IMPORTANT — Handoff Policy:**"
+                + f"\nYou have transfer tools available for the following agents:"
+                + f"\n{handoff_details}"
+                + f"\nWhen the user's request is outside your scope but matches one of these agents, "
+                + f"you MUST immediately transfer (handoff) to the appropriate agent using the transfer tool. "
+                + f"Do NOT ask the user for permission to transfer — just do it directly. "
+                + f"Do NOT tell the user to contact a call center or other channel if a handoff agent can handle it."
+            )
+
+    db_agents = list(all_agents.values())
 
     # Base triage (no built-in handoffs; wait for DB-defined agents)
     combined_handoffs = db_agents
