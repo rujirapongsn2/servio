@@ -585,11 +585,25 @@ def build_agent_from_db(agent_data: Dict[str, Any], all_agents: Dict[int, Agent]
             print(f"Error configuring LLM provider for agent {agent_data['name']}: {e}")
             # Fallback to default model string
 
+    # Inject tool awareness into instructions so the LLM knows
+    # the exact tool names it can call (avoids mismatched names in user-written instructions)
+    instructions = agent_data["instructions"] or ""
+    if tools:
+        tool_descriptions = "\n".join(
+            f"  - `{t.name}`: {t.description}" for t in tools
+        )
+        instructions += (
+            f"\n\n**Available Tools:**"
+            f"\nYou have the following tools available. ALWAYS use them when relevant to the user's query:"
+            f"\n{tool_descriptions}"
+            f"\nUse the exact tool names shown above (in backticks) when calling tools."
+        )
+
     # Create agent
     agent = Agent(
         name=agent_data["name"],
         model=model,
-        instructions=agent_data["instructions"],
+        instructions=instructions,
         tools=tools,
         handoffs=handoffs,
     )
