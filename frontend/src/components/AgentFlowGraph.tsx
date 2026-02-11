@@ -158,21 +158,21 @@ export default function AgentFlowGraph({ agents }: { agents: Agent[] }) {
   return (
     <div
       className="relative w-full bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
-      style={{ height: Math.max(520, yHeight + 180) }}
+      style={{ height: Math.min(420, Math.max(320, yHeight + 60)) }}
     >
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.1 }}
         nodesDraggable={false}
         elementsSelectable={false}
         zoomOnScroll={false}
         zoomOnPinch={false}
         panOnDrag={false}
         panOnScroll={true}
-        minZoom={0.6}
+        minZoom={0.4}
         maxZoom={1.2}
         onNodeClick={onNodeClick}
         onPaneClick={() => setSelected(null)}

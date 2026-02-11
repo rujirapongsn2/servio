@@ -116,33 +116,6 @@ export default function AdminDashboard() {
             />
           </div>
 
-          {/* Quick Actions */}
-          <div className="mt-6">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-              Quick Actions
-            </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <ActionCard
-                title="Create New Agent"
-                description="Add a new AI agent to your system"
-                href="/admin/agents/new"
-                icon="+"
-              />
-              <ActionCard
-                title="Manage Agents"
-                description="View and edit existing agents"
-                href="/admin/agents"
-                icon="📋"
-              />
-              <ActionCard
-                title="Add Custom Tool"
-                description="Integrate a new API tool"
-                href="/admin/tools/new"
-                icon="🔧"
-              />
-            </div>
-          </div>
-
           {/* Agent Flow Diagram */}
           <div className="mt-8 space-y-3">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -197,29 +170,3 @@ function StatCard({
   );
 }
 
-function ActionCard({
-  title,
-  description,
-  href,
-  icon,
-}: {
-  title: string;
-  description: string;
-  href: string;
-  icon: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="block bg-white dark:bg-gray-800 rounded-lg border-2 border-transparent hover:border-transparent p-4 transition-all relative before:absolute before:inset-0 before:rounded-lg before:p-[2px] before:bg-gradient-to-r before:from-brand-start before:to-brand-end before:-z-10 before:content-[''] hover:before:opacity-100 before:opacity-0"
-    >
-      <div className="text-3xl mb-3">{icon}</div>
-      <h3 className="text-base font-medium text-gray-900 dark:text-white">
-        {title}
-      </h3>
-      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-        {description}
-      </p>
-    </Link>
-  );
-}

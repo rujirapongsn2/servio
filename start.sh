@@ -232,28 +232,48 @@ show_menu() {
     echo -n "Enter choice [0-8]: "
 }
 
-# Function to check and kill conflicting ports
+# Function to check and kill conflicting ports (skips Docker-owned processes)
 check_and_kill_ports() {
     local ports=(3000 8000 5432)
     local port_names=("Frontend" "Backend" "PostgreSQL")
     local conflicts=()
     local pids=()
 
-    # Check for conflicts
+    # Check for conflicts, filtering out Docker-related processes
     for i in "${!ports[@]}"; do
         local port="${ports[$i]}"
-        local pid=$(lsof -ti:$port 2>/dev/null)
-        if [ ! -z "$pid" ]; then
-            conflicts+=("${port_names[$i]} (port $port)")
-            pids+=("$port:$pid")
+        local all_pids=$(lsof -ti:$port 2>/dev/null)
+        if [ ! -z "$all_pids" ]; then
+            local non_docker_pids=""
+            for pid in $all_pids; do
+                local cmd=$(ps -p $pid -o comm= 2>/dev/null)
+                # Skip Docker-related processes
+                if echo "$cmd" | grep -qiE "^(docker|com\.docker|docker-proxy|vpnkit|containerd)"; then
+                    continue
+                fi
+                if [ -z "$non_docker_pids" ]; then
+                    non_docker_pids="$pid"
+                else
+                    non_docker_pids="$non_docker_pids $pid"
+                fi
+            done
+            if [ ! -z "$non_docker_pids" ]; then
+                conflicts+=("${port_names[$i]} (port $port)")
+                pids+=("$port:$non_docker_pids")
+            fi
         fi
     done
 
     # If conflicts found, ask to kill
     if [ ${#conflicts[@]} -gt 0 ]; then
         echo -e "${YELLOW}⚠️  Port conflicts detected:${NC}"
-        for conflict in "${conflicts[@]}"; do
-            echo -e "  ${RED}✗${NC} $conflict is already in use"
+        for port_pid in "${pids[@]}"; do
+            local port="${port_pid%%:*}"
+            local pid_list="${port_pid##*:}"
+            for pid in $pid_list; do
+                local cmd=$(ps -p $pid -o comm= 2>/dev/null)
+                echo -e "  ${RED}✗${NC} Port $port in use by ${YELLOW}$cmd${NC} (PID: $pid)"
+            done
         done
         echo ""
         echo -e "${CYAN}These ports must be free to start Docker services.${NC}"
@@ -266,9 +286,12 @@ check_and_kill_ports() {
         if [ "$kill_choice" = "y" ] || [ "$kill_choice" = "Y" ]; then
             for port_pid in "${pids[@]}"; do
                 local port="${port_pid%%:*}"
-                local pid="${port_pid##*:}"
-                echo -e "${BLUE}Killing process on port $port (PID: $pid)...${NC}"
-                kill -9 $pid 2>/dev/null && echo -e "${GREEN}✓ Process killed${NC}" || echo -e "${RED}✗ Failed to kill process${NC}"
+                local pid_list="${port_pid##*:}"
+                for pid in $pid_list; do
+                    local cmd=$(ps -p $pid -o comm= 2>/dev/null)
+                    echo -e "${BLUE}Killing $cmd on port $port (PID: $pid)...${NC}"
+                    kill -9 $pid 2>/dev/null && echo -e "${GREEN}✓ Process killed${NC}" || echo -e "${RED}✗ Failed to kill process${NC}"
+                done
             done
             echo ""
             echo -e "${GREEN}✓ Port conflicts resolved${NC}"

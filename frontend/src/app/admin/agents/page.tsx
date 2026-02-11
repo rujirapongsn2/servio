@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Play, Pencil, Trash2, Plus, Bot, Sparkles } from "lucide-react";
+import { Play, Pencil, Trash2, Plus, Bot, Sparkles, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface Agent {
@@ -92,6 +92,12 @@ export default function AgentsPage() {
             className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
             <Sparkles className="w-4 h-4" />
             LLM Providers
+          </Link>
+          <Link
+            href="/admin/tools"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <Wrench className="w-4 h-4" />
+            Manage Tools
           </Link>
           <Link
             href="/admin/agents/new"

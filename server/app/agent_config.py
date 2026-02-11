@@ -27,6 +27,10 @@ STYLE_INSTRUCTIONS = (
     "\n3. Do not use special characters, markdown, lists, or emojis."
     "\n4. If the user input is unclear, completely random foreign words, or noise, IGNORE it or politely ask them to repeat in their language."
     "\n5. Do not switch languages mid-sentence."
+    "\n6. CONTEXT RESOLUTION: When the user refers to something implicitly (e.g., pronouns like 'it', 'that', or omitted subjects), "
+    "you MUST resolve the reference using conversation history before responding or calling any tool. "
+    "For example, if the user previously asked about 'train 25 to Udon Thani' and then asks 'how much is the ticket?', "
+    "understand that 'the ticket' means 'ticket for train 25 to Udon Thani'."
 )
 
 """\nLightweight tool-call logging for test runs.\n- Uses ContextVar to isolate per-request logs.\n- Admin test endpoint should call start_tool_logging() before running.\n"""
@@ -597,6 +601,14 @@ def build_agent_from_db(agent_data: Dict[str, Any], all_agents: Dict[int, Agent]
             f"\nYou have the following tools available. ALWAYS use them when relevant to the user's query:"
             f"\n{tool_descriptions}"
             f"\nUse the exact tool names shown above (in backticks) when calling tools."
+            f"\n\n**CRITICAL — Context-Aware Tool Calls:**"
+            f"\nWhen calling a tool, you MUST include full context from the conversation in the query parameter. "
+            f"NEVER pass the user's raw message as-is if it contains implicit references."
+            f"\nExamples:"
+            f"\n  - User asked about 'train 25' earlier, now asks 'how much is the ticket?' → call tool with 'ราคาตั๋วขบวนรถ 25' (include train number)"
+            f"\n  - User discussed 'Udon Thani' earlier, now asks 'what time does it arrive?' → call tool with 'ขบวนรถ 25 ถึงอุดรธานีกี่โมง' (include destination and train)"
+            f"\n  - User mentioned a product, now asks 'how much?' → call tool with the full product name in the query"
+            f"\nAlways resolve pronouns, omitted subjects, and implicit references into explicit terms before passing to any tool."
         )
 
     # Create agent
