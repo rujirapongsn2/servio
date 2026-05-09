@@ -15,8 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.db_config import get_db
 from app.orm_models import (
     Admin, Agent, Tool, AgentTool, AgentHandoff,
-    FileStore, FileStoreFile, VoIPProvider, ApiKey,
-    FileStore, FileStoreFile, VoIPProvider, ApiKey,
+    FileStore, FileStoreFile, VoIPProvider, ChannelConfig, ApiKey,
     Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary,
     IntentRule
 )
@@ -707,6 +706,62 @@ def get_active_voip_config(provider_type: str = "twilio") -> Optional[Dict[str, 
         if not provider:
             return None
         return provider.config
+
+
+# ============================================================================
+# Channel Config Operations
+# ============================================================================
+
+def _channel_to_dict(channel: ChannelConfig) -> Dict[str, Any]:
+    return {
+        "id": channel.id,
+        "type": channel.type,
+        "name": channel.name,
+        "config": channel.config or {},
+        "is_active": channel.is_active,
+        "created_at": channel.created_at.isoformat() if channel.created_at else None,
+        "updated_at": channel.updated_at.isoformat() if channel.updated_at else None
+    }
+
+
+def get_all_channel_configs() -> List[Dict[str, Any]]:
+    with get_db() as db:
+        channels = db.query(ChannelConfig).order_by(ChannelConfig.created_at.desc()).all()
+        return [_channel_to_dict(channel) for channel in channels]
+
+
+def get_channel_config(channel_type: str) -> Optional[Dict[str, Any]]:
+    with get_db() as db:
+        channel = db.query(ChannelConfig).filter_by(type=channel_type).first()
+        if not channel:
+            return None
+        return _channel_to_dict(channel)
+
+
+def upsert_channel_config(
+    channel_type: str,
+    name: str,
+    config: Dict[str, Any],
+    is_active: bool
+) -> Dict[str, Any]:
+    with get_db() as db:
+        channel = db.query(ChannelConfig).filter_by(type=channel_type).first()
+        if not channel:
+            channel = ChannelConfig(
+                type=channel_type,
+                name=name,
+                config=config,
+                is_active=is_active,
+                updated_at=datetime.utcnow()
+            )
+            db.add(channel)
+            db.flush()
+        else:
+            channel.name = name
+            channel.config = config
+            channel.is_active = is_active
+            channel.updated_at = datetime.utcnow()
+        return _channel_to_dict(channel)
 
 
 # ============================================================================

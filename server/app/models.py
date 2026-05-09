@@ -199,6 +199,22 @@ class UpdateVoIPProviderRequest(BaseModel):
     is_active: bool
 
 
+class ChannelConfigResponse(BaseModel):
+    id: int
+    type: str
+    name: str
+    config: Dict[str, Any] = {}
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class UpdateChannelConfigRequest(BaseModel):
+    name: str
+    config: Dict[str, Any]
+    is_active: bool = False
+
+
 # API Key models
 class ApiKeyResponse(BaseModel):
     id: int

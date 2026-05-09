@@ -173,6 +173,19 @@ class VoIPProvider(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ChannelConfig(Base):
+    """Messaging channel configuration"""
+    __tablename__ = "channel_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ApiKey(Base):
     """API Keys for WebSocket authentication"""
     __tablename__ = "api_keys"

@@ -10,11 +10,9 @@ import {
   Bot,
   Activity,
   LineChart,
-  Wrench,
   Puzzle,
   Settings,
   Phone,
-  Sparkles,
 } from "lucide-react";
 
 export default function AdminLayout({
@@ -145,12 +143,12 @@ export default function AdminLayout({
               Analytics
             </NavLink>
             <NavLink
-              href="/admin/tools/widget"
-              active={pathname.startsWith("/admin/tools/widget")}
+              href="/admin/tools/channels"
+              active={pathname.startsWith("/admin/tools/channels") || pathname.startsWith("/admin/tools/widget")}
               collapsed={collapsed}
               icon={Puzzle}
             >
-              Widget
+              Channels
             </NavLink>
             <NavLink
               href="/admin/settings"

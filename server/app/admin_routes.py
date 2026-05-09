@@ -28,11 +28,12 @@ from app.models import (
     FileStoreFileResponse,
     CreateFileStoreRequest,
     TestFileStoreRequest,
-    TestFileStoreRequest,
     TestFileStoreResponse,
     VoIPProviderResponse,
     CreateVoIPProviderRequest,
     UpdateVoIPProviderRequest,
+    ChannelConfigResponse,
+    UpdateChannelConfigRequest,
     ApiKeyResponse,
     CreateApiKeyRequest,
     UpdateApiKeyRequest,
@@ -1032,6 +1033,87 @@ async def delete_voip_provider(
     return MessageResponse(message="VoIP provider deleted successfully")
 
 
+# Channel Config endpoints
+@router.get("/channel-configs", response_model=List[ChannelConfigResponse])
+async def get_channel_configs(current_user: str = Depends(get_current_user)):
+    configs = database.get_all_channel_configs()
+    existing_types = {config["type"] for config in configs}
+
+    defaults = {
+        "line": {
+            "name": "Line Messaging",
+            "config": {
+                "channel_id": "",
+                "channel_secret": "",
+                "channel_access_token": "",
+                "webhook_url": "/api/public/channels/line/webhook"
+            },
+            "is_active": False
+        },
+        "facebook": {
+            "name": "Facebook Messaging",
+            "config": {
+                "page_id": "",
+                "app_id": "",
+                "app_secret": "",
+                "page_access_token": "",
+                "verify_token": "",
+                "webhook_url": "/api/public/channels/facebook/webhook"
+            },
+            "is_active": False
+        }
+    }
+
+    for channel_type, default in defaults.items():
+        if channel_type not in existing_types:
+            database.upsert_channel_config(
+                channel_type=channel_type,
+                name=default["name"],
+                config=default["config"],
+                is_active=default["is_active"]
+            )
+
+    return database.get_all_channel_configs()
+
+
+@router.get("/channel-configs/{channel_type}", response_model=ChannelConfigResponse)
+async def get_channel_config(channel_type: str, current_user: str = Depends(get_current_user)):
+    if channel_type not in {"line", "facebook"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported channel type"
+        )
+
+    config = database.get_channel_config(channel_type)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Channel config not found"
+        )
+
+    return config
+
+
+@router.put("/channel-configs/{channel_type}", response_model=ChannelConfigResponse)
+async def update_channel_config(
+    channel_type: str,
+    request: UpdateChannelConfigRequest,
+    current_user: str = Depends(get_current_user)
+):
+    if channel_type not in {"line", "facebook"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported channel type"
+        )
+
+    return database.upsert_channel_config(
+        channel_type=channel_type,
+        name=request.name,
+        config=request.config,
+        is_active=request.is_active
+    )
+
+
 # LLM Provider endpoints
 @router.get("/llm-providers", response_model=List[LLMProviderResponse])
 async def get_llm_providers(current_user: str = Depends(get_current_user)):
@@ -1726,6 +1808,106 @@ async def get_provider_models(
 # ============================================================================
 
 public_router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+@public_router.post("/channels/line/webhook")
+async def line_messaging_webhook(request: Request):
+    from app.messaging import get_line_client_from_db, handle_message as run_agent
+    import asyncio as _asyncio
+
+    body = await request.body()
+    body_str = body.decode("utf-8")
+    signature = request.headers.get("X-Line-Signature", "")
+
+    client = get_line_client_from_db(database.get_channel_config)
+    if not client:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="LINE channel is not configured")
+
+    if not client.validate_signature(body_str, signature):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid LINE signature")
+
+    events = client.parse_events(body_str, signature)
+
+    # Process text events asynchronously
+    for event in events:
+        if event.get("message_type") != "text":
+            continue
+        reply_token = event.get("reply_token")
+        user_id = event.get("user_id", "unknown")
+        text = event.get("text", "")
+
+        if reply_token and text:
+            try:
+                response_text = await run_agent("line", user_id, text)
+                if response_text:
+                    client.reply_text(reply_token, response_text)
+            except Exception:
+                pass  # Don't fail the webhook if one message fails
+
+    return {
+        "success": True,
+        "channel": "line",
+        "events_processed": len(events),
+    }
+
+
+@public_router.get("/channels/facebook/webhook")
+async def facebook_messaging_verify(request: Request):
+    params = request.query_params
+    mode = params.get("hub.mode")
+    challenge = params.get("hub.challenge")
+    verify_token = params.get("hub.verify_token")
+
+    config = database.get_channel_config("facebook")
+    expected_token = (config or {}).get("config", {}).get("verify_token")
+
+    if mode == "subscribe" and challenge and expected_token and verify_token == expected_token:
+        return Response(content=challenge, media_type="text/plain")
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Invalid Facebook webhook verification token"
+    )
+
+
+@public_router.post("/channels/facebook/webhook")
+async def facebook_messaging_webhook(request: Request):
+    from app.messaging import get_facebook_client_from_db, handle_message as run_agent
+    import asyncio as _asyncio
+
+    payload = await request.json()
+
+    client = get_facebook_client_from_db(database.get_channel_config)
+    if not client:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Facebook channel is not configured")
+
+    events = client.parse_events(payload)
+
+    for event in events:
+        sender_id = event.get("sender_id")
+        text = event.get("text")
+
+        if event.get("message_type") != "text" or not text:
+            continue
+        if not sender_id:
+            continue
+
+        try:
+            response_text = await run_agent("facebook", sender_id, text)
+            if response_text:
+                client.send_text(sender_id, response_text)
+        except Exception:
+            pass
+
+    return {
+        "success": True,
+        "channel": "facebook",
+        "entries_processed": len(events),
+    }
+
 
 @public_router.get("/widget-config/{slug}")
 async def get_widget_config_by_slug(slug: str):
