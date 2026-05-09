@@ -307,19 +307,22 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
 4. **รันด้วย Docker:**
 
    ```bash
-   # เริ่มสคริปต์จัดการ Docker
-   ./start.sh
-
-   # เลือกข้อ 2 (Start services in background)
-   # หรือข้อ 1 ถ้าอยากดู Log แบบ Real-time
+   # Start Servio stack
+   ./services.sh start
    ```
 
-   สคริปต์แบบ Interactive นี้ช่วยให้คุณ:
-   - ✅ สั่ง Start/Stop services
-   - ✅ ดู Logs (รวม, เฉพาะ backend, หรือเฉพาะ frontend)
-   - ✅ เช็คสถานะ Container
-   - ✅ Build/Rebuild images
-   - ✅ ล้าง Containers และ Volumes
+   คำสั่ง service manager:
+   ```bash
+   ./services.sh start frontend
+   ./services.sh restart backend
+   ./services.sh rebuild frontend
+   ./services.sh stop
+   ./services.sh status
+   ./services.sh logs backend
+   ./services.sh update
+   ```
+
+   `./start.sh` ยังใช้งานได้เป็น compatibility wrapper แต่แนะนำให้ใช้ `./services.sh` เป็นหลัก
 
 5. **แก้ไขปัญหา SSL Certificate Permissions (ถ้าจำเป็น):**
 
@@ -347,13 +350,13 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    **คำสั่ง Docker Direct** (ถ้าคุณถนัดแบบพิมพ์เอง):
    ```bash
    # Build และ Start services
-   docker-compose up -d
+   docker compose up -d
 
    # ดู Logs
-   docker-compose logs -f
+   docker compose logs -f
 
    # Stop services
-   docker-compose down
+   docker compose down
    ```
 
 ### การติดตั้งแบบ Manual (Development)
@@ -430,7 +433,7 @@ Servio มาพร้อมชุด Docker deployment ที่พร้อม
 
 ### สถาปัตยกรรม (Architecture)
 
-Docker setup ใช้ **docker-compose** จัดการ 2 Services หลัก:
+Docker setup ใช้ **docker compose** จัดการ 4 services หลัก:
 
 - **Backend Container** (Python 3.11 + FastAPI + uvicorn)
   - Port: 8000
@@ -444,18 +447,26 @@ Docker setup ใช้ **docker-compose** จัดการ 2 Services หล�
   - รันด้วย non-root user เพื่อความปลอดภัย
   - Health checks ที่ HTTP root endpoint
 
-- **Shared Network** (`voice-agent-network`)
-  - ให้ backend และ frontend คุยกันได้
+- **Nginx Container** (Reverse proxy)
+  - เปิด Port 80/443
+  - Route ไปยัง frontend/backend และ WebSocket
+
+- **PostgreSQL Container** (PostgreSQL 15)
+  - เก็บข้อมูลใน Docker volume `postgres_data`
+
+- **Shared Networks** (`proxy-network`, `db-network`)
+  - ให้ service ภายในคุยกันได้อย่างแยกขอบเขต
   - Internal DNS resolution (เรียกหากันด้วยชื่อ service ได้เลย)
 
 ### โครงสร้างไฟล์ Docker
 
 ```
-CSAgent/
+servio/
 ├── docker-compose.yml          # Service orchestration
+├── services.sh                 # CLI service manager
+├── start.sh                    # Compatibility wrapper
 ├── .env                        # Environment variables (create from .env.example)
 ├── .env.example                # Template for environment variables
-├── start.sh                   # สคริปต์ interactive สำหรับจัดการ Docker
 ├── server/
 │   ├── Dockerfile            # Backend container definition
 │   ├── .dockerignore        # Exclude unnecessary files
@@ -504,24 +515,27 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 - **PostgreSQL**: ข้อมูลหลักทั้งหมดจะถูกเก็บใน PostgreSQL service ที่กำหนดใน docker-compose หรือ external DB
 
-### การใช้สคริปต์จัดการ Docker
+### การใช้สคริปต์จัดการ Services
 
-รัน `./start.sh` แล้วจะมีเมนูให้เลือก:
+Servio ใช้ `./services.sh` เป็นคำสั่งหลักสำหรับจัดการ Docker services:
 
 ```bash
-./start.sh
+./services.sh <command> [service] [options]
 ```
 
-**ตัวเลือกเมนู:**
-1. Start (foreground) - ดู Log เรียลไทม์, กด Ctrl+C เพื่อหยุด
-2. Start (background) - รันเบื้องหลัง, ใช้เมนู view logs ดูได้
-3. Stop services - หยุด Container ทั้งหมด (ข้อมูลยังอยู่)
-4. Restart services - รีสตาร์ท Frontend และ Backend
-5. Build/Rebuild - สร้าง Image ใหม่ (ทำหลังแก้โค้ด)
-6. View logs - ดู Log ของระบบ
-7. Check status - ดูสถานะ Container และ URL
-8. Clean up - ลบ Container และ Volume (⚠️ ระวังข้อมูลหาย)
-0. Exit - ออก
+**Commands:**
+- `./services.sh start` - start ทั้ง stack
+- `./services.sh start frontend` - start frontend พร้อม dependencies ที่จำเป็น
+- `./services.sh restart backend` - restart เฉพาะ backend
+- `./services.sh rebuild frontend` - rebuild image แล้ว recreate frontend
+- `./services.sh stop` - stop ทั้ง stack โดยไม่ลบ volume/database
+- `./services.sh status` - ดูสถานะ containers
+- `./services.sh logs backend` - tail logs ของ backend
+- `./services.sh update` - `git pull --ff-only`, rebuild และ recreate services
+
+**Services:** `all`, `frontend`, `backend`, `postgres`/`db`, `nginx`/`proxy`
+
+**Options:** `--no-cache`, `--foreground`, `--kill-ports`, `--allow-dirty`
 
 ### คู่มือ Production Deployment
 
@@ -633,14 +647,11 @@ sudo systemctl start caddy
 ```bash
 cd /path/to/servio
 
-# Build frontend พร้อม production vars
-docker compose build --no-cache frontend
+# Build และ recreate ทั้ง stack
+./services.sh rebuild --no-cache
 
-# Build backend
-docker compose build backend
-
-# Start services
-docker compose up -d
+# หรือ update จาก GitHub แล้ว deploy
+./services.sh update
 ```
 
 #### ขั้นตอนที่ 5: ตรวจสอบการ Deployment
@@ -679,7 +690,7 @@ docker compose up -d
 ระบบปัจจุบันถูกปรับปรุงให้มีความปลอดภัยระดับ Enterprise ดังนี้:
 
 - **Reverse Proxy (Nginx)**: บริการทั้งหมดถูกซ่อนไว้หลัง Nginx Proxy (Port 80/443)
-- **SSL by Default**: รองรับ HTTPS และ WSS (Secure WebSocket) พร้อมระบบสร้าง Self-signed certificate อัตโนมัติใน `start.sh`
+- **SSL by Default**: รองรับ HTTPS และ WSS (Secure WebSocket) พร้อมระบบสร้าง Self-signed certificate อัตโนมัติใน `services.sh`
 - **Service Isolation**: พอร์ตภายใน (3000, 8000, 5432) จะไม่ถูกเปิดออกสู่ภายนอก เข้าถึงได้เฉพาะผ่าน Proxy เท่านั้น
 - **Read-only Filesystem**: Backend container ทำงานในโหมด Read-only เพื่อป้องกันการเขียนไฟล์ไม่พึงประสงค์ โดยมีการแยก `tmpfs` สำหรับงานชั่วคราว
 - **Unified Origin**: Frontend และ Backend ทำงานบนโดเมนและพอร์ตเดียวกัน ลดปัญหา CORS และ Mixed Content

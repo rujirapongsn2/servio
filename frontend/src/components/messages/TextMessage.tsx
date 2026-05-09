@@ -2,6 +2,7 @@ import clsx from "clsx";
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { normalizeMarkdownForChat } from "@/lib/markdown";
 
 type CustomLinkProps = {
   href?: string;
@@ -25,6 +26,8 @@ type TextMessageProps = {
 };
 
 export function TextMessage({ text, isUser, collapsed = false }: TextMessageProps) {
+  const displayText = isUser ? text : normalizeMarkdownForChat(text);
+
   return (
     <div
       className={clsx("flex flex-row gap-3", {
@@ -42,7 +45,7 @@ export function TextMessage({ text, isUser, collapsed = false }: TextMessageProp
             components={{ a: CustomLink }}
             remarkPlugins={[remarkGfm]}
           >
-            {text}
+            {displayText}
           </ReactMarkdown>
         </div>
       </div>

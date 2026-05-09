@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getApiBaseUrl } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { normalizeMarkdownForChat } from "@/lib/markdown";
 
 export default function AgentTestPage() {
   const FORCE_ARGS_PLACEHOLDER = 'Arguments (JSON or key=value, comma-separated). Example: {"symbol":"AAPL"} or symbol=AAPL';
-  const router = useRouter();
   const params = useParams();
   const apiBaseUrl = getApiBaseUrl();
   const agentId = parseInt((params && (params as any).id ? (params as any).id.toString() : "0"));
@@ -240,8 +242,14 @@ export default function AgentTestPage() {
                   <div className="text-sm font-medium mb-1">
                     {message.role === "user" ? "You" : agentName}
                   </div>
-                  <div className="text-sm whitespace-pre-wrap">
-                    {message.content}
+                  <div className="text-sm markdown-content">
+                    {message.role === "assistant" ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {normalizeMarkdownForChat(String(message.content || ""))}
+                      </ReactMarkdown>
+                    ) : (
+                      <div className="whitespace-pre-wrap">{message.content}</div>
+                    )}
                   </div>
                   {message.tool_calls && message.tool_calls.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600">

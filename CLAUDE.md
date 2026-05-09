@@ -23,12 +23,20 @@ POSTGRES_DB=voice_agents
 
 ### Running the Application (Docker - Primary Method)
 
-The application runs in Docker containers managed by `./start.sh`:
+The application runs in Docker containers managed by `./services.sh`:
 
 ```bash
 # Start services in background
-./start.sh
-# Choose option 2 (Start services - background)
+./services.sh start
+
+# Restart one service
+./services.sh restart frontend
+
+# Rebuild after code changes
+./services.sh rebuild backend
+
+# Pull latest GitHub code, rebuild, and deploy
+./services.sh update
 
 # Access the application:
 # - Frontend: https://localhost

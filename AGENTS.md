@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root: `docker-compose.yml`, `start.sh`, `.env` (local only), `README.md`.
+- Root: `docker-compose.yml`, `services.sh`, `start.sh` (compatibility wrapper), `.env` (local only), `README.md`.
 - Frontend (Next.js + TS): `frontend/` → App Router in `src/app/**`, config in `next.config.ts`, `tailwind.config.mjs`, `Dockerfile` for containerization.
 - Backend (FastAPI): `server/` → entry `server.py`, routes and utils in `server/app/**`, Python deps in `pyproject.toml` (managed by `uv`), `Dockerfile` for containerization.
 - Database: PostgreSQL 15 running in Docker container, data persisted in `postgres_data` volume.
@@ -10,19 +10,21 @@
 ## Build, Test, and Development Commands
 
 ### Docker Management (Primary Method)
-- **Start services**: `./start.sh` → choose option 2 (background) or 1 (foreground)
+- **Start all services**: `./services.sh start`
+- **Start one service with dependencies**: `./services.sh start frontend` or `./services.sh start backend`
   - Frontend: https://localhost
   - Backend API: https://localhost/api
   - WebSocket: wss://localhost/ws
   - Admin: https://localhost/admin
-- **Stop services**: `./start.sh` → option 3
-- **Restart** (after .env changes): `./start.sh` → option 4
+- **Stop services**: `./services.sh stop` or `./services.sh stop frontend`
+- **Restart** (after .env changes): `./services.sh restart` or `./services.sh restart backend`
 - **Rebuild** (after code changes):
-  - Backend code: `./start.sh` → option 5 → 1 (Backend) → then option 4 (Restart)
-  - Frontend code: `./start.sh` → option 5 → 2 (Frontend) → then option 4 (Restart)
-  - Both: `./start.sh` → option 5 → 3 (All) → then option 4 (Restart)
-- **View logs**: `./start.sh` → option 6
-- **Check status**: `./start.sh` → option 7
+  - Backend code: `./services.sh rebuild backend`
+  - Frontend code: `./services.sh rebuild frontend`
+  - Both: `./services.sh rebuild`
+- **Update from GitHub and deploy**: `./services.sh update`
+- **View logs**: `./services.sh logs` or `./services.sh logs backend`
+- **Check status**: `./services.sh status`
 
 ### Local Development (Without Docker - Legacy)
 - Backend only: `cd server && uv run server.py`
@@ -37,13 +39,13 @@
 - **frontend**: Next.js application (Node 20) running on port 3000 inside container
 
 ### Rebuild Requirements
-**Must rebuild (Option 5):**
+**Must rebuild:**
 - Modified Python code in `server/`
 - Modified React/Next.js code in `frontend/src/`
 - Changed dependencies (`package.json`, `pyproject.toml`)
 - Modified Dockerfile
 
-**Only restart needed (Option 4):**
+**Only restart needed:**
 - Changed `.env` file (API keys, environment variables)
 - Modified `nginx/nginx.conf`
 
@@ -57,7 +59,7 @@
 
 ## Commit & Pull Request Guidelines
 - Commits: imperative present ("Add admin routes"), concise subject (<72 chars), details in body when needed. Group logical changes; avoid drive‑by edits.
-- PRs: include summary, motivation, and scope; link issues; add screenshots/GIFs for UI changes; note env or migration impacts. Ensure Docker services build and start successfully (`./start.sh` option 5 → 3, then option 4) before submitting.
+- PRs: include summary, motivation, and scope; link issues; add screenshots/GIFs for UI changes; note env or migration impacts. Ensure Docker services build and start successfully (`./services.sh rebuild`, then `./services.sh status`) before submitting.
 
 ## Security & Configuration Tips
 - **Secrets**: Set API keys in `.env` file at project root (untracked). Required: `OPENAI_API_KEY`. Optional: `SOFTNIX_API_KEY`, `GEMINI_API_KEY`. Never commit secrets.
