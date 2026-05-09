@@ -130,6 +130,15 @@ Servio is available at:
 EOF
 }
 
+refresh_proxy_if_needed() {
+  case "$1" in
+    all|frontend|backend)
+      info "Refreshing nginx upstream resolution..."
+      "${COMPOSE[@]}" restart nginx >/dev/null
+      ;;
+  esac
+}
+
 normalize_target() {
   local target="${1:-all}"
   case "$target" in
@@ -324,6 +333,7 @@ cmd_rebuild() {
   start_services="$(compose_services_for_start "$TARGET")"
   info "Recreating services..."
   run_compose_with_optional_services "$start_services" up -d
+  refresh_proxy_if_needed "$TARGET"
   show_urls
 }
 
