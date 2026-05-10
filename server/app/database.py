@@ -215,6 +215,18 @@ def is_operator_only_user(username: str) -> bool:
         return all(m.role == "operator" for m in memberships)
 
 
+def is_viewer_only_user(username: str) -> bool:
+    """Return True when user is limited to viewer role across all memberships."""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin or admin.is_super_admin:
+            return False
+        memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+        if not memberships:
+            return False
+        return all(m.role == "viewer" for m in memberships)
+
+
 def has_any_team_role(username: str, min_role: str = "viewer") -> bool:
     """Return True when user has at least one membership at min_role or higher."""
     with get_db() as db:

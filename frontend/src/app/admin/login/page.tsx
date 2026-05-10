@@ -38,6 +38,7 @@ export default function AdminLoginPage() {
       localStorage.setItem("adminUsername", data.username);
       localStorage.setItem("isSuperAdmin", data.is_super_admin ? "1" : "0");
       localStorage.setItem("isOperatorOnly", data.is_operator_only ? "1" : "0");
+      localStorage.setItem("isViewerOnly", data.is_viewer_only ? "1" : "0");
       localStorage.setItem("canManageUsers", data.can_manage_users ? "1" : "0");
 
       // Redirect to admin dashboard

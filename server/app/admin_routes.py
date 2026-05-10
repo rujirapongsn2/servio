@@ -232,6 +232,7 @@ async def login(request: LoginRequest):
         username=request.username,
         is_super_admin=admin.get("is_super_admin", False),
         is_operator_only=database.is_operator_only_user(request.username),
+        is_viewer_only=database.is_viewer_only_user(request.username),
         can_manage_users=database.can_manage_users(request.username),
     )
 
@@ -244,6 +245,7 @@ async def get_current_user_info(current_user: str = Depends(get_current_user)):
         "username": current_user,
         "is_super_admin": admin.get("is_super_admin", False) if admin else False,
         "is_operator_only": database.is_operator_only_user(current_user),
+        "is_viewer_only": database.is_viewer_only_user(current_user),
         "can_manage_users": database.can_manage_users(current_user),
     }
 

@@ -32,6 +32,7 @@ function AdminLayoutInner({
   const [username, setUsername] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isOperatorOnly, setIsOperatorOnly] = useState(false);
+  const [isViewerOnly, setIsViewerOnly] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -56,7 +57,9 @@ function AdminLayoutInner({
     setIsSuperAdmin(localStorage.getItem("isSuperAdmin") === "1");
     setCanManageUsers(localStorage.getItem("canManageUsers") === "1");
     const operatorOnly = localStorage.getItem("isOperatorOnly") === "1";
+    const viewerOnly = localStorage.getItem("isViewerOnly") === "1";
     setIsOperatorOnly(operatorOnly);
+    setIsViewerOnly(viewerOnly);
     if (operatorOnly && !OPERATOR_ALLOWED_PATHS.some((path) => pathname.startsWith(path))) {
       router.push("/admin/monitor");
       return;
@@ -72,12 +75,15 @@ function AdminLayoutInner({
         const data = await res.json();
         const nextSuperAdmin = data.is_super_admin === true;
         const nextOperatorOnly = data.is_operator_only === true;
+        const nextViewerOnly = data.is_viewer_only === true;
         const nextCanManageUsers = data.can_manage_users === true;
         setIsSuperAdmin(nextSuperAdmin);
         setIsOperatorOnly(nextOperatorOnly);
+        setIsViewerOnly(nextViewerOnly);
         setCanManageUsers(nextCanManageUsers);
         localStorage.setItem("isSuperAdmin", nextSuperAdmin ? "1" : "0");
         localStorage.setItem("isOperatorOnly", nextOperatorOnly ? "1" : "0");
+        localStorage.setItem("isViewerOnly", nextViewerOnly ? "1" : "0");
         localStorage.setItem("canManageUsers", nextCanManageUsers ? "1" : "0");
         if (nextOperatorOnly && !OPERATOR_ALLOWED_PATHS.some((path) => pathname.startsWith(path))) {
           router.push("/admin/monitor");
@@ -100,9 +106,46 @@ function AdminLayoutInner({
     localStorage.removeItem("adminUsername");
     localStorage.removeItem("isSuperAdmin");
     localStorage.removeItem("isOperatorOnly");
+    localStorage.removeItem("isViewerOnly");
     localStorage.removeItem("canManageUsers");
     router.push("/admin/login");
   };
+
+  useEffect(() => {
+    if (!isViewerOnly) return;
+
+    const actionPattern = /\b(add|create|save|new|delete)\b/i;
+
+    const shouldDisable = (text: string) => actionPattern.test(text);
+
+    const applyViewerActionLock = () => {
+      const elements = document.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a");
+      elements.forEach((element) => {
+        if ((element as HTMLElement).dataset.viewerActionBypass === "true") {
+          return;
+        }
+        const content = [
+          element.textContent || "",
+          element.getAttribute("title") || "",
+          element.getAttribute("aria-label") || "",
+        ].join(" ");
+        if (!shouldDisable(content)) return;
+
+        if (element instanceof HTMLButtonElement) {
+          element.disabled = true;
+        } else {
+          element.setAttribute("aria-disabled", "true");
+          element.setAttribute("tabindex", "-1");
+        }
+        element.classList.add("opacity-50", "cursor-not-allowed", "pointer-events-none");
+      });
+    };
+
+    applyViewerActionLock();
+    const observer = new MutationObserver(() => applyViewerActionLock());
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [isViewerOnly, pathname]);
 
   const toggleSidebar = () => {
     setCollapsed((v) => {
@@ -125,7 +168,7 @@ function AdminLayoutInner({
   }
 
   return (
-    <div className="min-h-screen bg-white text-[#0D1B2A]">
+    <div className="min-h-screen bg-white text-[#0D1B2A]" data-viewer-only={isViewerOnly ? "1" : "0"}>
       {/* Sidebar */}
       <div
         className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-[#E2E8F0] bg-white text-[#0D1B2A] transition-all duration-200 z-20`}

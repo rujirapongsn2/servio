@@ -14,6 +14,7 @@ class LoginResponse(BaseModel):
     username: str
     is_super_admin: bool = False
     is_operator_only: bool = False
+    is_viewer_only: bool = False
     can_manage_users: bool = False
 
 

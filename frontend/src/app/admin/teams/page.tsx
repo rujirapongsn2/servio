@@ -437,6 +437,21 @@ export default function TeamsPage() {
                       Select members and choose the starting agent.
                     </p>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedTeamId(editingTeam.id);
+                      const params = new URLSearchParams({
+                        team_agent_id: String(editingTeam.id),
+                        return_team_id: String(editingTeam.id),
+                        return_team_name: editingTeam.name,
+                      });
+                      router.push(`/admin/tools?${params.toString()}`);
+                    }}
+                  >
+                    Agent Capabilities
+                  </Button>
                 </div>
                 <div className="overflow-hidden rounded-[14px] border border-[#E2E8F0]">
                   <table className="w-full divide-y divide-[#E2E8F0]">
