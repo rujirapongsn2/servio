@@ -23,6 +23,14 @@ NC='\033[0m'
 
 COMPOSE=(docker compose)
 
+run_compose() {
+  if [ -f ".env" ]; then
+    "${COMPOSE[@]}" --env-file .env "$@"
+  else
+    "${COMPOSE[@]}" "$@"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Servio service manager
@@ -136,7 +144,7 @@ refresh_proxy_if_needed() {
   case "$1" in
     all|frontend|backend)
       info "Refreshing nginx upstream resolution..."
-      "${COMPOSE[@]}" restart nginx >/dev/null
+      run_compose restart nginx >/dev/null
       ;;
   esac
 }
@@ -254,9 +262,9 @@ run_compose_with_optional_services() {
 
   if [ -n "$service_string" ]; then
     # shellcheck disable=SC2086
-    "${COMPOSE[@]}" "$@" $service_string
+    run_compose "$@" $service_string
   else
-    "${COMPOSE[@]}" "$@"
+    run_compose "$@"
   fi
 }
 
@@ -384,13 +392,13 @@ cmd_install() {
           generate_certs
           check_ports "$KILL_PORTS"
           info "Building images..."
-          "${COMPOSE[@]}" build
+          run_compose build
           if [ "$NO_START" = "1" ]; then
             success "Install completed. Start later with: ./services.sh start"
             return 0
           fi
           info "Starting Servio..."
-          "${COMPOSE[@]}" up -d
+          run_compose up -d
           refresh_proxy_if_needed "all"
           show_urls
           return 0
@@ -400,8 +408,8 @@ cmd_install() {
       info "Keeping existing .env in non-interactive mode."
       generate_certs
       check_ports "$KILL_PORTS"
-      "${COMPOSE[@]}" build
-      [ "$NO_START" = "1" ] || "${COMPOSE[@]}" up -d
+      run_compose build
+      [ "$NO_START" = "1" ] || run_compose up -d
       [ "$NO_START" = "1" ] || show_urls
       return 0
     fi
@@ -458,7 +466,7 @@ cmd_install() {
   check_ports "$KILL_PORTS"
 
   info "Building Servio images..."
-  "${COMPOSE[@]}" build
+  run_compose build
 
   if [ "$NO_START" = "1" ]; then
     success "Install completed. Start later with: ./services.sh start"
@@ -466,7 +474,7 @@ cmd_install() {
   fi
 
   info "Starting Servio..."
-  "${COMPOSE[@]}" up -d
+  run_compose up -d
   refresh_proxy_if_needed "all"
   show_urls
   success "Install completed."
@@ -501,7 +509,7 @@ cmd_stop() {
 
   if [ "$TARGET" = "all" ]; then
     info "Stopping Servio..."
-    "${COMPOSE[@]}" down
+    run_compose down
   else
     info "Stopping $TARGET..."
     run_compose_with_optional_services "$services" stop
@@ -521,7 +529,7 @@ cmd_restart() {
 
   info "Restarting Servio ($TARGET)..."
   if [ "$TARGET" = "all" ]; then
-    "${COMPOSE[@]}" restart
+    run_compose restart
   else
     run_compose_with_optional_services "$services" restart
   fi

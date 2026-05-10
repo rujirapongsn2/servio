@@ -48,11 +48,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    env_file:
+      - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SOFTNIX_API_KEY=${SOFTNIX_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-voice_agents}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - UV_CACHE_DIR=/tmp/uv_cache

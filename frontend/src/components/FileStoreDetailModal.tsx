@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { X, FileText, Trash2, Upload, Loader2 } from "lucide-react";
 import MultiFileUploader from "./MultiFileUploader";
 import { getApiBaseUrl } from "@/lib/api";
+import { pollFileUploadJob, uploadFileToStore } from "@/lib/fileStoreUpload";
 
 interface FileStore {
   id: number;
@@ -36,6 +37,8 @@ export default function FileStoreDetailModal({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState("");
+  const [activeFilename, setActiveFilename] = useState("");
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [deleting, setDeleting] = useState<number | null>(null);
 
@@ -73,37 +76,51 @@ export default function FileStoreDetailModal({
     try {
       setUploading(true);
       const token = localStorage.getItem("adminToken");
+      if (!token) {
+        throw new Error("Admin session not found");
+      }
 
-      let uploaded = 0;
-      for (const file of newFiles) {
-        const formData = new FormData();
-        formData.append("file", file);
+      for (const [index, file] of newFiles.entries()) {
+        setActiveFilename(file.name);
+        setUploadStage("Uploading file to server");
+        const baseProgress = (index / newFiles.length) * 100;
+        const fileWeight = 100 / newFiles.length;
 
-        const response = await fetch(
-          `${apiBaseUrl}/api/admin/file-stores/${store.id}/upload`,
-          {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-          }
-        );
+        const startResponse = await uploadFileToStore({
+          apiBaseUrl,
+          token,
+          storeId: store.id,
+          file,
+          onUploadProgress: (progress) => {
+            const overall = baseProgress + fileWeight * (progress / 100) * 0.5;
+            setUploadProgress(Math.round(overall));
+          },
+        });
 
-        if (!response.ok) {
-          throw new Error(`Failed to upload ${file.name}`);
-        }
-
-        uploaded++;
-        setUploadProgress(Math.round((uploaded / newFiles.length) * 100));
+        await pollFileUploadJob({
+          apiBaseUrl,
+          token,
+          jobId: startResponse.job_id,
+          onStatus: (status) => {
+            setUploadStage(status.stage);
+            const processingProgress = baseProgress + fileWeight * (0.5 + (status.progress / 100) * 0.5);
+            setUploadProgress(Math.round(processingProgress));
+          },
+        });
       }
 
       setNewFiles([]);
       setUploadProgress(0);
+      setUploadStage("");
+      setActiveFilename("");
       fetchFiles();
     } catch (error) {
       console.error("Failed to upload files:", error);
       alert(`Failed to upload files: ${error}`);
     } finally {
       setUploading(false);
+      setActiveFilename("");
+      setUploadStage("");
     }
   };
 
@@ -150,10 +167,10 @@ export default function FileStoreDetailModal({
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-              Manage Files - {store.display_name}
+              Manage Documents - {store.display_name}
             </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {files.length} file{files.length !== 1 ? "s" : ""} in this store
+              {files.length} file{files.length !== 1 ? "s" : ""} in this document library
             </p>
           </div>
           <button
@@ -170,7 +187,7 @@ export default function FileStoreDetailModal({
           <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-gray-600 dark:text-gray-400">Store Name:</span>
+                <span className="text-gray-600 dark:text-gray-400">Library Name:</span>
                 <span className="ml-2 font-medium text-gray-900 dark:text-white">
                   {store.name}
                 </span>
@@ -182,7 +199,7 @@ export default function FileStoreDetailModal({
                 </span>
               </div>
               <div className="col-span-2">
-                <span className="text-gray-600 dark:text-gray-400">Gemini Store ID:</span>
+                <span className="text-gray-600 dark:text-gray-400">Library ID:</span>
                 <span className="ml-2 font-mono text-xs text-gray-900 dark:text-white">
                   {store.gemini_store_id}
                 </span>
@@ -193,7 +210,7 @@ export default function FileStoreDetailModal({
           {/* File List */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Current Files
+              Current Documents
             </h3>
 
             {loading ? (
@@ -202,7 +219,7 @@ export default function FileStoreDetailModal({
               </div>
             ) : files.length === 0 ? (
               <div className="text-center py-8 text-gray-600 dark:text-gray-400">
-                No files in this store yet. Upload some files below.
+                No documents in this library yet. Upload files below.
               </div>
             ) : (
               <div className="space-y-2">
@@ -248,7 +265,7 @@ export default function FileStoreDetailModal({
           {/* Upload More Files */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Upload More Files
+              Upload More Documents
             </h3>
 
             <MultiFileUploader
@@ -264,6 +281,9 @@ export default function FileStoreDetailModal({
                   <div className="flex-1">
                     <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
                       Uploading files... {uploadProgress}%
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+                      {activeFilename ? `${activeFilename}: ${uploadStage}` : uploadStage}
                     </p>
                     <div className="mt-2 w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
                       <div

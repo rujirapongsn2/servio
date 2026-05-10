@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X, Loader2, AlertCircle } from "lucide-react";
 import MultiFileUploader from "./MultiFileUploader";
 import { getApiBaseUrl } from "@/lib/api";
+import { pollFileUploadJob, uploadFileToStore } from "@/lib/fileStoreUpload";
 
 interface CreateFileStoreModalProps {
   teamAgentId?: number | null;
@@ -30,6 +31,8 @@ export default function CreateFileStoreModal({
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState("");
+  const [activeFilename, setActiveFilename] = useState("");
   const [existingStores, setExistingStores] = useState<ExistingFileStore[]>([]);
   const [nameError, setNameError] = useState<string | null>(null);
 
@@ -51,7 +54,7 @@ export default function CreateFileStoreModal({
       }
     };
     fetchExistingStores();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, teamAgentId]);
 
   // Validate name when it changes
   useEffect(() => {
@@ -60,7 +63,7 @@ export default function CreateFileStoreModal({
         (store) => store.display_name.toLowerCase() === displayName.trim().toLowerCase()
       );
       if (isDuplicate) {
-        setNameError("A File Store with this name already exists");
+        setNameError("A document library with this name already exists");
       } else {
         setNameError(null);
       }
@@ -89,9 +92,15 @@ export default function CreateFileStoreModal({
 
     try {
       setCreating(true);
+      setUploadProgress(0);
+      setUploadStage("");
+      setActiveFilename("");
 
       // Step 1: Create file store
       const token = localStorage.getItem("adminToken");
+      if (!token) {
+        throw new Error("Admin session not found");
+      }
       const teamQuery = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
       const response = await fetch(`${apiBaseUrl}/api/admin/file-stores${teamQuery}`, {
         method: "POST",
@@ -122,35 +131,47 @@ export default function CreateFileStoreModal({
       setUploading(true);
 
       // Step 2: Upload files
-      let uploaded = 0;
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append("file", file);
+      for (const [index, file] of files.entries()) {
+        setActiveFilename(file.name);
+        setUploadStage("Uploading file to server");
 
-        const uploadResponse = await fetch(
-          `${apiBaseUrl}/api/admin/file-stores/${createdStoreId}/upload`,
-          {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-          }
-        );
+        const baseProgress = (index / files.length) * 100;
+        const fileWeight = 100 / files.length;
 
-        if (!uploadResponse.ok) {
-          throw new Error(`Failed to upload ${file.name}`);
-        }
+        const startResponse = await uploadFileToStore({
+          apiBaseUrl,
+          token,
+          storeId: createdStoreId,
+          file,
+          onUploadProgress: (progress) => {
+            const overall = baseProgress + fileWeight * (progress / 100) * 0.5;
+            setUploadProgress(Math.round(overall));
+          },
+        });
 
-        uploaded++;
-        setUploadProgress(Math.round((uploaded / files.length) * 100));
+        await pollFileUploadJob({
+          apiBaseUrl,
+          token,
+          jobId: startResponse.job_id,
+          onStatus: (status) => {
+            setUploadStage(status.stage);
+            const processingProgress = baseProgress + fileWeight * (0.5 + (status.progress / 100) * 0.5);
+            setUploadProgress(Math.round(processingProgress));
+          },
+        });
       }
 
+      setUploadProgress(100);
+      setUploadStage("All files uploaded successfully");
       setUploading(false);
       onSuccess();
     } catch (error) {
       console.error("Failed to create file store:", error);
-      alert(`Failed to create file store: ${error}`);
+      alert(`Failed to create document library: ${error}`);
       setCreating(false);
       setUploading(false);
+      setActiveFilename("");
+      setUploadStage("");
     }
   };
 
@@ -161,7 +182,7 @@ export default function CreateFileStoreModal({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Create File Store Agent
+            Add Document Library
           </h2>
           <button
             onClick={onClose}
@@ -202,7 +223,7 @@ export default function CreateFileStoreModal({
               </div>
             ) : (
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                A descriptive name for your file store
+                Give this document library a clear name
               </p>
             )}
           </div>
@@ -224,10 +245,10 @@ export default function CreateFileStoreModal({
                 htmlFor="createTool"
                 className="text-sm font-medium text-gray-700 dark:text-gray-300"
               >
-                Create Tool Automatically
+                Create Search Capability Automatically
               </label>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Automatically create a search tool that agents can use to query this file store
+                Automatically add document search so agents can answer from this library
               </p>
             </div>
           </div>
@@ -251,9 +272,14 @@ export default function CreateFileStoreModal({
                 <Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
-                    {creating && "Creating file store..."}
+                    {creating && "Creating document library..."}
                     {uploading && `Uploading files... ${uploadProgress}%`}
                   </p>
+                  {uploading && (
+                    <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+                      {activeFilename ? `${activeFilename}: ${uploadStage}` : uploadStage}
+                    </p>
+                  )}
                   {uploading && (
                     <div className="mt-2 w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
                       <div
@@ -283,7 +309,7 @@ export default function CreateFileStoreModal({
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isProcessing && <Loader2 className="w-4 h-4 animate-spin" />}
-              {creating ? "Creating..." : uploading ? "Uploading..." : "Create File Store"}
+              {creating ? "Creating..." : uploading ? "Uploading..." : "Add Document Library"}
             </button>
           </div>
         </form>

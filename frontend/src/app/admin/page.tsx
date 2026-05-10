@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getApiBaseUrl } from "@/lib/api";
+import { UI_COPY } from "@/lib/ui-copy";
 import {
   ResponsiveContainer,
   BarChart,
@@ -126,10 +127,10 @@ export default function AdminDashboard() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard title="Total Agents" value={stats.agentCount} description="Active AI agents" color="blue" />
-            <StatCard title="Total Tools" value={stats.toolCount} description="Available tools" color="green" />
-            <StatCard title="Built-in Tools" value={stats.builtinTools} description="System tools" color="purple" />
-            <StatCard title="Custom Tools" value={stats.customTools} description="API integrations" color="orange" />
+            <StatCard title={UI_COPY.dashboard.cards.totalAgents.title} value={stats.agentCount} description={UI_COPY.dashboard.cards.totalAgents.description} color="blue" />
+            <StatCard title={UI_COPY.dashboard.cards.totalCapabilities.title} value={stats.toolCount} description={UI_COPY.dashboard.cards.totalCapabilities.description} color="green" />
+            <StatCard title={UI_COPY.dashboard.cards.includedCapabilities.title} value={stats.builtinTools} description={UI_COPY.dashboard.cards.includedCapabilities.description} color="purple" />
+            <StatCard title={UI_COPY.dashboard.cards.externalIntegrations.title} value={stats.customTools} description={UI_COPY.dashboard.cards.externalIntegrations.description} color="orange" />
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

@@ -6,6 +6,7 @@ import { IconPicker } from "@/components/IconPicker";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
+import { UI_COPY } from "@/lib/ui-copy";
 
 function NewToolForm() {
   const router = useRouter();
@@ -21,6 +22,7 @@ function NewToolForm() {
   const returnAgentId = searchParams.get("return_agent_id");
   const returnTeamId = searchParams.get("return_team_id");
   const returnTeamName = searchParams.get("return_team_name");
+  const draftId = searchParams.get("draft_id");
   const effectiveTeamId = routeTeamId ?? selectedTeamId;
   const [toolType, setToolType] = useState<"custom_api" | "mcp_streamable_http">("custom_api");
   const [formData, setFormData] = useState({
@@ -111,7 +113,8 @@ function NewToolForm() {
         const returnTeamParam = returnTeamId ? `return_team_id=${returnTeamId}` : "";
         const returnTeamNameParam = returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "";
         const autoSelectParam = createdToolId ? `auto_select_tool_id=${createdToolId}` : "";
-        const query = [teamParam, returnTeamParam, returnTeamNameParam, autoSelectParam]
+        const draftParam = draftId ? `draft_id=${draftId}` : "";
+        const query = [teamParam, returnTeamParam, returnTeamNameParam, autoSelectParam, draftParam]
           .filter(Boolean)
           .join("&");
         router.push(`/admin/agents/${returnAgentId}${query ? `?${query}` : ""}`);
@@ -128,34 +131,34 @@ function NewToolForm() {
   return (
     <div className="space-y-6 max-w-2xl">
       <WorkflowNavigator
-        backLabel="Tools"
+        backLabel={UI_COPY.tools.navLabel}
         backHref="/admin/tools"
         steps={[
           { label: "Team Agents", href: "/admin/teams" },
-          { label: "Tools", href: "/admin/tools" },
-          { label: "Create Tool", active: true },
+          { label: UI_COPY.tools.navLabel, href: "/admin/tools" },
+          { label: "Add Integration", active: true },
         ]}
       />
 
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Create Custom Tool
+          Add Integration
         </h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Integrate an external API as a tool that agents can use
+          Connect an external system your agents can use
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Tool Configuration
+            Integration Setup
           </h2>
 
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tool Type
+                Integration Type
               </label>
               <select
                 value={toolType}
@@ -167,14 +170,14 @@ function NewToolForm() {
               </select>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {toolType === "custom_api"
-                  ? "Direct API integration (REST, webhooks)"
-                  : "Model Context Protocol server (standardized AI tool interface)"}
+                  ? "Connect directly to an API endpoint"
+                  : "Connect to an MCP server"}
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tool Name
+                Integration Name
               </label>
               <input
                 type="text"
@@ -183,11 +186,11 @@ function NewToolForm() {
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
-                placeholder="e.g., custom_search_tool"
+                placeholder="e.g., order_status_lookup"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Use lowercase with underscores (no spaces)
+                Use a clear name that helps your team understand what it does
               </p>
             </div>
 
@@ -418,7 +421,7 @@ function NewToolForm() {
             disabled={saving}
             className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
           >
-            {saving ? "Creating..." : "Create Tool"}
+            {saving ? "Creating..." : "Add Integration"}
           </button>
         </div>
       </form>

@@ -6,6 +6,7 @@ import { Upload, X, FileText, AlertCircle } from "lucide-react";
 // Currently only PDF is supported by Gemini File Store
 const ALLOWED_EXTENSIONS = [".pdf"];
 const ALLOWED_MIME_TYPES = ["application/pdf"];
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 interface MultiFileUploaderProps {
   files: File[];
@@ -22,7 +23,9 @@ export default function MultiFileUploader({
 
   const isValidFile = (file: File): boolean => {
     const extension = "." + file.name.split(".").pop()?.toLowerCase();
-    return ALLOWED_EXTENSIONS.includes(extension) || ALLOWED_MIME_TYPES.includes(file.type);
+    const isAllowedType =
+      ALLOWED_EXTENSIONS.includes(extension) || ALLOWED_MIME_TYPES.includes(file.type);
+    return isAllowedType && file.size <= MAX_FILE_SIZE_BYTES;
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -33,7 +36,7 @@ export default function MultiFileUploader({
 
       if (invalidFiles.length > 0) {
         alert(
-          `The following files are not supported and were skipped:\n${invalidFiles.map((f) => f.name).join("\n")}\n\nCurrently only PDF files are supported by Gemini File Store.`
+          `The following files were skipped:\n${invalidFiles.map((f) => f.name).join("\n")}\n\nOnly PDF files up to 50MB per file are supported.`
         );
       }
 
@@ -54,7 +57,7 @@ export default function MultiFileUploader({
 
       if (invalidFiles.length > 0) {
         alert(
-          `The following files are not supported and were skipped:\n${invalidFiles.map((f) => f.name).join("\n")}\n\nCurrently only PDF files are supported by Gemini File Store.`
+          `The following files were skipped:\n${invalidFiles.map((f) => f.name).join("\n")}\n\nOnly PDF files up to 50MB per file are supported.`
         );
       }
 
@@ -111,7 +114,7 @@ export default function MultiFileUploader({
           or drag and drop
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-500">
-          PDF files only (max 10MB per file)
+          PDF files only (max 50MB per file)
         </p>
       </div>
 

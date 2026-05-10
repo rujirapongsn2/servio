@@ -155,6 +155,9 @@ export default function TeamsPage() {
       return_team_id: String(editingTeam.id),
       return_team_name: editingTeam.name,
     });
+    if (agentId === "new") {
+      params.set("draft_id", crypto.randomUUID());
+    }
     router.push(`/admin/agents/${target}?${params}`);
   };
 
@@ -304,6 +307,9 @@ export default function TeamsPage() {
               <div>
                 <h3 className="text-base font-semibold text-[#0D1B2A]">{team.name}</h3>
                 <p className="text-sm font-medium text-[#778DA9]">{team.slug}</p>
+                <p className="mt-1 text-xs font-medium text-[#94A3B8]">
+                  Owned by: {team.owner_username || "N/A"}
+                </p>
               </div>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-semibold ${

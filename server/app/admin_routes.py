@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request, UploadFile, File, Response
 import json
 import os
 import re
 import time
-from typing import List, Optional
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 from app import database
@@ -27,6 +29,8 @@ from app.models import (
     FileStoreResponse,
     FileStoreFileResponse,
     CreateFileStoreRequest,
+    FileUploadJobStartResponse,
+    FileUploadJobResponse,
     TestFileStoreRequest,
     TestFileStoreResponse,
     VoIPProviderResponse,
@@ -56,6 +60,9 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+MAX_FILE_STORE_FILE_SIZE_BYTES = 50 * 1024 * 1024
+FILE_UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 def require_team_access(current_user: str, team_agent_id: Optional[int], min_role: str = "viewer") -> None:
@@ -120,6 +127,82 @@ def sanitize_tool_name(name: str) -> str:
         sanitized = 'file_store_tool'
 
     return sanitized
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _set_upload_job_state(job_id: str, **updates: Any) -> None:
+    job = FILE_UPLOAD_JOBS.get(job_id)
+    if not job:
+        return
+    job.update(updates)
+
+
+def _process_file_store_upload_job(
+    job_id: str,
+    store_id: int,
+    gemini_store_id: str,
+    temp_path: str,
+    original_filename: str,
+    file_size: int,
+) -> None:
+    try:
+        from app.gemini_service import GeminiFileSearchService
+
+        _set_upload_job_state(
+            job_id,
+            status="processing",
+            progress=10,
+            stage="Preparing file for Gemini",
+        )
+
+        service = GeminiFileSearchService()
+        _set_upload_job_state(
+            job_id,
+            progress=35,
+            stage="Uploading file to Gemini",
+        )
+        result = service.upload_file(
+            store_id=gemini_store_id,
+            file_path=temp_path,
+        )
+
+        if not result.get("success"):
+            raise RuntimeError(result.get("error", "Upload failed"))
+
+        _set_upload_job_state(
+            job_id,
+            progress=85,
+            stage="Saving file metadata",
+        )
+        database.add_file_to_store(
+            file_store_id=store_id,
+            filename=result["filename"],
+            original_filename=original_filename,
+            file_size=file_size,
+        )
+
+        _set_upload_job_state(
+            job_id,
+            status="completed",
+            progress=100,
+            stage="Upload completed",
+            completed_at=_utc_now_iso(),
+        )
+    except Exception as exc:
+        _set_upload_job_state(
+            job_id,
+            status="failed",
+            stage="Upload failed",
+            error=str(exc),
+            completed_at=_utc_now_iso(),
+        )
+    finally:
+        temp_file = Path(temp_path)
+        if temp_file.exists():
+            temp_file.unlink()
 
 
 # Authentication endpoints
@@ -1283,13 +1366,14 @@ async def get_files(
     return files
 
 
-@router.post("/file-stores/{store_id}/upload", response_model=MessageResponse)
+@router.post("/file-stores/{store_id}/upload", response_model=FileUploadJobStartResponse)
 async def upload_file(
     store_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user)
 ):
-    """Upload a file to a file store"""
+    """Upload a file to a file store and process it asynchronously."""
     require_team_admin_scope_access(current_user)
     store = database.get_file_store_by_id(store_id)
 
@@ -1299,58 +1383,85 @@ async def upload_file(
             detail="File store not found"
         )
 
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must have a filename",
+        )
+
     try:
-        from app.gemini_service import GeminiFileSearchService
-
-        # Save uploaded file temporarily
         temp_dir = Path("/tmp")
-        # Use safe ASCII-only temp filename to handle non-ASCII characters
         safe_suffix = Path(file.filename).suffix if file.filename else ""
-        temp_path = temp_dir / f"upload_{int(time.time())}{safe_suffix}"
+        temp_path = temp_dir / f"upload_{uuid.uuid4().hex}{safe_suffix}"
+        file_size = 0
+        chunk_size = 1024 * 1024
 
-        with open(temp_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        with open(temp_path, "wb") as temp_file:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                file_size += len(chunk)
+                if file_size > MAX_FILE_STORE_FILE_SIZE_BYTES:
+                    temp_file.close()
+                    temp_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="File is too large. Maximum supported size is 50MB per file.",
+                    )
+                temp_file.write(chunk)
+        await file.close()
 
-        try:
-            # Upload to Gemini
-            service = GeminiFileSearchService()
-            result = service.upload_file(
-                store_id=store["gemini_store_id"],
-                file_path=str(temp_path)
-            )
+        job_id = uuid.uuid4().hex
+        FILE_UPLOAD_JOBS[job_id] = {
+            "job_id": job_id,
+            "file_store_id": store_id,
+            "filename": file.filename,
+            "status": "queued",
+            "progress": 0,
+            "stage": "Queued for Gemini processing",
+            "error": None,
+            "uploaded_at": _utc_now_iso(),
+            "completed_at": None,
+        }
+        background_tasks.add_task(
+            _process_file_store_upload_job,
+            job_id,
+            store_id,
+            store["gemini_store_id"],
+            str(temp_path),
+            file.filename,
+            file_size,
+        )
 
-            if not result.get("success"):
-                raise Exception(result.get("error", "Upload failed"))
-
-            # Save file record to database
-            file_size = len(content)
-            database.add_file_to_store(
-                file_store_id=store_id,
-                filename=result["filename"],
-                original_filename=file.filename,
-                file_size=file_size
-            )
-
-            return MessageResponse(
-                message=f"File '{file.filename}' uploaded successfully in {result.get('upload_time', 0):.1f}s"
-            )
-
-        finally:
-            # Clean up temp file
-            if temp_path.exists():
-                temp_path.unlink()
-
+        return FileUploadJobStartResponse(
+            job_id=job_id,
+            status="queued",
+            message=f"File '{file.filename}' accepted for processing",
+        )
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"Upload error: {error_trace}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload file: {str(e)}"
         )
+
+
+@router.get("/file-stores/upload-jobs/{job_id}", response_model=FileUploadJobResponse)
+async def get_file_upload_job(
+    job_id: str,
+    current_user: str = Depends(get_current_user),
+):
+    """Get the current status of a file store upload job."""
+    require_team_admin_scope_access(current_user)
+    job = FILE_UPLOAD_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload job not found",
+        )
+    return FileUploadJobResponse(**job)
 
 
 @router.delete("/file-stores/files/{file_id}", response_model=MessageResponse)

@@ -6,6 +6,7 @@ import { IconPicker } from "@/components/IconPicker";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
+import { UI_COPY } from "@/lib/ui-copy";
 
 function EditToolForm() {
   const router = useRouter();
@@ -154,34 +155,34 @@ function EditToolForm() {
   return (
     <div className="space-y-6 max-w-2xl">
       <WorkflowNavigator
-        backLabel="Tools"
+        backLabel={UI_COPY.tools.navLabel}
         backHref="/admin/tools"
         steps={[
           { label: "Team Agents", href: "/admin/teams" },
-          { label: "Tools", href: "/admin/tools" },
-          { label: "Edit Tool", active: true },
+          { label: UI_COPY.tools.navLabel, href: "/admin/tools" },
+          { label: "Edit Integration", active: true },
         ]}
       />
 
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Edit Tool
+          Edit Integration
         </h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Update tool configuration
+          Update how this external system is connected
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Tool Configuration
+            Integration Setup
           </h2>
 
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tool Type
+                Integration Type
               </label>
               <select
                 value={toolType}
@@ -192,13 +193,13 @@ function EditToolForm() {
                 <option value="mcp_streamable_http">MCP Streamable HTTP</option>
               </select>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Tool type cannot be changed
+                Integration type cannot be changed
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tool Name
+                Integration Name
               </label>
               <input
                 type="text"
@@ -207,7 +208,7 @@ function EditToolForm() {
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
-                placeholder="e.g., custom_search_tool"
+                placeholder="e.g., order_status_lookup"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
             </div>

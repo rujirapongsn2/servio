@@ -12,6 +12,7 @@ interface TeamAgent {
   status: string;
   member_count: number;
   starting_agent_name: string | null;
+  owner_username: string | null;
   created_at: string;
   updated_at: string;
 }

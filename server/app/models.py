@@ -172,6 +172,24 @@ class CreateFileStoreRequest(BaseModel):
     assign_agent_id: Optional[int] = None
 
 
+class FileUploadJobStartResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+
+
+class FileUploadJobResponse(BaseModel):
+    job_id: str
+    file_store_id: int
+    filename: str
+    status: str
+    progress: int
+    stage: str
+    error: Optional[str] = None
+    uploaded_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
 class TestFileStoreRequest(BaseModel):
     query: str
 

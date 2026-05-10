@@ -32,6 +32,16 @@ interface Agent {
   llm_provider?: Provider | null;
 }
 
+interface AgentDraft {
+  name: string;
+  model: string;
+  instructions: string;
+  is_starting_agent: boolean;
+  llm_provider_id?: number | null;
+  tool_ids: number[];
+  handoff_ids: number[];
+}
+
 export default function AgentEditorPage() {
   const router = useRouter();
   const params = useParams();
@@ -47,6 +57,7 @@ export default function AgentEditorPage() {
     ? parseInt(searchParams.get("return_team_id") as string)
     : null;
   const returnTeamName = searchParams.get("return_team_name");
+  const routeDraftId = searchParams.get("draft_id");
   const effectiveTeamId = routeTeamId ?? selectedTeamId;
   const teamManageHref = returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams";
   const autoSelectToolId = searchParams.get("auto_select_tool_id")
@@ -70,11 +81,53 @@ export default function AgentEditorPage() {
   const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [toolsLoaded, setToolsLoaded] = useState(false);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(routeDraftId);
+  const [draftData, setDraftData] = useState<AgentDraft | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState("");
+  const draftStorageKey = isNew && draftId ? `agent-draft:${draftId}` : null;
+  const capabilitiesQuery = [
+    effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
+    agentId ? `source_agent_id=${agentId}` : "",
+    `return_agent_id=${params.id}`,
+    returnTeamId ? `return_team_id=${returnTeamId}` : "",
+    returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    draftId ? `draft_id=${draftId}` : "",
+  ].filter(Boolean).join("&");
+
+  useEffect(() => {
+    if (!isNew || routeDraftId) {
+      setDraftId(routeDraftId);
+      return;
+    }
+
+    const nextDraftId = crypto.randomUUID();
+    setDraftId(nextDraftId);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("draft_id", nextDraftId);
+    router.replace(`/admin/agents/new?${params.toString()}`);
+  }, [isNew, routeDraftId, router, searchParams]);
+
+  useEffect(() => {
+    if (!isNew || !draftStorageKey) return;
+
+    try {
+      const rawDraft = sessionStorage.getItem(draftStorageKey);
+      setDraftData(rawDraft ? JSON.parse(rawDraft) : null);
+    } catch (error) {
+      console.error("Failed to restore agent draft:", error);
+      setDraftData(null);
+    } finally {
+      setDraftReady(true);
+    }
+  }, [isNew, draftStorageKey]);
 
   useEffect(() => {
     if (routeTeamId) {
@@ -87,6 +140,54 @@ export default function AgentEditorPage() {
       fetchAgent();
     }
   }, [effectiveTeamId]);
+
+  useEffect(() => {
+    if (!isNew || !draftReady || !toolsLoaded || !agentsLoaded || draftHydrated) {
+      return;
+    }
+
+    if (!draftData) {
+      setDraftHydrated(true);
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      name: draftData.name,
+      model: draftData.model,
+      instructions: draftData.instructions,
+      is_starting_agent: draftData.is_starting_agent,
+      llm_provider_id: draftData.llm_provider_id,
+      tools: availableTools.filter((tool) => draftData.tool_ids.includes(tool.id)),
+      handoffs: availableAgents.filter((agent) => draftData.handoff_ids.includes(agent.id)),
+    }));
+
+    if (draftData.llm_provider_id) {
+      fetchModels(draftData.llm_provider_id);
+    } else if (draftData.llm_provider_id === null) {
+      setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
+    }
+
+    setDraftHydrated(true);
+  }, [isNew, draftReady, toolsLoaded, agentsLoaded, draftHydrated, draftData, availableTools, availableAgents]);
+
+  useEffect(() => {
+    if (!isNew || !draftStorageKey || !draftReady || !draftHydrated) {
+      return;
+    }
+
+    const draftPayload: AgentDraft = {
+      name: formData.name,
+      model: formData.model,
+      instructions: formData.instructions,
+      is_starting_agent: formData.is_starting_agent,
+      llm_provider_id: formData.llm_provider_id,
+      tool_ids: formData.tools.map((tool) => tool.id),
+      handoff_ids: formData.handoffs.map((handoff) => handoff.id),
+    };
+
+    sessionStorage.setItem(draftStorageKey, JSON.stringify(draftPayload));
+  }, [isNew, draftStorageKey, draftReady, draftHydrated, formData]);
 
   const fetchProviders = async () => {
     try {
@@ -149,6 +250,8 @@ export default function AgentEditorPage() {
       });
     } catch (error) {
       console.error("Failed to fetch tools:", error);
+    } finally {
+      setToolsLoaded(true);
     }
   };
 
@@ -165,6 +268,8 @@ export default function AgentEditorPage() {
       );
     } catch (error) {
       console.error("Failed to fetch agents:", error);
+    } finally {
+      setAgentsLoaded(true);
     }
   };
 
@@ -250,6 +355,9 @@ export default function AgentEditorPage() {
       }
 
       const result = await response.json();
+      if (draftStorageKey) {
+        sessionStorage.removeItem(draftStorageKey);
+      }
       if (isNew && returnTeamId) {
         const idMatch = result.message?.match(/ID\s+(\d+)/);
         const createdAgentId = idMatch ? parseInt(idMatch[1]) : null;
@@ -408,7 +516,7 @@ export default function AgentEditorPage() {
           { label: isNew ? "Create Agent" : "Edit Agent", active: true },
         ]}
         actions={[
-          { label: "Tools", href: `/admin/tools?team_agent_id=${effectiveTeamId}`, variant: "outline" },
+          { label: "Agent Capabilities", href: `/admin/tools${capabilitiesQuery ? `?${capabilitiesQuery}` : ""}`, variant: "outline" },
           { label: "Providers", href: "/admin/providers", variant: "outline" },
         ]}
       />
@@ -418,7 +526,7 @@ export default function AgentEditorPage() {
           {isNew ? "Create New Agent" : `Edit Agent: ${formData.name}`}
         </h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Configure the agent's behavior, tools, and handoffs
+          Configure the agent's behavior, capabilities, and handoffs
         </p>
       </div>
 
@@ -561,22 +669,22 @@ export default function AgentEditorPage() {
           </div>
         </div>
 
-        {/* Tools */}
+        {/* Agent Capabilities */}
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-              Tools
+              Agent Capabilities
             </h2>
             <Link
-              href={`/admin/tools?team_agent_id=${effectiveTeamId}${agentId ? `&source_agent_id=${agentId}` : ""}&return_agent_id=${params.id}&return_team_id=${returnTeamId ?? ""}&return_team_name=${encodeURIComponent(returnTeamName || "")}`}
+              href={`/admin/tools${capabilitiesQuery ? `?${capabilitiesQuery}` : ""}`}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/20 hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors"
             >
               <Wrench className="w-3.5 h-3.5" />
-              Manage Tools
+              Manage Capabilities
             </Link>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Select the tools this agent can use
+            Select the capabilities this agent can use
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {availableTools.map((tool) => (
@@ -647,7 +755,12 @@ export default function AgentEditorPage() {
         <div className="flex justify-end space-x-3">
           <button
             type="button"
-            onClick={() => router.push(teamManageHref)}
+            onClick={() => {
+              if (draftStorageKey) {
+                sessionStorage.removeItem(draftStorageKey);
+              }
+              router.push(teamManageHref);
+            }}
             className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             Cancel

@@ -27,6 +27,7 @@ import FileStoreDetailModal from "@/components/FileStoreDetailModal";
 import TestFileStoreModal from "@/components/TestFileStoreModal";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
+import { UI_COPY } from "@/lib/ui-copy";
 
 interface Tool {
   id: number;
@@ -73,13 +74,24 @@ function ToolsPageInner() {
   const returnAgentId = searchParams.get("return_agent_id");
   const returnTeamId = searchParams.get("return_team_id");
   const returnTeamName = searchParams.get("return_team_name");
+  const draftId = searchParams.get("draft_id");
   const effectiveTeamId = routeTeamId ?? selectedTeamId;
+  const agentReturnQuery = [
+    effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
+    returnTeamId ? `return_team_id=${returnTeamId}` : "",
+    returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    draftId ? `draft_id=${draftId}` : "",
+  ].filter(Boolean).join("&");
+  const agentReturnHref = returnAgentId
+    ? `/admin/agents/${returnAgentId}${agentReturnQuery ? `?${agentReturnQuery}` : ""}`
+    : "/admin/teams";
   const newToolQuery = [
     effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
     sourceAgentId ? `source_agent_id=${sourceAgentId}` : "",
     returnAgentId ? `return_agent_id=${returnAgentId}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
 
   const [tools, setTools] = useState<Tool[]>([]);
@@ -208,14 +220,14 @@ function ToolsPageInner() {
   return (
     <div className="space-y-6">
       <WorkflowNavigator
-        backLabel="Team Agents"
-        backHref="/admin/teams"
+        backLabel={returnAgentId ? "Back to Agent" : "Team Agents"}
+        backHref={agentReturnHref}
         steps={[
-          { label: "Team Agents", href: "/admin/teams" },
-          { label: "Tools", active: true },
+          { label: returnAgentId ? "Agent Editor" : "Team Agents", href: agentReturnHref },
+          { label: UI_COPY.tools.navLabel, active: true },
         ]}
         actions={[
-          { label: "New Tool", href: `/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`, variant: "primary" },
+          { label: UI_COPY.tools.actions.addIntegration, href: `/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`, variant: "primary" },
           { label: "Channels", href: "/admin/tools/channels", variant: "outline" },
         ]}
       />
@@ -223,10 +235,10 @@ function ToolsPageInner() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Tools
+            {UI_COPY.tools.pageTitle}
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Manage built-in tools, file store tools, custom API tools, and MCP tools
+            {UI_COPY.tools.pageSubtitle}
           </p>
         </div>
         <Link
@@ -234,14 +246,14 @@ function ToolsPageInner() {
           className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           <Plus className="w-4 h-4" />
-          New Custom Tool
+          {UI_COPY.tools.actions.addIntegration}
         </Link>
       </div>
 
       {/* Built-in Tools */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-          Built-in Tools
+          {UI_COPY.tools.sections.readyToUse}
         </h2>
         <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg border border-gray-200 dark:border-gray-700">
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -258,18 +270,18 @@ function ToolsPageInner() {
                       </div>
                       <div>
                         <h3 className="text-base font-medium text-gray-900 dark:text-white">
-                          {tool.name}
+                          {UI_COPY.tools.builtInNames[tool.name] || tool.name}
                         </h3>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          {config.description || "Built-in system tool"}
+                          {UI_COPY.tools.builtInDescriptions[tool.name] || config.description || "Included capability"}
                         </p>
                         <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                          Owner: {tool.owner_team_name || "N/A"} | Created by: {tool.created_by_username || "N/A"} | Used by {tool.agent_usage_count ?? 0} agent(s)
+                          {UI_COPY.tools.meta.ownedBy}: {tool.owner_team_name || "N/A"} | {UI_COPY.tools.meta.createdBy}: {tool.created_by_username || "N/A"} | {UI_COPY.tools.meta.usedByAgents} {tool.agent_usage_count ?? 0} {UI_COPY.tools.meta.agents}
                         </p>
                       </div>
                     </div>
                     <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300">
-                      Built-in
+                      {UI_COPY.tools.badges.included}
                     </span>
                   </div>
                 </div>
@@ -283,14 +295,14 @@ function ToolsPageInner() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            File Store Tools
+            {UI_COPY.tools.sections.documentSearch}
           </h2>
           <button
             onClick={() => setShowFileStoreModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
           >
             <Plus className="w-4 h-4" />
-            New File Store
+            {UI_COPY.tools.actions.addDocumentLibrary}
           </button>
         </div>
 
@@ -299,14 +311,14 @@ function ToolsPageInner() {
             <div className="p-8 text-center">
               <Database className="mx-auto h-12 w-12 text-gray-400 mb-3" />
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                No file store tools found. Create a file store to enable document search capabilities.
+                {UI_COPY.tools.empty.documentLibraries}
               </p>
               <button
                 onClick={() => setShowFileStoreModal(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700"
               >
                 <Plus className="w-4 h-4" />
-                Create File Store
+                {UI_COPY.tools.actions.addDocumentLibrary}
               </button>
             </div>
           ) : (
@@ -330,14 +342,14 @@ function ToolsPageInner() {
                           {tool.name}
                         </h3>
                         <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-300 text-xs font-medium rounded">
-                          File Search
+                          {UI_COPY.tools.badges.documentSearch}
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                        {config.description || "No description"}
+                        {config.description || "Finds answers from your uploaded documents."}
                       </p>
                       <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                        Owner: {tool.owner_team_name || "N/A"} | Created by: {tool.created_by_username || "N/A"} | Used by {tool.agent_usage_count ?? 0} agent(s)
+                        {UI_COPY.tools.meta.ownedBy}: {tool.owner_team_name || "N/A"} | {UI_COPY.tools.meta.createdBy}: {tool.created_by_username || "N/A"} | {UI_COPY.tools.meta.usedByAgents} {tool.agent_usage_count ?? 0} {UI_COPY.tools.meta.agents}
                       </p>
                     </div>
 
@@ -346,14 +358,14 @@ function ToolsPageInner() {
                       <button
                         onClick={() => handleManageFiles(tool)}
                         className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
-                        title="Manage files"
+                        title="Manage documents"
                       >
                         <Upload className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                       </button>
                       <button
                         onClick={() => handleTestStore(tool)}
                         className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
-                        title="Test file store"
+                        title="Test document search"
                       >
                         <Play className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                       </button>
@@ -376,18 +388,18 @@ function ToolsPageInner() {
       {/* Custom Tools */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-          Custom API & MCP Tools
+          {UI_COPY.tools.sections.externalIntegrations}
         </h2>
         {customTools.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              No custom tools found. Create your first custom tool to integrate external APIs or MCP servers.
+              {UI_COPY.tools.empty.externalIntegrations}
             </p>
             <Link
               href={`/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
             >
-              Create Custom Tool
+              {UI_COPY.tools.actions.addIntegration}
             </Link>
           </div>
         ) : (
@@ -431,25 +443,25 @@ function ToolsPageInner() {
                             {/* Ownership badges */}
                             {effectiveTeamId && isOwned && (
                               <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400">
-                                Owned by this team
+                            Owned by this team
                               </span>
                             )}
                             {effectiveTeamId && isGlobal && !isOwned && (
                               <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400">
-                                Global shared
+                            Shared across teams
                               </span>
                             )}
                             {effectiveTeamId && !isOwned && !isGlobal && (
                               <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
-                                Other team
+                            Owned by another team
                               </span>
                             )}
                           </div>
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            {config.description || "Custom API tool"}
+                            {config.description || "External integration"}
                           </p>
                           <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                            Owner: {tool.owner_team_name || "N/A"} | Created by: {tool.created_by_username || "N/A"} | Used by {tool.agent_usage_count ?? 0} agent(s)
+                            {UI_COPY.tools.meta.ownedBy}: {tool.owner_team_name || "N/A"} | {UI_COPY.tools.meta.createdBy}: {tool.created_by_username || "N/A"} | {UI_COPY.tools.meta.usedByAgents} {tool.agent_usage_count ?? 0} {UI_COPY.tools.meta.agents}
                           </p>
                           {config.endpoint && (
                             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500 truncate">
@@ -463,7 +475,7 @@ function ToolsPageInner() {
                           <Link
                             href={`/admin/tools/${tool.id}?team_agent_id=${effectiveTeamId}`}
                             className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-                            title="Edit Tool"
+                            title="Edit integration"
                           >
                             <Pencil className="w-4 h-4" />
                           </Link>
@@ -476,7 +488,7 @@ function ToolsPageInner() {
                           <button
                             onClick={() => handleDelete(tool.id)}
                             className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                            title="Delete Tool"
+                            title="Delete integration"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

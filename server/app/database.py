@@ -1969,11 +1969,24 @@ def get_all_team_agents(username: Optional[str] = None) -> List[Dict[str, Any]]:
             starting = db.query(TeamAgentMember).filter_by(
                 team_agent_id=team.id, role="starting"
             ).first()
+            owner_membership = (
+                db.query(TeamUserMembership, Admin)
+                .join(Admin, TeamUserMembership.admin_id == Admin.id)
+                .filter(
+                    TeamUserMembership.team_agent_id == team.id,
+                    TeamUserMembership.role == "owner",
+                )
+                .first()
+            )
             starting_name = None
+            owner_username = None
             if starting:
                 agent = db.query(Agent).filter_by(id=starting.agent_id).first()
                 if agent:
                     starting_name = agent.name
+            if owner_membership:
+                _, owner_admin = owner_membership
+                owner_username = owner_admin.username
             result.append({
                 "id": team.id,
                 "name": team.name,
@@ -1982,6 +1995,7 @@ def get_all_team_agents(username: Optional[str] = None) -> List[Dict[str, Any]]:
                 "status": team.status,
                 "member_count": member_count,
                 "starting_agent_name": starting_name,
+                "owner_username": owner_username,
                 "created_at": team.created_at.isoformat() if team.created_at else None,
                 "updated_at": team.updated_at.isoformat() if team.updated_at else None,
             })

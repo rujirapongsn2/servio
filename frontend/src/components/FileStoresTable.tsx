@@ -92,14 +92,14 @@ export default function FileStoresTable() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            File Store Agents use Gemini File Search to answer questions about your documents
+            Document libraries help agents answer questions from your uploaded files
           </p>
           <button
             onClick={() => setShowCreateModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="w-4 h-4" />
-            New File Store
+            Add Document Library
           </button>
         </div>
 
@@ -107,13 +107,13 @@ export default function FileStoresTable() {
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
             <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              No file stores found. Create your first file store to get started.
+              No document libraries yet. Add your first one to get started.
             </p>
             <button
               onClick={() => setShowCreateModal(true)}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
             >
-              Create File Store
+              Add Document Library
             </button>
           </div>
         ) : (
@@ -177,21 +177,21 @@ export default function FileStoresTable() {
                         <button
                           onClick={() => handleTest(store)}
                           className="p-2 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/20 rounded-md transition-colors"
-                          title="Test Store"
+                          title="Test document search"
                         >
                           <Play className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleShowFiles(store)}
                           className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-                          title="Manage Files"
+                          title="Manage documents"
                         >
                           <Upload className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(store.id, store.display_name)}
                           className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete Store"
+                          title="Delete library"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
