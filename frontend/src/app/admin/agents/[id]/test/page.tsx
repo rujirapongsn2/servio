@@ -1,21 +1,52 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getApiBaseUrl } from "@/lib/api";
+import WorkflowNavigator from "@/components/WorkflowNavigator";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { normalizeMarkdownForChat } from "@/lib/markdown";
 
+interface ToolCall {
+  name?: string;
+  arguments?: Record<string, unknown>;
+}
+
+interface ToolOutput {
+  name?: string;
+  output?: unknown;
+}
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  tool_calls?: ToolCall[];
+  citations?: string[];
+  tool_outputs?: ToolOutput[];
+}
+
 export default function AgentTestPage() {
   const FORCE_ARGS_PLACEHOLDER = 'Arguments (JSON or key=value, comma-separated). Example: {"symbol":"AAPL"} or symbol=AAPL';
   const params = useParams();
+  const searchParams = useSearchParams();
   const apiBaseUrl = getApiBaseUrl();
   const agentId = parseInt((params && (params as any).id ? (params as any).id.toString() : "0"));
+  const routeTeamId = searchParams.get("team_agent_id")
+    ? parseInt(searchParams.get("team_agent_id") as string)
+    : null;
+  const returnTeamId = searchParams.get("return_team_id")
+    ? parseInt(searchParams.get("return_team_id") as string)
+    : null;
+  const returnTeamName = searchParams.get("return_team_name");
+  const teamManageHref = returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams";
+  const agentEditorHref = routeTeamId
+    ? `/admin/agents/${agentId}?team_agent_id=${routeTeamId}&return_team_id=${returnTeamId ?? routeTeamId}&return_team_name=${encodeURIComponent(returnTeamName || "Manage Team")}`
+    : `/admin/agents/${agentId}`;
 
   const [agentName, setAgentName] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetchingAgent, setFetchingAgent] = useState(true);
@@ -50,7 +81,7 @@ export default function AgentTestPage() {
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const userMessage = { role: "user", content: input };
+    const userMessage: ChatMessage = { role: "user", content: input };
     setMessages([...messages, userMessage]);
     setInput("");
     setLoading(true);
@@ -88,8 +119,9 @@ export default function AgentTestPage() {
         bodyObj.force_tool = { name: forceToolName.trim(), arguments: args };
       }
 
+      const query = routeTeamId ? `?team_agent_id=${routeTeamId}` : "";
       const response = await fetch(
-        `${apiBaseUrl}/api/admin/agents/${agentId}/test`,
+        `${apiBaseUrl}/api/admin/agents/${agentId}/test${query}`,
         {
           method: "POST",
           headers: {
@@ -103,7 +135,7 @@ export default function AgentTestPage() {
       if (!response.ok) throw new Error("Failed to get response");
 
       const data = await response.json();
-      const assistantMessage = {
+      const assistantMessage: ChatMessage = {
         role: "assistant",
         content: data.response,
         tool_calls: data.tool_calls || [],
@@ -114,7 +146,7 @@ export default function AgentTestPage() {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Failed to send message:", error);
-      const errorMessage = {
+      const errorMessage: ChatMessage = {
         role: "assistant",
         content: "Error: Failed to get response from agent",
       };
@@ -137,6 +169,22 @@ export default function AgentTestPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
+      <WorkflowNavigator
+        backLabel={returnTeamId ? "Team Manage" : "Team Agents"}
+        backHref={teamManageHref}
+        steps={[
+          { label: "Team Agents", href: "/admin/teams" },
+          ...(returnTeamId
+            ? [{ label: returnTeamName || "Manage Team", href: teamManageHref }]
+            : []),
+          { label: "Test Agent", active: true },
+        ]}
+        actions={[
+          { label: "Edit Agent", href: agentEditorHref, variant: "outline" },
+          { label: "Agents", href: "/admin/agents", variant: "outline" },
+        ]}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -154,7 +202,7 @@ export default function AgentTestPage() {
             Reset
           </button>
           <Link
-            href={`/admin/agents/${agentId}`}
+            href={agentEditorHref}
             className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             Edit Agent
@@ -256,7 +304,7 @@ export default function AgentTestPage() {
                       <div className="text-xs font-semibold mb-1">
                         Tool Calls:
                       </div>
-                      {message.tool_calls.map((tc, i) => (
+                      {message.tool_calls.map((tc: ToolCall, i: number) => (
                         <div key={i} className="text-xs">
                           • {tc.name}
                         </div>
@@ -269,7 +317,7 @@ export default function AgentTestPage() {
                         Citations:
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {message.citations.map((c, i) => (
+                        {message.citations.map((c: string, i: number) => (
                           <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                             {c}
                           </span>
@@ -281,7 +329,7 @@ export default function AgentTestPage() {
                     <div className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-600">
                       <div className="text-xs font-semibold mb-2">Tool Outputs:</div>
                       <div className="space-y-2">
-                        {message.tool_outputs.map((to: any, i: number) => {
+                        {message.tool_outputs.map((to: ToolOutput, i: number) => {
                           const label = to?.name || `tool_${i+1}`;
                           const raw = to?.output;
                           let content = "";

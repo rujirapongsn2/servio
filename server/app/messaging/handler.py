@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agents import Runner
 from app.agent_config import get_runtime_starting_agent
@@ -16,41 +16,54 @@ from app.utils import is_text_output
 
 logger = logging.getLogger(__name__)
 
-# In-memory conversation store. Keys are composite: "{channel_type}:{user_id}".
+# In-memory conversation store. Keys are composite: "{team_agent_id}:{channel_type}:{user_id}".
 # Each entry holds full conversation history (list of input/output items).
 _conversations: Dict[str, Dict[str, Any]] = {}
 
 
-def _conversation_key(channel_type: str, user_id: str) -> str:
-    return f"{channel_type}:{user_id}"
+def _conversation_key(channel_type: str, user_id: str, team_agent_id: Optional[int] = None) -> str:
+    return f"{team_agent_id}:{channel_type}:{user_id}"
 
 
-def get_or_create_conversation(channel_type: str, user_id: str) -> list:
+def get_or_create_conversation(
+    channel_type: str, user_id: str, team_agent_id: Optional[int] = None
+) -> list:
     """Return the full conversation history for a channel user."""
-    key = _conversation_key(channel_type, user_id)
+    key = _conversation_key(channel_type, user_id, team_agent_id)
     if key not in _conversations:
-        _conversations[key] = {"history": [], "agent": get_runtime_starting_agent()}
+        _conversations[key] = {
+            "history": [],
+            "agent": get_runtime_starting_agent(team_agent_id),
+            "team_agent_id": team_agent_id,
+        }
     return _conversations[key]["history"]
 
 
-def reset_conversation(channel_type: str, user_id: str) -> None:
-    key = _conversation_key(channel_type, user_id)
+def reset_conversation(
+    channel_type: str, user_id: str, team_agent_id: Optional[int] = None
+) -> None:
+    key = _conversation_key(channel_type, user_id, team_agent_id)
     _conversations.pop(key, None)
 
 
-async def handle_message(channel_type: str, user_id: str, text: str) -> str:
+async def handle_message(
+    channel_type: str,
+    user_id: str,
+    text: str,
+    team_agent_id: Optional[int] = None,
+) -> str:
     """Process an incoming text message through the agent pipeline.
 
     Returns the agent's text response.
     """
-    conversation = get_or_create_conversation(channel_type, user_id)
+    conversation = get_or_create_conversation(channel_type, user_id, team_agent_id)
 
     # Add user message to history
     conversation.append({"role": "user", "content": text})
 
     # Get the latest agent (may have been reassigned via handoffs)
-    key = _conversation_key(channel_type, user_id)
-    agent = _conversations[key].get("agent", get_runtime_starting_agent())
+    key = _conversation_key(channel_type, user_id, team_agent_id)
+    agent = _conversations[key].get("agent", get_runtime_starting_agent(team_agent_id))
 
     # Run agent
     try:

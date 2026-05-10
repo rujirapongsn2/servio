@@ -1,21 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  --background: #ffffff;
+  --foreground: #0D1B2A;
   --card-background: #ffffff;
-  --primary: #228be6;
-  --primary-hover: #1c7ed6;
-  --border-color: #e5e7eb;
-  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --primary: #2786C2;
+  --primary-hover: #1A5A8A;
+  --border-color: #E2E8F0;
+  --softnix-off-white: #F8F9FA;
+  --softnix-ink: #0D1B2A;
+  --softnix-charcoal: #2D3F55;
+  --softnix-slate: #778DA9;
+  --softnix-stone: #CBD5E1;
+  --shadow: rgba(0, 0, 0, 0.04) 0 2px 6px 0;
+  --shadow-lg: rgba(0, 0, 0, 0.02) 0 0 0 1px, rgba(0, 0, 0, 0.04) 0 2px 6px 0, rgba(0, 0, 0, 0.1) 0 4px 8px 0;
   --font-serif: "New York", serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Text", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Text", Roboto, "Helvetica Neue", Arial, sans-serif;
-  
-  /* Layer 3 Brand Colors */
-  --brand-gradient-start: #FDC70C;
-  --brand-gradient-end: #A9CB2E;
+  --font-sans: "Softnix Cereal VF", Circular, -apple-system, system-ui, Roboto, "Helvetica Neue", sans-serif;
+
+  /* Softnix tier accents */
+  --brand-gradient-start: #F3903F;
+  --brand-gradient-end: #FDC70C;
   --brand-text-dark: #0D1B2A;
 }
 

@@ -18,6 +18,7 @@ import {
   Line,
 } from "recharts";
 import { getApiBaseUrl } from "@/lib/api";
+import { useTeam } from "@/lib/team-context";
 import ReactMarkdown from "react-markdown";
 import IntentMonitor from "./components/IntentMonitor";
 
@@ -48,6 +49,8 @@ interface Conversation {
   primary_topic?: string;
   resolution_quality?: string;
   urgency_level?: string;
+  team_agent_id?: number | null;
+  team_agent_name?: string | null;
 }
 
 interface ConversationDetail {
@@ -71,6 +74,7 @@ interface TrendsData {
 
 export default function AnalyticsPage() {
   const apiBaseUrl = getApiBaseUrl();
+  const { selectedTeamId, selectedTeam } = useTeam();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [trends, setTrends] = useState<TrendsData | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -90,17 +94,17 @@ export default function AnalyticsPage() {
   // Fetch analytics summary
   useEffect(() => {
     fetchSummary();
-  }, [period]);
+  }, [period, selectedTeamId]);
 
   // Fetch trends
   useEffect(() => {
     fetchTrends();
-  }, [trendPeriod]);
+  }, [trendPeriod, selectedTeamId]);
 
   // Fetch conversations
   useEffect(() => {
     fetchConversations();
-  }, [filterOutcome, filterSentiment, currentPage]);
+  }, [filterOutcome, filterSentiment, currentPage, selectedTeamId]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -110,8 +114,10 @@ export default function AnalyticsPage() {
   const fetchSummary = async () => {
     try {
       const token = localStorage.getItem("adminToken");
+      const params = new URLSearchParams({ period });
+      if (selectedTeamId) params.append("team_agent_id", String(selectedTeamId));
       const response = await fetch(
-        `${apiBaseUrl}/api/admin/analytics/summary?period=${period}`,
+        `${apiBaseUrl}/api/admin/analytics/summary?${params}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -131,8 +137,10 @@ export default function AnalyticsPage() {
   const fetchTrends = async () => {
     try {
       const token = localStorage.getItem("adminToken");
+      const params = new URLSearchParams({ period: trendPeriod });
+      if (selectedTeamId) params.append("team_agent_id", String(selectedTeamId));
       const response = await fetch(
-        `${apiBaseUrl}/api/admin/analytics/trends?period=${trendPeriod}`,
+        `${apiBaseUrl}/api/admin/analytics/trends?${params}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -161,6 +169,7 @@ export default function AnalyticsPage() {
 
       if (filterOutcome) params.append("outcome", filterOutcome);
       if (filterSentiment) params.append("sentiment", filterSentiment);
+      if (selectedTeamId) params.append("team_agent_id", String(selectedTeamId));
 
       const response = await fetch(
         `${apiBaseUrl}/api/admin/analytics/conversations?${params}`,
@@ -186,8 +195,10 @@ export default function AnalyticsPage() {
   const fetchConversationDetail = async (id: number) => {
     try {
       const token = localStorage.getItem("adminToken");
+      const params = new URLSearchParams();
+      if (selectedTeamId) params.append("team_agent_id", String(selectedTeamId));
       const response = await fetch(
-        `${apiBaseUrl}/api/admin/analytics/conversations/${id}`,
+        `${apiBaseUrl}/api/admin/analytics/conversations/${id}${params.toString() ? `?${params}` : ""}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -275,18 +286,29 @@ export default function AnalyticsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
 
-        {/* Period selector */}
-        <div className="flex gap-2">
-          {["today", "week", "month", "all"].map((p) => (
-            <Button
-              key={p}
-              size="sm"
-              variant={period === p ? "primary" : "outline"}
-              onClick={() => setPeriod(p)}
-            >
-              {p.charAt(0).toUpperCase() + p.slice(1)}
-            </Button>
-          ))}
+        {/* Team scope indicator + Period selector */}
+        <div className="flex items-center gap-3">
+          {selectedTeam ? (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
+              Team: {selectedTeam.name}
+            </span>
+          ) : (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 font-medium">
+              All Teams
+            </span>
+          )}
+          <div className="flex gap-2">
+            {["today", "week", "month", "all"].map((p) => (
+              <Button
+                key={p}
+                size="sm"
+                variant={period === p ? "primary" : "outline"}
+                onClick={() => setPeriod(p)}
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -324,7 +346,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* Real-Time Intent Monitor */}
-      <IntentMonitor />
+      <IntentMonitor teamAgentId={selectedTeamId} />
 
       {/* Pie Charts */}
       {summary && (summary.outcome_breakdown || summary.sentiment_breakdown) && (
@@ -599,6 +621,9 @@ export default function AnalyticsPage() {
                       Started
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Team
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Duration
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -626,6 +651,15 @@ export default function AnalyticsPage() {
                     <tr key={conv.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatDate(conv.started_at)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {conv.team_agent_name ? (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                            {conv.team_agent_name}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {formatDuration(conv.duration_seconds)}
@@ -747,6 +781,12 @@ export default function AnalyticsPage() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Overview</h3>
                 <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm text-gray-600">Team:</span>
+                    <div className="text-sm font-medium text-blue-600">
+                      {selectedConversation.conversation.team_agent_name || "—"}
+                    </div>
+                  </div>
                   <div>
                     <span className="text-sm text-gray-600">Started:</span>
                     <div className="text-sm font-medium">{formatDate(selectedConversation.conversation.started_at)}</div>

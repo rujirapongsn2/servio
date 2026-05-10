@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root: `docker-compose.yml`, `services.sh`, `start.sh` (compatibility wrapper), `.env` (local only), `README.md`.
+- Root: `docker-compose.yml`, `services.sh`, `.env` (local only), `README.md`.
 - Frontend (Next.js + TS): `frontend/` → App Router in `src/app/**`, config in `next.config.ts`, `tailwind.config.mjs`, `Dockerfile` for containerization.
 - Backend (FastAPI): `server/` → entry `server.py`, routes and utils in `server/app/**`, Python deps in `pyproject.toml` (managed by `uv`), `Dockerfile` for containerization.
 - Database: PostgreSQL 15 running in Docker container, data persisted in `postgres_data` volume.
@@ -10,6 +10,7 @@
 ## Build, Test, and Development Commands
 
 ### Docker Management (Primary Method)
+- **Guided install on Linux**: `./services.sh install`
 - **Start all services**: `./services.sh start`
 - **Start one service with dependencies**: `./services.sh start frontend` or `./services.sh start backend`
   - Frontend: https://localhost

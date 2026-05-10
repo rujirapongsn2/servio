@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { buildApiUrl } from "@/lib/api";
@@ -37,11 +36,14 @@ export default function AdminLoginPage() {
       // Store token in localStorage
       localStorage.setItem("adminToken", data.access_token);
       localStorage.setItem("adminUsername", data.username);
+      localStorage.setItem("isSuperAdmin", data.is_super_admin ? "1" : "0");
+      localStorage.setItem("isOperatorOnly", data.is_operator_only ? "1" : "0");
+      localStorage.setItem("canManageUsers", data.can_manage_users ? "1" : "0");
 
       // Redirect to admin dashboard
       router.push("/admin");
-    } catch (err: any) {
-      setError(err.message || "An error occurred during login");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred during login");
     } finally {
       setLoading(false);
     }

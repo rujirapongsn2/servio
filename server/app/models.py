@@ -12,6 +12,9 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     username: str
+    is_super_admin: bool = False
+    is_operator_only: bool = False
+    can_manage_users: bool = False
 
 
 class ChangePasswordRequest(BaseModel):
@@ -93,19 +96,25 @@ class ToolResponse(BaseModel):
     type: str
     config: Optional[str] = None
     icon: str = "Wrench"
+    visibility: Optional[str] = None
+    owner_team_agent_id: Optional[int] = None
     created_at: str
+    updated_at: Optional[str] = None
 
 
 class CreateCustomToolRequest(BaseModel):
     name: str
     config: Dict[str, Any]
     icon: str = "Wrench"
+    visibility: Optional[str] = None  # "team" or "global", defaults to "team"
+    assign_agent_id: Optional[int] = None
 
 
 class UpdateCustomToolRequest(BaseModel):
     name: str
     config: Dict[str, Any]
     icon: str = "Wrench"
+    visibility: Optional[str] = None  # "team" or "global"
 
 
 # Prompt optimizer models
@@ -160,6 +169,7 @@ class FileStoreFileResponse(BaseModel):
 class CreateFileStoreRequest(BaseModel):
     display_name: str
     create_tool: bool = True
+    assign_agent_id: Optional[int] = None
 
 
 class TestFileStoreRequest(BaseModel):
@@ -205,6 +215,7 @@ class ChannelConfigResponse(BaseModel):
     name: str
     config: Dict[str, Any] = {}
     is_active: bool
+    team_agent_id: Optional[int] = None
     created_at: str
     updated_at: str
 
@@ -228,6 +239,8 @@ class ApiKeyResponse(BaseModel):
     allowed_domains: Optional[List[str]] = None
     voice_response_enabled: bool = True
     slug: Optional[str] = None
+    team_agent_id: Optional[int] = None
+    channel_type: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -237,6 +250,8 @@ class CreateApiKeyRequest(BaseModel):
     expires_days: Optional[int] = None
     allowed_domains: Optional[List[str]] = None  # Number of days until expiration (None = never expires)
     voice_response_enabled: bool = True  # Enable TTS voice responses
+    team_agent_id: Optional[int] = None
+    channel_type: Optional[str] = "web_widget"
 
 
 # LLM Provider models
@@ -276,6 +291,8 @@ class UpdateApiKeyRequest(BaseModel):
     expires_at: Optional[str] = None
     allowed_domains: Optional[List[str]] = None
     voice_response_enabled: Optional[bool] = None
+    team_agent_id: Optional[int] = None
+    channel_type: Optional[str] = None
 
 
 # Intent Rule models
@@ -306,3 +323,92 @@ class IntentGroupResponse(BaseModel):
     description: str
     default_keywords: List[str]
 
+
+# Team Agent models
+class TeamAgentMemberResponse(BaseModel):
+    agent_id: int
+    agent_name: str
+    role: str  # starting, member
+    sort_order: int
+
+
+class TeamAgentResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    status: str
+    member_count: int = 0
+    members: List[TeamAgentMemberResponse] = []
+    created_at: str
+    updated_at: str
+
+
+class TeamAgentListResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    status: str
+    member_count: int = 0
+    starting_agent_name: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class CreateTeamAgentRequest(BaseModel):
+    name: str
+    slug: str
+    description: Optional[str] = None
+
+
+class UpdateTeamAgentRequest(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None  # active, archived
+
+
+class UpdateTeamMembersRequest(BaseModel):
+    member_agent_ids: List[int]
+    starting_agent_id: Optional[int] = None
+
+
+# User Management models
+class AdminUserResponse(BaseModel):
+    id: int
+    username: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    is_active: bool = True
+    is_super_admin: bool = False
+    teams: List[dict] = []  # [{team_id, team_name, role}]
+    created_at: str
+
+
+class CreateAdminUserRequest(BaseModel):
+    username: str
+    password: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    is_super_admin: bool = False
+
+
+class UpdateAdminUserRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_super_admin: Optional[bool] = None
+
+
+class TeamUserResponse(BaseModel):
+    admin_id: int
+    username: str
+    display_name: Optional[str] = None
+    role: str  # owner, admin, operator, viewer
+
+
+class UpdateTeamUsersRequest(BaseModel):
+    users: List[dict]  # [{admin_id, role}] — role can be null to remove

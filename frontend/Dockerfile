@@ -12,6 +12,12 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Public Next.js variables are embedded at build time.
+ARG NEXT_PUBLIC_API_URL=
+ARG NEXT_PUBLIC_WEBSOCKET_ENDPOINT=
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WEBSOCKET_ENDPOINT=$NEXT_PUBLIC_WEBSOCKET_ENDPOINT
+
 # Build Next.js application
 RUN npm run build
 

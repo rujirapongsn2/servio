@@ -2,6 +2,7 @@ import json
 import requests
 import asyncio
 import os
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from contextvars import ContextVar
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -83,6 +84,8 @@ starting_agent = triage_agent
 # Dynamic agent loading from database
 def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
     """Get a tool instance by name"""
+    if tool_name == "DateTimeTool":
+        return create_datetime_tool(tool_name, tool_config or {})
     if tool_name == "WebSearchTool":
         location = tool_config.get("location", {"type": "approximate", "city": "Bangkok"}) if tool_config else {"type": "approximate", "city": "Bangkok"}
         return WebSearchTool(user_location=UserLocation(**location))
@@ -119,6 +122,33 @@ def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
         return create_mcp_tool(tool_name, tool_config)
     else:
         return None
+
+
+def create_datetime_tool(tool_name: str, config: Dict[str, Any]):
+    """Create a built-in DateTime tool that returns current server time."""
+    description = config.get(
+        "description",
+        "Get current date and time from the server clock with timezone information.",
+    )
+
+    def dynamic_datetime_tool():
+        """Return current date/time from server."""
+        now = datetime.now().astimezone()
+        tz_name = now.tzname() or "local"
+        return json.dumps(
+            {
+                "iso": now.isoformat(),
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "timezone": tz_name,
+                "weekday": now.strftime("%A"),
+            },
+            ensure_ascii=False,
+        )
+
+    dynamic_datetime_tool.__name__ = tool_name
+    dynamic_datetime_tool.__doc__ = description
+    return function_tool(dynamic_datetime_tool)
 
 
 def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
@@ -560,6 +590,11 @@ def build_agent_from_db(agent_data: Dict[str, Any], all_agents: Dict[int, Agent]
         tool = get_tool_by_name(tool_data["name"], tool_config)
         if tool:
             tools.append(tool)
+    # DateTimeTool is always available by default for every runtime agent.
+    if not any(getattr(t, "name", "") == "DateTimeTool" for t in tools):
+        default_datetime_tool = get_tool_by_name("DateTimeTool", {"description": "Get current server date/time"})
+        if default_datetime_tool:
+            tools.append(default_datetime_tool)
 
     # Get handoffs
     handoffs = []
@@ -592,15 +627,24 @@ def build_agent_from_db(agent_data: Dict[str, Any], all_agents: Dict[int, Agent]
     # Inject tool awareness into instructions so the LLM knows
     # the exact tool names it can call (avoids mismatched names in user-written instructions)
     instructions = agent_data["instructions"] or ""
+    current_time_context = datetime.now().astimezone()
+    instructions += (
+        f"\n\n**Current Time Context:**"
+        f"\nCurrent server datetime (ISO-8601): {current_time_context.isoformat()}"
+        f"\nTimezone: {current_time_context.tzname() or 'local'}"
+    )
     if tools:
         tool_descriptions = "\n".join(
-            f"  - `{t.name}`: {t.description}" for t in tools
+            f"  - `{getattr(t, 'name', type(t).__name__)}`: "
+            f"{getattr(t, 'description', 'Use this tool when relevant.')}"
+            for t in tools
         )
         instructions += (
             f"\n\n**Available Tools:**"
             f"\nYou have the following tools available. ALWAYS use them when relevant to the user's query:"
             f"\n{tool_descriptions}"
             f"\nUse the exact tool names shown above (in backticks) when calling tools."
+            f"\nIf user asks about current date/time/day/week/month/year, you MUST call `DateTimeTool` first and answer using its returned value."
             f"\n\n**CRITICAL — Context-Aware Tool Calls:**"
             f"\nWhen calling a tool, you MUST include full context from the conversation in the query parameter. "
             f"NEVER pass the user's raw message as-is if it contains implicit references."
@@ -658,27 +702,46 @@ def load_agents_from_db():
     return all_agents[agents_data[0]["id"]] if all_agents else starting_agent
 
 
-def get_runtime_starting_agent() -> Agent:
-    """Compose a runtime starting agent (coordinator) that includes DB agents as handoffs.
+def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
+    """Resolve the runtime starting agent.
 
-    - Keeps the familiar Coordinator Agent UX
-    - Dynamically appends DB-defined agents as additional handoffs
-    - Augments instructions with a brief list of available agents so the
-      model learns routing options (helps it pick Dtwin Agent when asked)
+    For Team Agents, the selected team member with role='starting' is the
+    actual entry agent. Handoffs are limited to members of the same team.
+    Legacy/global calls keep the previous global starting-agent behavior.
     """
     from app import database
 
-    # Build DB agents (if any) using two-pass approach to resolve sub-agent handoffs
-    db_agents_data = database.get_all_agents()
+    starting_agent_id: Optional[int] = None
 
+    # Load team-scoped agents when team_agent_id is provided
+    if team_agent_id is not None:
+        team = database.get_team_agent_by_id(team_agent_id)
+        if not team:
+            print(f"[TeamAgent] Team id={team_agent_id} not found, falling back to all agents")
+            db_agents_data = database.get_all_agents()
+        else:
+            # Get only this team's member agents
+            member_ids = [m["agent_id"] for m in team.get("members", [])]
+            all_agents_data = database.get_all_agents()
+            db_agents_data = [a for a in all_agents_data if a["id"] in member_ids]
+            # Find the team's starting agent
+            starting_member = next((m for m in team.get("members", []) if m["role"] == "starting"), None)
+            if starting_member:
+                starting_agent_id = starting_member["agent_id"]
+                print(f"[TeamAgent] Team '{team['name']}' starting agent: {starting_member['agent_name']}")
+    else:
+        db_agents_data = database.get_all_agents()
+
+    # Build DB agents (if any) using two-pass approach to resolve sub-agent handoffs
     # First pass: create all agents without handoffs
     all_agents: dict[int, Agent] = {}
     for a in db_agents_data:
         try:
             agent = build_agent_from_db(a, all_agents=None)
             all_agents[a["id"]] = agent
-        except Exception:
+        except Exception as e:
             # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
+            print(f"[Agent Build Error] id={a.get('id')} name='{a.get('name')}' error={e}")
             continue
 
     # Second pass: resolve sub-agent to sub-agent handoffs and inject handoff instructions
@@ -716,8 +779,16 @@ def get_runtime_starting_agent() -> Agent:
 
     db_agents = list(all_agents.values())
 
-    # Base triage (no built-in handoffs; wait for DB-defined agents)
-    combined_handoffs = db_agents
+    if team_agent_id is None:
+        for agent_data in db_agents_data:
+            if agent_data.get("is_starting_agent") and agent_data["id"] in all_agents:
+                return all_agents[agent_data["id"]]
+        return db_agents[0] if db_agents else starting_agent
+
+    if starting_agent_id and starting_agent_id in all_agents:
+        return all_agents[starting_agent_id]
+    if db_agents:
+        return db_agents[0]
 
     # Enrich instructions with dynamic agent list and routing hints
     extra = "\n\nAdditional agents available for transfer:"
@@ -748,6 +819,6 @@ def get_runtime_starting_agent() -> Agent:
         name="Coordinator Agent",
         model=triage_agent.model,
         instructions=triage_agent.instructions + extra,
-        handoffs=combined_handoffs,
+        handoffs=[],
     )
     return triage

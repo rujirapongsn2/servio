@@ -1,13 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { IconPicker } from "@/components/IconPicker";
+import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { getApiBaseUrl } from "@/lib/api";
+import { useTeam } from "@/lib/team-context";
 
-export default function NewToolPage() {
+function NewToolForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const apiBaseUrl = getApiBaseUrl();
+  const { selectedTeamId, setSelectedTeamId } = useTeam();
+  const routeTeamId = searchParams.get("team_agent_id")
+    ? parseInt(searchParams.get("team_agent_id") as string)
+    : null;
+  const sourceAgentId = searchParams.get("source_agent_id")
+    ? parseInt(searchParams.get("source_agent_id") as string)
+    : null;
+  const returnAgentId = searchParams.get("return_agent_id");
+  const returnTeamId = searchParams.get("return_team_id");
+  const returnTeamName = searchParams.get("return_team_name");
+  const effectiveTeamId = routeTeamId ?? selectedTeamId;
   const [toolType, setToolType] = useState<"custom_api" | "mcp_streamable_http">("custom_api");
   const [formData, setFormData] = useState({
     name: "",
@@ -22,6 +36,7 @@ export default function NewToolPage() {
     auth_param_name: "apikey",
     auth_header_name: "X-API-Key",
     icon: "Wrench",
+    visibility: "team",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -65,7 +80,9 @@ export default function NewToolPage() {
       }
     }
 
-      const response = await fetch(`${apiBaseUrl}/api/admin/tools`, {
+      if (routeTeamId && routeTeamId !== selectedTeamId) setSelectedTeamId(routeTeamId);
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools${params}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -75,6 +92,8 @@ export default function NewToolPage() {
           name: formData.name,
           config: config,
           icon: formData.icon,
+          visibility: formData.visibility,
+          assign_agent_id: sourceAgentId,
         }),
       });
 
@@ -83,7 +102,22 @@ export default function NewToolPage() {
         throw new Error(data.detail || "Failed to create tool");
       }
 
-      router.push("/admin/tools");
+      const responseData = await response.json();
+      const idMatch = responseData.message?.match(/ID\s+(\d+)/);
+      const createdToolId = idMatch ? parseInt(idMatch[1]) : null;
+
+      if (returnAgentId) {
+        const teamParam = effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "";
+        const returnTeamParam = returnTeamId ? `return_team_id=${returnTeamId}` : "";
+        const returnTeamNameParam = returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "";
+        const autoSelectParam = createdToolId ? `auto_select_tool_id=${createdToolId}` : "";
+        const query = [teamParam, returnTeamParam, returnTeamNameParam, autoSelectParam]
+          .filter(Boolean)
+          .join("&");
+        router.push(`/admin/agents/${returnAgentId}${query ? `?${query}` : ""}`);
+      } else {
+        router.push(`/admin/tools${effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : ""}`);
+      }
     } catch (err: any) {
       setError(err.message || "An error occurred while creating the tool");
     } finally {
@@ -93,6 +127,16 @@ export default function NewToolPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
+      <WorkflowNavigator
+        backLabel="Tools"
+        backHref="/admin/tools"
+        steps={[
+          { label: "Team Agents", href: "/admin/teams" },
+          { label: "Tools", href: "/admin/tools" },
+          { label: "Create Tool", active: true },
+        ]}
+      />
+
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
           Create Custom Tool
@@ -151,6 +195,25 @@ export default function NewToolPage() {
               selectedIcon={formData.icon}
               onIconSelect={(icon) => setFormData({ ...formData, icon })}
             />
+
+            {effectiveTeamId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Visibility
+                </label>
+                <select
+                  value={formData.visibility}
+                  onChange={(e) => setFormData({ ...formData, visibility: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                >
+                  <option value="team">Private (this team only)</option>
+                  <option value="global">Global (all teams can use)</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Private tools are visible only to this team. Global tools can be used by all teams.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -345,7 +408,7 @@ export default function NewToolPage() {
         <div className="flex justify-end space-x-3">
           <button
             type="button"
-            onClick={() => router.push("/admin/tools")}
+            onClick={() => router.push(`/admin/tools${effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : ""}`)}
             className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             Cancel
@@ -360,5 +423,13 @@ export default function NewToolPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewToolPage() {
+  return (
+    <Suspense>
+      <NewToolForm />
+    </Suspense>
   );
 }

@@ -38,7 +38,7 @@ from app.intent_service import intent_service
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Response, status, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import os
 
 
@@ -96,6 +96,39 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def enforce_operator_online_agent_scope(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/admin"):
+        allowed_auth_paths = {
+            "/api/admin/auth/login",
+            "/api/admin/auth/me",
+            "/api/admin/auth/change-password",
+        }
+        is_allowed = (
+            (path in allowed_auth_paths)
+            or (path == "/api/admin/team-agents" and request.method == "GET")
+            or (path == "/api/admin/sessions" and request.method == "GET")
+        )
+        if not is_allowed:
+            auth_header = request.headers.get("Authorization", "")
+            token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+            if token:
+                try:
+                    payload = decode_access_token(token)
+                    username = payload.get("sub")
+                except Exception:
+                    username = None
+                if username:
+                    from app import database as _db
+                    if _db.is_operator_only_user(username):
+                        return JSONResponse(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            content={"detail": "Operator role is limited to Online Agent only"},
+                        )
+    return await call_next(request)
 
 # Serve Softnix.png placed at repo root via a simple static endpoint
 @app.get("/assets/Softnix.png")
@@ -174,7 +207,8 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
     # Extract Origin header for domain validation
     origin = websocket.headers.get("origin") or websocket.headers.get("Origin")
 
-    if not database.validate_api_key(api_key, origin=origin):
+    api_key_data = database.validate_api_key(api_key, origin=origin)
+    if not api_key_data:
         await websocket.accept()
         error_message = "Invalid or expired API key"
         if origin:
@@ -186,12 +220,27 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
     # Increment usage count for this API key
     database.increment_api_key_usage(api_key)
 
-    # Fetch API key settings including voice_response_enabled
-    api_key_data = database.get_api_key_by_key(api_key)
-    voice_response_enabled = api_key_data.get("voice_response_enabled", True) if api_key_data else True
+    # Extract team context from API key
+    voice_response_enabled = api_key_data.get("voice_response_enabled", True)
+    team_agent_id = api_key_data.get("team_agent_id")
+    channel_type = api_key_data.get("channel_type", "web_widget")
+
+    # Resolve team name
+    team_agent_name = None
+    if team_agent_id:
+        team = database.get_team_agent_by_id(team_agent_id)
+        if team:
+            team_agent_name = team["name"]
 
     session_id = str(uuid.uuid4())
-    await session_manager.connect(websocket, session_id, source="text_widget")
+    await session_manager.connect(
+        websocket, session_id,
+        source="text_widget",
+        team_agent_id=team_agent_id,
+        team_agent_name=team_agent_name,
+        channel_type=channel_type,
+        api_key_id=api_key_data.get("id"),
+    )
 
     # Send session config to widget
     await websocket.send_json({
@@ -201,9 +250,14 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
 
     try:
         with trace("Voice Agent Chat"):
-            # Compose a fresh coordinator agent that includes DB-defined agents as handoffs
-            dynamic_starting_agent = get_runtime_starting_agent()
-            connection = WebsocketHelper(websocket, [], dynamic_starting_agent, session_id, voice_response_enabled)
+            # Compose a fresh coordinator agent scoped to the API key's team
+            dynamic_starting_agent = get_runtime_starting_agent(team_agent_id)
+            connection = WebsocketHelper(
+                websocket, [], dynamic_starting_agent, session_id, voice_response_enabled,
+                team_agent_id=team_agent_id,
+                channel_type=channel_type,
+                api_key_id=api_key_data.get("id"),
+            )
             session_manager.register_helper(session_id, connection)
             audio_buffer = []
 
@@ -220,7 +274,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
                     connection.history = message["inputs"]
                     if message.get("reset_agent", False):
                         # Recompose to pick up latest DB changes on reset
-                        connection.latest_agent = get_runtime_starting_agent()
+                        connection.latest_agent = get_runtime_starting_agent(team_agent_id)
                 elif is_new_text_message(message):
                     user_input = process_inputs(message, connection)
                     async for new_output_tokens in workflow.run(user_input):
@@ -290,11 +344,24 @@ async def twilio_stream_endpoint(websocket: WebSocket):
     # session_manager.connect will handle accept()
     stream_sid = None
     session_id = str(uuid.uuid4())
-    
+
+    # Resolve default team for phone calls
+    from app import database as _db
+    default_team_id = _db.get_default_team_id()
+    default_team_name = None
+    if default_team_id:
+        default_team = _db.get_team_agent_by_id(default_team_id)
+        if default_team:
+            default_team_name = default_team["name"]
+
     # Register session with tracking for Admin Dashboard
-    # We create a dummy connection object or use the TwilioHelper once initialized
-    # But tracking requires 'connect' first.
-    await session_manager.connect(websocket, session_id, source="phone")
+    await session_manager.connect(
+        websocket, session_id,
+        source="phone",
+        team_agent_id=default_team_id,
+        team_agent_name=default_team_name,
+        channel_type="phone",
+    )
     # Set mode to AI by default
     session_manager.set_mode(session_id, "AI")
     
@@ -343,7 +410,7 @@ async def twilio_stream_endpoint(websocket: WebSocket):
         
         # 2. Init Agent
         with trace("Voice Agent Phone Call"):
-            dynamic_starting_agent = get_runtime_starting_agent()
+            dynamic_starting_agent = get_runtime_starting_agent(default_team_id)
             # Initialize history list to track context
             history = []
             connection = TwilioHelper(websocket, history, dynamic_starting_agent, session_id, stream_sid)
@@ -538,22 +605,60 @@ async def twilio_stream_endpoint(websocket: WebSocket):
 
 
 @app.websocket("/ws/admin/monitor")
-async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(None), token: str = Query(None)):
+async def admin_monitor_endpoint(
+    websocket: WebSocket,
+    session_id: str = Query(None),
+    token: str = Query(None),
+    team_agent_id: int | None = Query(None),
+):
     if not token:
         await websocket.accept()
         await websocket.send_json({"type": "error", "message": "Authentication required"})
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-    
+
     try:
-        decode_access_token(token)
+        token_payload = decode_access_token(token)
+        current_user = token_payload.get("sub")
     except Exception as e:
         await websocket.accept()
         await websocket.send_json({"type": "error", "message": f"Invalid token: {str(e)}"})
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    await session_manager.connect_admin(websocket, session_id)
+    # Team enforcement: verify session team context
+    session_team_id = None
+    if session_id and session_id in session_manager.sessions:
+        session_team_id = session_manager.sessions[session_id].team_agent_id
+        if not current_user:
+            await websocket.accept()
+            await websocket.send_json({"type": "error", "message": "Authentication required"})
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        from app import database as _db
+        if not _db.has_team_access(current_user, session_team_id, "operator"):
+            await websocket.accept()
+            await websocket.send_json({"type": "error", "message": "You do not have access to this session"})
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+    elif team_agent_id is not None:
+        from app import database as _db
+        if not _db.has_team_access(current_user, team_agent_id, "operator"):
+            await websocket.accept()
+            await websocket.send_json({"type": "error", "message": "You do not have access to this Team Agent"})
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+    await session_manager.connect_admin(websocket, session_id, team_agent_id=team_agent_id)
+
+    # Send team context to the admin client
+    if session_id:
+        await websocket.send_json({
+            "type": "session_team",
+            "session_id": session_id,
+            "team_agent_id": session_team_id,
+        })
+
     try:
         while True:
             data = await websocket.receive_json()
@@ -562,26 +667,39 @@ async def admin_monitor_endpoint(websocket: WebSocket, session_id: str = Query(N
                 target_session_id = data.get("session_id")
                 mode = data.get("mode")
                 if target_session_id and mode in ["AI", "MANUAL"]:
+                    target_team_id = session_manager.sessions.get(target_session_id).team_agent_id if target_session_id in session_manager.sessions else None
+                    from app import database as _db
+                    if not _db.has_team_access(current_user, target_team_id, "operator"):
+                        continue
                     session_manager.set_mode(target_session_id, mode)
-            
+
             elif data.get("type") == "admin_message":
                 target_session_id = data.get("session_id")
                 content = data.get("content")
                 if target_session_id and content:
-                    # Send to user via session manager
+                    target_team_id = session_manager.sessions.get(target_session_id).team_agent_id if target_session_id in session_manager.sessions else None
+                    from app import database as _db
+                    if not _db.has_team_access(current_user, target_team_id, "operator"):
+                        continue
                     await session_manager.send_to_user(target_session_id, content)
 
     except WebSocketDisconnect:
-        if session_id:
-            session_manager.disconnect_admin(websocket, session_id)
-        else:
-            # If it was a dashboard connection, we need to handle that too
-            pass
+        session_manager.disconnect_admin(websocket, session_id)
 
 
 @app.get("/api/admin/sessions")
-async def get_active_sessions(current_user: str = Depends(get_current_user)):
-    return session_manager.get_all_sessions()
+async def get_active_sessions(
+    team_agent_id: int | None = Query(None),
+    current_user: str = Depends(get_current_user),
+):
+    from app import database as _db
+    if not _db.has_team_access(current_user, team_agent_id, "operator"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this Team Agent")
+    if team_agent_id is None and _db.is_operator_only_user(current_user):
+        operator_team_ids = _db.get_accessible_team_ids(current_user, "operator") or []
+        sessions = session_manager.get_all_sessions(team_agent_id=None)
+        return [s for s in sessions if s.get("team_agent_id") in operator_team_ids]
+    return session_manager.get_all_sessions(team_agent_id=team_agent_id)
 
 
 @app.post("/incoming-call")

@@ -284,32 +284,32 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    - ติดตั้ง [Docker Desktop](https://docs.docker.com/get-docker/)
    - ตรวจสอบว่า Docker รันอยู่
 
-2. **ตั้งค่า API keys:**
-
-   คัดลอกไฟล์ตัวอย่าง `.env.example` (มีค่าเริ่มต้นสำหรับ backend/frontend แล้ว) แล้วเติมค่าให้ครบ:
-
-   ```bash
-   cp .env.example .env
-   # ใน .env ให้ใส่อย่างน้อย:
-   # - OPENAI_API_KEY=...             (จำเป็น)
-   # - JWT_SECRET_KEY=...             (ตั้งค่าใหม่สำหรับ production)
-   # - SOFTNIX_API_KEY / GEMINI_API_KEY (ถ้ามี)
-   # - NEXT_PUBLIC_API_URL / NEXT_PUBLIC_WEBSOCKET_ENDPOINT (แก้เป็นโดเมนจริงเวลา deploy)
-   ```
-
-3. **Clone Repository:**
+2. **Clone Repository:**
 
    ```bash
    git clone https://github.com/rujirapongsn2/servio.git
    cd servio/
    ```
 
-4. **รันด้วย Docker:**
+3. **ติดตั้งและเริ่มใช้งานด้วย Docker (แนะนำ):**
 
    ```bash
-   # Start Servio stack
-   ./services.sh start
+   ./services.sh install
    ```
+
+   installer จะ:
+   - ถามค่าที่จำเป็นแบบ step by step เช่น `OPENAI_API_KEY`, `SOFTNIX_API_KEY`, `GEMINI_API_KEY`
+   - สร้างค่าเริ่มต้นให้เองสำหรับ PostgreSQL, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WEBSOCKET_ENDPOINT`, `JWT_SECRET_KEY`
+   - สร้างหรือสำรอง `.env`
+   - build และ start services ให้พร้อมใช้งาน
+
+   ถ้าต้องการเขียน config และ build แต่ยังไม่ start:
+
+   ```bash
+   ./services.sh install --no-start
+   ```
+
+4. **จัดการ services ภายหลัง:**
 
    คำสั่ง service manager:
    ```bash
@@ -322,15 +322,13 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    ./services.sh update
    ```
 
-   `./start.sh` ยังใช้งานได้เป็น compatibility wrapper แต่แนะนำให้ใช้ `./services.sh` เป็นหลัก
-
 5. **แก้ไขปัญหา SSL Certificate Permissions (ถ้าจำเป็น):**
 
    หากพบปัญหา Nginx ไม่สามารถอ่านไฟล์ SSL certificates ได้ (Permission denied) ให้รันสคริปต์แก้ไข:
 
    ```bash
    # แก้ไข permissions ของ SSL certificates
-   ./fix_certs_permissions.sh
+   ./fix_certs_permission.sh
 
    # หลังจากนั้นรีสตาร์ท Nginx
    docker compose restart nginx
@@ -365,16 +363,16 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
 
 1. **ตั้งค่า API keys:**
 
-   คัดลอก `.env.example` แล้วใส่ค่าที่จำเป็น:
+   สร้างไฟล์ `.env` ที่ root project แล้วใส่ค่าที่จำเป็น:
 
    ```bash
-   cp .env.example .env
+   touch .env
    # Required
    # OPENAI_API_KEY=<your_openai_api_key>
    # JWT_SECRET_KEY=<generate_a_secure_value>
    # Frontend endpoints (ปรับเป็นโดเมนจริงเวลา deploy)
-   # NEXT_PUBLIC_API_URL=http://localhost:8000
-   # NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
+   # NEXT_PUBLIC_API_URL=https://localhost
+   # NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://localhost/ws
    # Optional integrations: SOFTNIX_API_KEY / GEMINI_API_KEY
    ```
 
@@ -464,9 +462,7 @@ Docker setup ใช้ **docker compose** จัดการ 4 services หล�
 servio/
 ├── docker-compose.yml          # Service orchestration
 ├── services.sh                 # CLI service manager
-├── start.sh                    # Compatibility wrapper
-├── .env                        # Environment variables (create from .env.example)
-├── .env.example                # Template for environment variables
+├── .env                        # Environment variables (created by ./services.sh install)
 ├── server/
 │   ├── Dockerfile            # Backend container definition
 │   ├── .dockerignore        # Exclude unnecessary files
@@ -478,11 +474,13 @@ servio/
 
 ### Environment Variables
 
-คัดลอกไฟล์ตัวอย่างแล้วแก้ไขค่า:
+แนะนำให้ใช้ installer เพื่อสร้าง `.env` ให้อัตโนมัติ:
 
 ```bash
-cp .env.example .env
+./services.sh install
 ```
+
+ถ้าต้องการสร้าง `.env` เอง ให้กำหนดค่าหลักดังนี้:
 
 ตัวแปรหลักใน `.env`:
 
@@ -492,18 +490,24 @@ OPENAI_API_KEY=your_openai_api_key
 JWT_SECRET_KEY=change_me_in_production
 
 # Frontend / public endpoints
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_WEBSOCKET_ENDPOINT=ws://localhost:8000/ws
+NEXT_PUBLIC_API_URL=https://localhost
+NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://localhost/ws
 
 # Optional integrations
 SOFTNIX_API_KEY=your_softnix_api_key    # Optional
 GEMINI_API_KEY=your_gemini_api_key      # Optional
 SOFTNIX_API_INPUTS=product_id,customer_id
 
-# Docker Configuration (optional, defaults provided)
+# Docker / database configuration
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_secure_password_here
+POSTGRES_DB=voice_agents
+POSTGRES_PORT=5432
+DATABASE_URL=postgresql://postgres:your_secure_password_here@postgres:5432/voice_agents
+
+# Service configuration
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/voice_agents
 TOOL_TIMEOUT_SECONDS=60
 SQL_ECHO=false
 

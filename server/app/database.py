@@ -17,7 +17,7 @@ from app.orm_models import (
     Admin, Agent, Tool, AgentTool, AgentHandoff,
     FileStore, FileStoreFile, VoIPProvider, ChannelConfig, ApiKey,
     Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary,
-    IntentRule
+    IntentRule, TeamAgent, TeamAgentMember, TeamToolAssignment, TeamUserMembership
 )
 
 
@@ -180,7 +180,8 @@ def get_admin_by_username(username: str) -> Optional[Dict[str, Any]]:
             "id": admin.id,
             "username": admin.username,
             "password_hash": admin.password_hash,
-            "created_at": admin.created_at.isoformat() if admin.created_at else None
+            "is_super_admin": admin.is_super_admin,
+            "created_at": admin.created_at.isoformat() if admin.created_at else None,
         }
 
 
@@ -194,18 +195,217 @@ def update_admin_password(username: str, new_password: str) -> bool:
         return True
 
 
+ROLE_RANK = {
+    "viewer": 1,
+    "operator": 2,
+    "admin": 3,
+    "owner": 4,
+}
+
+
+def is_operator_only_user(username: str) -> bool:
+    """Return True when user is limited to operator role across all memberships."""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin or admin.is_super_admin:
+            return False
+        memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+        if not memberships:
+            return False
+        return all(m.role == "operator" for m in memberships)
+
+
+def has_any_team_role(username: str, min_role: str = "viewer") -> bool:
+    """Return True when user has at least one membership at min_role or higher."""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin:
+            return False
+        if admin.is_super_admin:
+            return True
+        min_rank = ROLE_RANK.get(min_role, 1)
+        memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+        return any(ROLE_RANK.get(m.role, 0) >= min_rank for m in memberships)
+
+
+def can_manage_users(username: str) -> bool:
+    """User management permission: super admin or explicit team admin role."""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin:
+            return False
+        if admin.is_super_admin:
+            return True
+        memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+        return any(m.role == "admin" for m in memberships)
+
+
+def get_team_access_role(username: str, team_id: int) -> Optional[str]:
+    """Return the user's role for a team.
+
+    If no memberships exist yet, allow legacy single-admin installs to keep
+    working as owner until memberships are configured.
+    """
+    with get_db() as db:
+        membership_count = db.query(TeamUserMembership).count()
+        if membership_count == 0:
+            return "owner" if db.query(Admin).filter_by(username=username).first() else None
+
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin:
+            return None
+
+        membership = db.query(TeamUserMembership).filter_by(
+            admin_id=admin.id,
+            team_agent_id=team_id,
+        ).first()
+        return membership.role if membership else None
+
+
+def has_team_access(username: str, team_id: Optional[int], min_role: str = "viewer") -> bool:
+    """Check team access for admin APIs. Super admins always have full access."""
+    if team_id is None:
+        return True
+    # Super admin bypass
+    admin = get_admin_by_username(username)
+    if admin and admin.get("is_super_admin"):
+        return True
+    role = get_team_access_role(username, team_id)
+    return ROLE_RANK.get(role or "", 0) >= ROLE_RANK.get(min_role, 1)
+
+
+def has_exact_team_role(username: str, team_id: int, required_role: str) -> bool:
+    """Check whether a user has exactly the specified team role.
+
+    Super admins are treated as allowed for operational safety.
+    """
+    admin = get_admin_by_username(username)
+    if admin and admin.get("is_super_admin"):
+        return True
+    role = get_team_access_role(username, team_id)
+    return role == required_role
+
+
+def get_accessible_team_ids(username: str, min_role: str = "viewer") -> Optional[List[int]]:
+    """Return accessible team IDs, or None when legacy fallback grants all."""
+    with get_db() as db:
+        membership_count = db.query(TeamUserMembership).count()
+        if membership_count == 0:
+            return None
+
+        admin = db.query(Admin).filter_by(username=username).first()
+        if not admin:
+            return []
+
+        # Super admin sees all teams
+        if admin.is_super_admin:
+            return None
+
+        min_rank = ROLE_RANK.get(min_role, 1)
+        memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+        return [
+            membership.team_agent_id
+            for membership in memberships
+            if ROLE_RANK.get(membership.role, 0) >= min_rank
+        ]
+
+
+def get_agent_team_ids(agent_id: int) -> List[int]:
+    """Return IDs of teams that include the agent."""
+    with get_db() as db:
+        return [
+            row.team_agent_id
+            for row in db.query(TeamAgentMember.team_agent_id).filter_by(agent_id=agent_id).all()
+        ]
+
+
+def user_can_access_agent(
+    username: str,
+    agent_id: int,
+    min_role: str = "viewer",
+    team_agent_id: Optional[int] = None,
+) -> bool:
+    """Check whether a user can access an agent through team membership.
+
+    If team_agent_id is provided, the agent must be a member of that team and
+    the user must have the requested role on that team. Without team_agent_id,
+    the user must have the requested role on at least one team containing the
+    agent. Legacy installs with no memberships keep existing all-access behavior.
+    """
+    accessible_team_ids = get_accessible_team_ids(username, min_role=min_role)
+    if accessible_team_ids is None:
+        return True
+
+    with get_db() as db:
+        query = db.query(TeamAgentMember).filter_by(agent_id=agent_id)
+        if team_agent_id is not None:
+            query = query.filter_by(team_agent_id=team_agent_id)
+        agent_team_ids = [row.team_agent_id for row in query.all()]
+
+    if team_agent_id is not None and team_agent_id not in agent_team_ids:
+        return False
+    return any(team_id in accessible_team_ids for team_id in agent_team_ids)
+
+
 # ============================================================================
 # Agent Operations
 # ============================================================================
 
-def get_all_agents() -> List[Dict[str, Any]]:
-    """Get all agents with their tools and handoffs"""
+def _team_member_agent_ids(db, team_agent_id: int) -> List[int]:
+    return [
+        row.agent_id
+        for row in db.query(TeamAgentMember.agent_id).filter_by(team_agent_id=team_agent_id).all()
+    ]
+
+
+def _tool_available_to_team(db, tool_id: int, team_agent_id: int) -> bool:
+    tool = db.query(Tool).filter_by(id=tool_id).first()
+    if not tool:
+        return False
+    if tool.owner_team_agent_id == team_agent_id or tool.visibility == "global":
+        return True
+    return db.query(TeamToolAssignment).filter_by(
+        team_agent_id=team_agent_id,
+        tool_id=tool_id,
+        relationship="shared_in",
+    ).first() is not None
+
+
+def get_all_agents(
+    team_agent_id: Optional[int] = None,
+    accessible_team_ids: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
+    """Get agents with their tools and handoffs.
+
+    When team_agent_id is provided, only returns agents that are members of
+    that team. This keeps handoff selection scoped to the active Team Agent.
+    When accessible_team_ids is provided, returns agents from those teams only.
+    """
     with get_db() as db:
-        agents = db.query(Agent).options(
+        query = db.query(Agent).options(
             selectinload(Agent.tools),
             selectinload(Agent.handoff_to),
             selectinload(Agent.llm_provider)  # Added
-        ).order_by(Agent.created_at.desc()).all()
+        )
+        if team_agent_id is not None:
+            member_ids = _team_member_agent_ids(db, team_agent_id)
+            if not member_ids:
+                return []
+            query = query.filter(Agent.id.in_(member_ids))
+        elif accessible_team_ids is not None:
+            if not accessible_team_ids:
+                return []
+            member_ids = [
+                row.agent_id
+                for row in db.query(TeamAgentMember.agent_id)
+                .filter(TeamAgentMember.team_agent_id.in_(accessible_team_ids))
+                .distinct()
+                .all()
+            ]
+            if not member_ids:
+                return []
+            query = query.filter(Agent.id.in_(member_ids))
+        agents = query.order_by(Agent.created_at.desc()).all()
 
         return [
             {
@@ -295,10 +495,30 @@ def create_agent(
     tool_ids: List[int],
     handoff_agent_ids: List[int],
     is_starting_agent: bool = False,
-    llm_provider_id: Optional[int] = None  # Added
+    llm_provider_id: Optional[int] = None,
+    team_agent_id: Optional[int] = None,
 ) -> int:
     """Create a new agent"""
     with get_db() as db:
+        datetime_tool = db.query(Tool).filter_by(name="DateTimeTool").first()
+        effective_tool_ids = list(dict.fromkeys(tool_ids))
+        if datetime_tool and datetime_tool.id not in effective_tool_ids:
+            effective_tool_ids.append(datetime_tool.id)
+
+        if team_agent_id is not None:
+            if not db.query(TeamAgent).filter_by(id=team_agent_id).first():
+                raise ValueError("Team Agent not found")
+            invalid_tools = [
+                tool_id for tool_id in effective_tool_ids
+                if not _tool_available_to_team(db, tool_id, team_agent_id)
+            ]
+            if invalid_tools:
+                raise ValueError("One or more tools are not available to this Team Agent")
+            member_ids = set(_team_member_agent_ids(db, team_agent_id))
+            invalid_handoffs = [agent_id for agent_id in handoff_agent_ids if agent_id not in member_ids]
+            if invalid_handoffs:
+                raise ValueError("Handoff agents must be members of the same Team Agent")
+
         # If this is a starting agent, unset other starting agents
         if is_starting_agent:
             db.query(Agent).update({"is_starting_agent": False})
@@ -316,7 +536,7 @@ def create_agent(
         db.flush()  # Get ID without committing
 
         # Add tools
-        for tool_id in tool_ids:
+        for tool_id in effective_tool_ids:
             agent_tool = AgentTool(agent_id=agent.id, tool_id=tool_id)
             db.add(agent_tool)
 
@@ -324,6 +544,19 @@ def create_agent(
         for handoff_id in handoff_agent_ids:
             handoff = AgentHandoff(from_agent_id=agent.id, to_agent_id=handoff_id)
             db.add(handoff)
+
+        if team_agent_id is not None:
+            if is_starting_agent:
+                db.query(TeamAgentMember).filter_by(
+                    team_agent_id=team_agent_id,
+                    role="starting",
+                ).update({"role": "member"})
+            db.add(TeamAgentMember(
+                team_agent_id=team_agent_id,
+                agent_id=agent.id,
+                role="starting" if is_starting_agent else "member",
+                sort_order=db.query(TeamAgentMember).filter_by(team_agent_id=team_agent_id).count(),
+            ))
 
         return agent.id
 
@@ -336,17 +569,45 @@ def update_agent(
     tool_ids: List[int],
     handoff_agent_ids: List[int],
     is_starting_agent: bool,
-    llm_provider_id: Optional[int] = None  # Added
+    llm_provider_id: Optional[int] = None,
+    team_agent_id: Optional[int] = None,
 ) -> bool:
     """Update an existing agent"""
     with get_db() as db:
         agent = db.query(Agent).filter(Agent.id == agent_id).first()
         if not agent:
             return False
+        datetime_tool = db.query(Tool).filter_by(name="DateTimeTool").first()
+        effective_tool_ids = list(dict.fromkeys(tool_ids))
+        if datetime_tool and datetime_tool.id not in effective_tool_ids:
+            effective_tool_ids.append(datetime_tool.id)
+        if team_agent_id is not None:
+            membership = db.query(TeamAgentMember).filter_by(
+                team_agent_id=team_agent_id,
+                agent_id=agent_id,
+            ).first()
+            if not membership:
+                return False
+            invalid_tools = [
+                tool_id for tool_id in effective_tool_ids
+                if not _tool_available_to_team(db, tool_id, team_agent_id)
+            ]
+            if invalid_tools:
+                raise ValueError("One or more tools are not available to this Team Agent")
+            member_ids = set(_team_member_agent_ids(db, team_agent_id))
+            invalid_handoffs = [handoff_id for handoff_id in handoff_agent_ids if handoff_id not in member_ids]
+            if invalid_handoffs:
+                raise ValueError("Handoff agents must be members of the same Team Agent")
 
         # If setting as starting agent, unset others
         if is_starting_agent and not agent.is_starting_agent:
             db.query(Agent).update({"is_starting_agent": False})
+        if team_agent_id is not None and is_starting_agent:
+            db.query(TeamAgentMember).filter_by(
+                team_agent_id=team_agent_id,
+                role="starting",
+            ).update({"role": "member"})
+            membership.role = "starting"
 
         agent.name = name
         agent.instructions = instructions
@@ -360,7 +621,7 @@ def update_agent(
         db.query(AgentHandoff).filter_by(from_agent_id=agent_id).delete()
 
         # Add new tools
-        for tool_id in tool_ids:
+        for tool_id in effective_tool_ids:
             agent_tool = AgentTool(agent_id=agent.id, tool_id=tool_id)
             db.add(agent_tool)
 
@@ -382,59 +643,215 @@ def delete_agent(agent_id: int) -> bool:
         return True
 
 
+def assign_tool_to_agent(
+    agent_id: int,
+    tool_id: int,
+    team_agent_id: Optional[int] = None,
+) -> bool:
+    """Assign a tool to an agent if not already assigned."""
+    with get_db() as db:
+        agent = db.query(Agent).filter_by(id=agent_id).first()
+        tool = db.query(Tool).filter_by(id=tool_id).first()
+        if not agent or not tool:
+            return False
+
+        if team_agent_id is not None:
+            membership = db.query(TeamAgentMember).filter_by(
+                team_agent_id=team_agent_id,
+                agent_id=agent_id,
+            ).first()
+            if not membership:
+                return False
+            if not _tool_available_to_team(db, tool_id, team_agent_id):
+                return False
+
+        existing = db.query(AgentTool).filter_by(agent_id=agent_id, tool_id=tool_id).first()
+        if existing:
+            return True
+
+        db.add(AgentTool(agent_id=agent_id, tool_id=tool_id))
+        return True
+
+
 # ============================================================================
 # Tool Operations
 # ============================================================================
 
-def get_all_tools() -> List[Dict[str, Any]]:
-    """Get all tools"""
+def get_all_tools(team_agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Get tools, optionally filtered by team.
+
+    When team_agent_id is provided, returns:
+    - Tools owned by that team
+    - Tools with visibility='global'
+    - Tools shared into the team via team_tool_assignments
+
+    When team_agent_id is None, returns Default Team tools rather than leaking
+    private tools owned by every team.
+    """
     with get_db() as db:
-        tools = db.query(Tool).order_by(Tool.type, Tool.name).all()
-        return [
-            {
+        if team_agent_id is None:
+            default_team = db.query(TeamAgent).filter_by(slug="default").first()
+            team_agent_id = default_team.id if default_team else None
+        if team_agent_id is not None:
+            # Owned by team
+            owned = db.query(Tool).filter_by(owner_team_agent_id=team_agent_id).all()
+            # Global tools
+            global_tools = db.query(Tool).filter_by(visibility="global").all()
+            # Shared into team
+            shared_ids = [
+                row.tool_id for row in
+                db.query(TeamToolAssignment.tool_id).filter_by(
+                    team_agent_id=team_agent_id, relationship="shared_in"
+                ).all()
+            ]
+            shared = db.query(Tool).filter(Tool.id.in_(shared_ids)).all() if shared_ids else []
+            tools = list({t.id: t for t in owned + global_tools + shared}.values())
+        else:
+            tools = db.query(Tool).filter_by(visibility="global").order_by(Tool.type, Tool.name).all()
+
+        result = []
+        for tool in tools:
+            owner_team_name = None
+            created_by_username = None
+            if tool.owner_team_agent_id is not None:
+                owner_team = db.query(TeamAgent).filter_by(id=tool.owner_team_agent_id).first()
+                owner_team_name = owner_team.name if owner_team else None
+            if tool.created_by_admin_id is not None:
+                creator = db.query(Admin).filter_by(id=tool.created_by_admin_id).first()
+                created_by_username = creator.username if creator else None
+            usage_count = db.query(AgentTool).filter_by(tool_id=tool.id).count()
+            result.append({
                 "id": tool.id,
                 "name": tool.name,
                 "type": tool.type,
                 "config": json.dumps(tool.config) if tool.config else None,
-                "created_at": tool.created_at.isoformat() if tool.created_at else None
-            }
-            for tool in tools
-        ]
+                "visibility": tool.visibility,
+                "owner_team_agent_id": tool.owner_team_agent_id,
+                "owner_team_name": owner_team_name,
+                "created_by_admin_id": tool.created_by_admin_id,
+                "created_by_username": created_by_username,
+                "agent_usage_count": usage_count,
+                "created_at": tool.created_at.isoformat() if tool.created_at else None,
+                "updated_at": tool.updated_at.isoformat() if tool.updated_at else None,
+            })
+        return result
 
 
-def get_tool_by_id(tool_id: int) -> Optional[Dict[str, Any]]:
+def get_tool_by_id(tool_id: int, team_agent_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """Get a single tool by ID"""
     with get_db() as db:
+        if team_agent_id is None:
+            default_team = db.query(TeamAgent).filter_by(slug="default").first()
+            team_agent_id = default_team.id if default_team else None
         tool = db.query(Tool).filter_by(id=tool_id).first()
         if not tool:
             return None
+        if team_agent_id is not None and not _tool_available_to_team(db, tool_id, team_agent_id):
+            return None
+        owner_team_name = None
+        created_by_username = None
+        if tool.owner_team_agent_id is not None:
+            owner_team = db.query(TeamAgent).filter_by(id=tool.owner_team_agent_id).first()
+            owner_team_name = owner_team.name if owner_team else None
+        if tool.created_by_admin_id is not None:
+            creator = db.query(Admin).filter_by(id=tool.created_by_admin_id).first()
+            created_by_username = creator.username if creator else None
+        usage_count = db.query(AgentTool).filter_by(tool_id=tool.id).count()
         return {
             "id": tool.id,
             "name": tool.name,
             "type": tool.type,
             "config": json.dumps(tool.config) if tool.config else None,
-            "created_at": tool.created_at.isoformat() if tool.created_at else None
+            "visibility": tool.visibility,
+            "owner_team_agent_id": tool.owner_team_agent_id,
+            "owner_team_name": owner_team_name,
+            "created_by_admin_id": tool.created_by_admin_id,
+            "created_by_username": created_by_username,
+            "agent_usage_count": usage_count,
+            "created_at": tool.created_at.isoformat() if tool.created_at else None,
+            "updated_at": tool.updated_at.isoformat() if tool.updated_at else None,
         }
 
 
-def create_custom_tool(name: str, config: Dict[str, Any], icon: str = "Wrench") -> int:
-    """Create a custom API tool or MCP tool"""
+def create_custom_tool(
+    name: str, config: Dict[str, Any], icon: str = "Wrench",
+    team_agent_id: Optional[int] = None,
+    visibility: Optional[str] = None,
+    created_by_username: Optional[str] = None,
+) -> int:
+    """Create a custom API tool or MCP tool, optionally owned by a team"""
     with get_db() as db:
         # Determine tool type from config
         tool_type = config.get("type", "custom_api")
+        # Determine visibility: explicit > team-ownership > global fallback
+        effective_visibility = visibility or ("team" if team_agent_id else "global")
+        creator = db.query(Admin).filter_by(username=created_by_username).first() if created_by_username else None
 
         tool = Tool(
             name=name,
             type=tool_type,
-            config=config
+            config=config,
+            owner_team_agent_id=team_agent_id,
+            visibility=effective_visibility,
+            created_by_admin_id=creator.id if creator else None,
         )
         db.add(tool)
         db.flush()
+
+        # Create team_tool_assignments row for ownership tracking
+        if team_agent_id:
+            assignment = TeamToolAssignment(
+                team_agent_id=team_agent_id,
+                tool_id=tool.id,
+                relationship="owned",
+            )
+            db.add(assignment)
+
         return tool.id
 
 
-def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: str = "Wrench") -> bool:
-    """Update a custom API tool, MCP tool, or Gemini File Search tool"""
+def update_custom_tool(
+    tool_id: int, name: str, config: Dict[str, Any], icon: str = "Wrench",
+    team_agent_id: Optional[int] = None,
+    visibility: Optional[str] = None,
+) -> bool:
+    """Update a custom API tool, MCP tool, or Gemini File Search tool.
+    When team_agent_id is provided, only allows update if the team owns the tool.
+    """
+    with get_db() as db:
+        query = db.query(Tool).filter(
+            Tool.id == tool_id,
+            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search"])
+        )
+        tool = query.first()
+
+        if not tool:
+            return False
+
+        # Ownership check: only the owning team (or global/super admin) can edit
+        if team_agent_id is None:
+            default_team = db.query(TeamAgent).filter_by(slug="default").first()
+            team_agent_id = default_team.id if default_team else None
+        if tool.owner_team_agent_id is not None and tool.owner_team_agent_id != team_agent_id:
+            return False
+
+        # Determine tool type from config
+        tool_type = config.get("type", "custom_api")
+
+        tool.name = name
+        tool.type = tool_type
+        tool.config = config
+        if visibility is not None:
+            tool.visibility = visibility
+        tool.updated_at = datetime.utcnow()
+
+        return True
+
+
+def delete_custom_tool(tool_id: int, team_agent_id: Optional[int] = None) -> bool:
+    """Delete a custom API tool, MCP tool, or Gemini File Search tool.
+    When team_agent_id is provided, only allows delete if the team owns the tool.
+    """
     with get_db() as db:
         tool = db.query(Tool).filter(
             Tool.id == tool_id,
@@ -444,24 +861,61 @@ def update_custom_tool(tool_id: int, name: str, config: Dict[str, Any], icon: st
         if not tool:
             return False
 
-        # Determine tool type from config
-        tool_type = config.get("type", "custom_api")
+        # Ownership check
+        if team_agent_id is None:
+            default_team = db.query(TeamAgent).filter_by(slug="default").first()
+            team_agent_id = default_team.id if default_team else None
+        if tool.owner_team_agent_id is not None and tool.owner_team_agent_id != team_agent_id:
+            return False
 
-        tool.name = name
-        tool.type = tool_type
-        tool.config = config
-
+        db.delete(tool)
         return True
 
 
-def delete_custom_tool(tool_id: int) -> bool:
-    """Delete a custom API tool, MCP tool, or Gemini File Search tool"""
+def set_tool_visibility(tool_id: int, visibility: str, team_agent_id: Optional[int] = None) -> bool:
+    """Update a tool's visibility.
+
+    When a team is provided, only that team's owned tools can be changed.
+    """
     with get_db() as db:
-        result = db.query(Tool).filter(
-            Tool.id == tool_id,
-            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search"])
+        tool = db.query(Tool).filter_by(id=tool_id).first()
+        if not tool:
+            return False
+        if team_agent_id is None:
+            default_team = db.query(TeamAgent).filter_by(slug="default").first()
+            team_agent_id = default_team.id if default_team else None
+        if tool.owner_team_agent_id != team_agent_id:
+            return False
+        tool.visibility = visibility
+        tool.updated_at = datetime.utcnow()
+        return True
+
+
+def share_tool_to_team(tool_id: int, team_id: int) -> bool:
+    """Share a tool into a team (adds shared_in assignment)"""
+    with get_db() as db:
+        existing = db.query(TeamToolAssignment).filter_by(
+            team_agent_id=team_id, tool_id=tool_id
+        ).first()
+        if existing:
+            existing.relationship = "shared_in"
+        else:
+            assignment = TeamToolAssignment(
+                team_agent_id=team_id,
+                tool_id=tool_id,
+                relationship="shared_in",
+            )
+            db.add(assignment)
+        return True
+
+
+def unshare_tool_from_team(tool_id: int, team_id: int) -> bool:
+    """Remove a shared tool from a team"""
+    with get_db() as db:
+        db.query(TeamToolAssignment).filter_by(
+            team_agent_id=team_id, tool_id=tool_id, relationship="shared_in"
         ).delete()
-        return result > 0
+        return True
 
 
 # ============================================================================
@@ -719,20 +1173,42 @@ def _channel_to_dict(channel: ChannelConfig) -> Dict[str, Any]:
         "name": channel.name,
         "config": channel.config or {},
         "is_active": channel.is_active,
+        "team_agent_id": channel.team_agent_id,
         "created_at": channel.created_at.isoformat() if channel.created_at else None,
-        "updated_at": channel.updated_at.isoformat() if channel.updated_at else None
+        "updated_at": channel.updated_at.isoformat() if channel.updated_at else None,
     }
 
 
-def get_all_channel_configs() -> List[Dict[str, Any]]:
+def get_all_channel_configs(team_agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
     with get_db() as db:
-        channels = db.query(ChannelConfig).order_by(ChannelConfig.created_at.desc()).all()
+        query = db.query(ChannelConfig)
+        if team_agent_id is not None:
+            query = query.filter(ChannelConfig.team_agent_id == team_agent_id)
+        channels = query.order_by(ChannelConfig.created_at.desc()).all()
         return [_channel_to_dict(channel) for channel in channels]
 
 
-def get_channel_config(channel_type: str) -> Optional[Dict[str, Any]]:
+def get_channel_config(channel_type: str, team_agent_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
     with get_db() as db:
-        channel = db.query(ChannelConfig).filter_by(type=channel_type).first()
+        if team_agent_id is not None:
+            channel = db.query(ChannelConfig).filter_by(
+                type=channel_type,
+                team_agent_id=team_agent_id,
+            ).first()
+            if channel:
+                return _channel_to_dict(channel)
+
+        channel = db.query(ChannelConfig).filter_by(
+            type=channel_type,
+            team_agent_id=None,
+        ).first()
+        if not channel:
+            default_team = db.query(TeamAgent).filter_by(slug="default").first()
+            if default_team:
+                channel = db.query(ChannelConfig).filter_by(
+                    type=channel_type,
+                    team_agent_id=default_team.id,
+                ).first()
         if not channel:
             return None
         return _channel_to_dict(channel)
@@ -742,17 +1218,21 @@ def upsert_channel_config(
     channel_type: str,
     name: str,
     config: Dict[str, Any],
-    is_active: bool
+    is_active: bool,
+    team_agent_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     with get_db() as db:
-        channel = db.query(ChannelConfig).filter_by(type=channel_type).first()
+        channel = db.query(ChannelConfig).filter_by(
+            type=channel_type, team_agent_id=team_agent_id
+        ).first()
         if not channel:
             channel = ChannelConfig(
                 type=channel_type,
                 name=name,
                 config=config,
                 is_active=is_active,
-                updated_at=datetime.utcnow()
+                team_agent_id=team_agent_id,
+                updated_at=datetime.utcnow(),
             )
             db.add(channel)
             db.flush()
@@ -768,10 +1248,13 @@ def upsert_channel_config(
 # API Key Operations
 # ============================================================================
 
-def get_all_api_keys() -> List[Dict[str, Any]]:
-    """Get all API keys"""
+def get_all_api_keys(team_agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Get API keys, optionally filtered by team"""
     with get_db() as db:
-        keys = db.query(ApiKey).order_by(ApiKey.created_at.desc()).all()
+        query = db.query(ApiKey)
+        if team_agent_id is not None:
+            query = query.filter(ApiKey.team_agent_id == team_agent_id)
+        keys = query.order_by(ApiKey.created_at.desc()).all()
         return [
             {
                 "id": key.id,
@@ -785,6 +1268,8 @@ def get_all_api_keys() -> List[Dict[str, Any]]:
                 "allowed_domains": key.allowed_domains,
                 "voice_response_enabled": key.voice_response_enabled,
                 "slug": key.slug,
+                "team_agent_id": key.team_agent_id,
+                "channel_type": key.channel_type,
                 "created_at": key.created_at.isoformat() if key.created_at else None,
                 "updated_at": key.updated_at.isoformat() if key.updated_at else None
             }
@@ -810,6 +1295,8 @@ def get_api_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
             "allowed_domains": key.allowed_domains,
             "voice_response_enabled": key.voice_response_enabled,
             "slug": key.slug,
+            "team_agent_id": key.team_agent_id,
+            "channel_type": key.channel_type,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -833,6 +1320,8 @@ def get_api_key_by_key(key_value: str) -> Optional[Dict[str, Any]]:
             "allowed_domains": key.allowed_domains,
             "voice_response_enabled": key.voice_response_enabled,
             "slug": key.slug,
+            "team_agent_id": key.team_agent_id,
+            "channel_type": key.channel_type,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -856,6 +1345,8 @@ def get_api_key_by_slug(slug: str) -> Optional[Dict[str, Any]]:
             "allowed_domains": key.allowed_domains,
             "voice_response_enabled": key.voice_response_enabled,
             "slug": key.slug,
+            "team_agent_id": key.team_agent_id,
+            "channel_type": key.channel_type,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "updated_at": key.updated_at.isoformat() if key.updated_at else None
         }
@@ -868,7 +1359,9 @@ def create_api_key(
     created_by: Optional[str] = None,
     allowed_domains: Optional[List[str]] = None,
     voice_response_enabled: bool = True,
-    slug: Optional[str] = None
+    slug: Optional[str] = None,
+    team_agent_id: Optional[int] = None,
+    channel_type: Optional[str] = "web_widget",
 ) -> int:
     """Create a new API key"""
     import secrets
@@ -887,7 +1380,9 @@ def create_api_key(
             created_by=created_by,
             allowed_domains=allowed_domains,
             voice_response_enabled=voice_response_enabled,
-            slug=slug
+            slug=slug,
+            team_agent_id=team_agent_id,
+            channel_type=channel_type,
         )
         db.add(api_key)
         db.flush()
@@ -900,7 +1395,9 @@ def update_api_key(
     is_active: Optional[bool] = None,
     expires_at: Optional[datetime] = None,
     allowed_domains: Optional[List[str]] = None,
-    voice_response_enabled: Optional[bool] = None
+    voice_response_enabled: Optional[bool] = None,
+    team_agent_id: Optional[int] = None,
+    channel_type: Optional[str] = None,
 ) -> bool:
     """Update an API key"""
     with get_db() as db:
@@ -918,6 +1415,10 @@ def update_api_key(
             api_key.allowed_domains = allowed_domains
         if voice_response_enabled is not None:
             api_key.voice_response_enabled = voice_response_enabled
+        if team_agent_id is not None:
+            api_key.team_agent_id = team_agent_id
+        if channel_type is not None:
+            api_key.channel_type = channel_type
 
         api_key.updated_at = datetime.utcnow()
         return True
@@ -944,54 +1445,79 @@ def increment_api_key_usage(key_value: str) -> bool:
         return True
 
 
-def validate_api_key(key_value: str, origin: Optional[str] = None) -> bool:
-    """Validate an API key - check if it exists, is active, not expired, and origin is allowed"""
+def validate_api_key(key_value: str, origin: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Validate an API key and return its record if valid, None otherwise"""
     with get_db() as db:
         api_key = db.query(ApiKey).filter_by(key=key_value).first()
 
         if not api_key:
-            return False
+            return None
 
         if not api_key.is_active:
-            return False
+            return None
 
         # Check expiration
         if api_key.expires_at and api_key.expires_at < datetime.utcnow():
-            return False
+            return None
 
         # Check origin against allowed domains
-        if api_key.allowed_domains and origin:
-            # Extract domain from origin (e.g., "https://example.com" -> "example.com")
-            import re
-            origin_domain = re.sub(r'^https?://', '', origin).split(':')[0].split('/')[0]
-            
-            # Check if origin matches any allowed domain
-            allowed = False
-            for allowed_domain in api_key.allowed_domains:
-                # Support wildcards and exact matches
-                if allowed_domain == '*' or origin_domain == allowed_domain or origin_domain.endswith('.' + allowed_domain):
-                    allowed = True
-                    break
-            
-            if not allowed:
-                return False
-        elif api_key.allowed_domains and not origin:
-            # If domains are restricted but no origin provided, reject
-            return False
+        if api_key.allowed_domains:
+            # If wildcard is allowed, skip origin check entirely
+            if '*' in api_key.allowed_domains:
+                pass
+            elif origin:
+                # Extract domain from origin (e.g., "https://example.com" -> "example.com")
+                import re
+                origin_domain = re.sub(r'^https?://', '', origin).split(':')[0].split('/')[0]
 
-        return True
+                # Check if origin matches any allowed domain
+                allowed = False
+                for allowed_domain in api_key.allowed_domains:
+                    if origin_domain == allowed_domain or origin_domain.endswith('.' + allowed_domain):
+                        allowed = True
+                        break
+
+                if not allowed:
+                    return None
+            else:
+                # Domains are restricted but no origin provided
+                return None
+
+        # Return full API key record as dict
+        return {
+            "id": api_key.id,
+            "name": api_key.name,
+            "key": api_key.key,
+            "slug": api_key.slug,
+            "is_active": api_key.is_active,
+            "voice_response_enabled": api_key.voice_response_enabled,
+            "team_agent_id": api_key.team_agent_id,
+            "channel_type": api_key.channel_type,
+            "allowed_domains": api_key.allowed_domains,
+        }
 
 
 # ============================================================================
 # Analytics Operations
 # ============================================================================
 
-def create_conversation(session_id: str, started_at: str) -> int:
+def create_conversation(
+    session_id: str,
+    started_at: str,
+    team_agent_id: Optional[int] = None,
+    channel_type: Optional[str] = None,
+    channel_user_id: Optional[str] = None,
+    api_key_id: Optional[int] = None,
+) -> int:
     """Create a new conversation record"""
     with get_db() as db:
         conversation = Conversation(
             session_id=session_id,
-            started_at=datetime.fromisoformat(started_at) if isinstance(started_at, str) else started_at
+            started_at=datetime.fromisoformat(started_at) if isinstance(started_at, str) else started_at,
+            team_agent_id=team_agent_id,
+            channel_type=channel_type,
+            channel_user_id=channel_user_id,
+            api_key_id=api_key_id,
         )
         db.add(conversation)
         db.flush()
@@ -1166,7 +1692,7 @@ def delete_all_conversations() -> Dict[str, int]:
         }
 
 
-def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
+def get_analytics_summary(period: str = 'today', team_agent_id: Optional[int] = None) -> Dict[str, Any]:
     """Get analytics summary for dashboard"""
     with get_db() as db:
         # Determine date filter based on period
@@ -1180,37 +1706,33 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
         else:
             start_date = datetime(1970, 1, 1)  # All time
 
+        def conv_filters(*extra):
+            filters = [
+                Conversation.started_at >= start_date,
+                Conversation.enrichment_status != 'skipped',
+            ]
+            if team_agent_id is not None:
+                filters.append(Conversation.team_agent_id == team_agent_id)
+            filters.extend(extra)
+            return and_(*filters)
+
         # Total conversations
         total_conversations = db.query(Conversation).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters()
         ).count()
 
         # Resolution rate
         total_with_outcome = db.query(Conversation).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters()
         ).count()
         resolved_count = db.query(Conversation).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                Conversation.outcome == 'resolved',
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters(Conversation.outcome == 'resolved')
         ).count()
         resolution_rate = (resolved_count * 100.0 / total_with_outcome) if total_with_outcome > 0 else 0
 
         # Average messages per conversation
         avg_messages_result = db.query(func.avg(Conversation.total_messages)).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                Conversation.total_messages > 0,
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters(Conversation.total_messages > 0)
         ).scalar()
         avg_messages = float(avg_messages_result) if avg_messages_result else 0
 
@@ -1218,11 +1740,7 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
         avg_sentiment_result = db.query(func.avg(ConversationAnalytics.sentiment_score)).join(
             Conversation
         ).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                ConversationAnalytics.sentiment_score.isnot(None),
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters(ConversationAnalytics.sentiment_score.isnot(None))
         ).scalar()
         avg_sentiment = float(avg_sentiment_result) if avg_sentiment_result else 0
 
@@ -1231,10 +1749,7 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
             Conversation.outcome,
             func.count(Conversation.id).label('count')
         ).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters()
         ).group_by(Conversation.outcome).all()
         outcome_breakdown = {row.outcome: row.count for row in outcome_results}
 
@@ -1243,11 +1758,7 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
             ConversationAnalytics.overall_sentiment,
             func.count(ConversationAnalytics.id).label('count')
         ).join(Conversation).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                ConversationAnalytics.overall_sentiment.isnot(None),
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters(ConversationAnalytics.overall_sentiment.isnot(None))
         ).group_by(ConversationAnalytics.overall_sentiment).all()
         sentiment_breakdown = {row.overall_sentiment: row.count for row in sentiment_results}
 
@@ -1256,11 +1767,7 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
             ConversationAnalytics.primary_topic,
             func.count(ConversationAnalytics.id).label('count')
         ).join(Conversation).filter(
-            and_(
-                Conversation.started_at >= start_date,
-                ConversationAnalytics.primary_topic.isnot(None),
-                Conversation.enrichment_status != 'skipped'
-            )
+            conv_filters(ConversationAnalytics.primary_topic.isnot(None))
         ).group_by(ConversationAnalytics.primary_topic).order_by(
             func.count(ConversationAnalytics.id).desc()
         ).limit(10).all()
@@ -1275,6 +1782,485 @@ def get_analytics_summary(period: str = 'today') -> Dict[str, Any]:
             'sentiment_breakdown': sentiment_breakdown,
             'topic_breakdown': topic_breakdown
         }
+
+
+# ============================================================================
+# Admin User Operations
+# ============================================================================
+
+def get_all_admins() -> List[Dict[str, Any]]:
+    """Get all admin users with their team memberships"""
+    with get_db() as db:
+        admins = db.query(Admin).order_by(Admin.username).all()
+        result = []
+        for admin in admins:
+            memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+            teams = []
+            for m in memberships:
+                team = db.query(TeamAgent).filter_by(id=m.team_agent_id).first()
+                if team:
+                    teams.append({
+                        "team_id": team.id,
+                        "team_name": team.name,
+                        "role": m.role,
+                    })
+            result.append({
+                "id": admin.id,
+                "username": admin.username,
+                "created_at": admin.created_at.isoformat() if admin.created_at else None,
+                "teams": teams,
+            })
+        return result
+
+
+def get_admin_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Get a single admin by ID"""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(id=user_id).first()
+        if not admin:
+            return None
+        memberships = db.query(TeamUserMembership).filter_by(admin_id=admin.id).all()
+        teams = []
+        for m in memberships:
+            team = db.query(TeamAgent).filter_by(id=m.team_agent_id).first()
+            if team:
+                teams.append({
+                    "team_id": team.id,
+                    "team_name": team.name,
+                    "role": m.role,
+                })
+        return {
+            "id": admin.id,
+            "username": admin.username,
+            "created_at": admin.created_at.isoformat() if admin.created_at else None,
+            "teams": teams,
+        }
+
+
+def create_admin(
+    username: str, password: str,
+) -> int:
+    """Create a new admin user"""
+    with get_db() as db:
+        admin = Admin(
+            username=username,
+            password_hash=hash_password(password),
+        )
+        db.add(admin)
+        db.flush()
+        return admin.id
+
+
+def update_admin(
+    user_id: int,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+) -> bool:
+    """Update an admin user"""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(id=user_id).first()
+        if not admin:
+            return False
+        if username is not None:
+            admin.username = username
+        if password is not None:
+            admin.password_hash = hash_password(password)
+        return True
+
+
+def delete_admin(user_id: int) -> bool:
+    """Delete an admin user"""
+    with get_db() as db:
+        admin = db.query(Admin).filter_by(id=user_id).first()
+        if not admin:
+            return False
+        if admin.username == "admin":
+            raise ValueError("Default admin user cannot be deleted")
+
+        owner_memberships = (
+            db.query(TeamUserMembership, TeamAgent)
+            .join(TeamAgent, TeamAgent.id == TeamUserMembership.team_agent_id)
+            .filter(
+                TeamUserMembership.admin_id == user_id,
+                TeamUserMembership.role == "owner",
+            )
+            .all()
+        )
+        if owner_memberships:
+            team_names = [team.name for _, team in owner_memberships]
+            raise ValueError(
+                "Cannot delete user while they are owner of Team Agent(s): "
+                + ", ".join(team_names)
+                + ". Delete those Team Agents first."
+            )
+
+        # Preserve remaining tools by detaching creator ownership from the user.
+        db.query(Tool).filter(Tool.created_by_admin_id == user_id).update(
+            {"created_by_admin_id": None, "updated_at": datetime.utcnow()},
+            synchronize_session=False,
+        )
+        db.delete(admin)
+        return True
+
+
+def get_team_users(team_id: int) -> List[Dict[str, Any]]:
+    """Get users and their roles for a team"""
+    with get_db() as db:
+        memberships = db.query(TeamUserMembership).filter_by(team_agent_id=team_id).all()
+        result = []
+        for m in memberships:
+            admin = db.query(Admin).filter_by(id=m.admin_id).first()
+            if admin:
+                result.append({
+                    "admin_id": admin.id,
+                    "username": admin.username,
+                    "role": m.role,
+                })
+        return result
+
+
+def set_user_team_role(admin_id: int, team_id: int, role: Optional[str]) -> bool:
+    """Add or update a user's role in a team. Set role=None to remove."""
+    with get_db() as db:
+        if role is None:
+            db.query(TeamUserMembership).filter_by(
+                admin_id=admin_id, team_agent_id=team_id
+            ).delete()
+            return True
+
+        existing = db.query(TeamUserMembership).filter_by(
+            admin_id=admin_id, team_agent_id=team_id
+        ).first()
+        if existing:
+            existing.role = role
+        else:
+            membership = TeamUserMembership(
+                admin_id=admin_id,
+                team_agent_id=team_id,
+                role=role,
+            )
+            db.add(membership)
+        return True
+
+
+def remove_user_from_team(admin_id: int, team_id: int) -> bool:
+    """Remove a user from a team"""
+    return set_user_team_role(admin_id, team_id, None)
+
+
+# ============================================================================
+# Team Agent Operations
+# ============================================================================
+
+def get_all_team_agents(username: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get all team agents with member counts"""
+    with get_db() as db:
+        query = db.query(TeamAgent)
+        if username is not None:
+            team_ids = get_accessible_team_ids(username)
+            if team_ids is not None:
+                if not team_ids:
+                    return []
+                query = query.filter(TeamAgent.id.in_(team_ids))
+        teams = query.order_by(TeamAgent.name).all()
+        result = []
+        for team in teams:
+            member_count = db.query(TeamAgentMember).filter_by(team_agent_id=team.id).count()
+            starting = db.query(TeamAgentMember).filter_by(
+                team_agent_id=team.id, role="starting"
+            ).first()
+            starting_name = None
+            if starting:
+                agent = db.query(Agent).filter_by(id=starting.agent_id).first()
+                if agent:
+                    starting_name = agent.name
+            result.append({
+                "id": team.id,
+                "name": team.name,
+                "slug": team.slug,
+                "description": team.description,
+                "status": team.status,
+                "member_count": member_count,
+                "starting_agent_name": starting_name,
+                "created_at": team.created_at.isoformat() if team.created_at else None,
+                "updated_at": team.updated_at.isoformat() if team.updated_at else None,
+            })
+        return result
+
+
+def get_team_agent_by_id(team_id: int) -> Optional[Dict[str, Any]]:
+    """Get a team agent by ID with members"""
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        if not team:
+            return None
+        members = db.query(TeamAgentMember).filter_by(team_agent_id=team_id).order_by(
+            TeamAgentMember.sort_order
+        ).all()
+        member_list = []
+        for m in members:
+            agent = db.query(Agent).filter_by(id=m.agent_id).first()
+            member_list.append({
+                "agent_id": m.agent_id,
+                "agent_name": agent.name if agent else "Unknown",
+                "role": m.role,
+                "sort_order": m.sort_order,
+            })
+        return {
+            "id": team.id,
+            "name": team.name,
+            "slug": team.slug,
+            "description": team.description,
+            "status": team.status,
+            "member_count": len(member_list),
+            "members": member_list,
+            "created_at": team.created_at.isoformat() if team.created_at else None,
+            "updated_at": team.updated_at.isoformat() if team.updated_at else None,
+        }
+
+
+def get_team_agent_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """Get a team agent by slug"""
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(slug=slug).first()
+        if not team:
+            return None
+        return get_team_agent_by_id(team.id)
+
+
+def create_team_agent(
+    name: str,
+    slug: str,
+    description: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> int:
+    """Create a new team agent"""
+    with get_db() as db:
+        team = TeamAgent(name=name, slug=slug, description=description)
+        db.add(team)
+        db.flush()
+
+        if created_by:
+            admin = db.query(Admin).filter_by(username=created_by).first()
+            if admin:
+                db.add(TeamUserMembership(
+                    admin_id=admin.id,
+                    team_agent_id=team.id,
+                    role="owner",
+                ))
+        return team.id
+
+
+def update_team_agent(
+    team_id: int,
+    name: Optional[str] = None,
+    slug: Optional[str] = None,
+    description: Optional[str] = None,
+    status: Optional[str] = None,
+) -> bool:
+    """Update a team agent"""
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        if not team:
+            return False
+        if name is not None:
+            team.name = name
+        if slug is not None:
+            team.slug = slug
+        if description is not None:
+            team.description = description
+        if status is not None:
+            team.status = status
+        team.updated_at = datetime.utcnow()
+        return True
+
+
+def delete_team_agent(team_id: int) -> bool:
+    """Delete a team agent"""
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        if not team:
+            return False
+        default_team = db.query(TeamAgent).filter_by(slug="default").first()
+        fallback_team_id = default_team.id if default_team and default_team.id != team_id else None
+
+        member_agent_ids = [
+            row.agent_id
+            for row in db.query(TeamAgentMember.agent_id).filter_by(team_agent_id=team_id).all()
+        ]
+        owned_tools = db.query(Tool).filter_by(owner_team_agent_id=team_id).all()
+
+        for tool in owned_tools:
+            external_use_query = db.query(AgentTool).filter(AgentTool.tool_id == tool.id)
+            if member_agent_ids:
+                external_use_query = external_use_query.filter(~AgentTool.agent_id.in_(member_agent_ids))
+            external_use_exists = external_use_query.first() is not None
+
+            if tool.visibility == "global" and external_use_exists:
+                tool.owner_team_agent_id = None
+                tool.created_by_admin_id = None
+                tool.updated_at = datetime.utcnow()
+                db.query(TeamToolAssignment).filter_by(
+                    team_agent_id=team_id,
+                    tool_id=tool.id,
+                ).delete(synchronize_session=False)
+            else:
+                db.delete(tool)
+
+        if member_agent_ids:
+            db.query(Agent).filter(Agent.id.in_(member_agent_ids)).delete(synchronize_session=False)
+
+        # Reassign non-cascading references to avoid FK violations while preserving data history.
+        db.query(ApiKey).filter_by(team_agent_id=team_id).update(
+            {"team_agent_id": fallback_team_id},
+            synchronize_session=False,
+        )
+        team_channels = db.query(ChannelConfig).filter_by(team_agent_id=team_id).all()
+        for channel in team_channels:
+            if fallback_team_id is None:
+                channel.team_agent_id = None
+                continue
+            existing_fallback = db.query(ChannelConfig).filter_by(
+                team_agent_id=fallback_team_id,
+                type=channel.type,
+            ).first()
+            if existing_fallback:
+                db.delete(channel)
+            else:
+                channel.team_agent_id = fallback_team_id
+        db.query(Conversation).filter_by(team_agent_id=team_id).update(
+            {"team_agent_id": fallback_team_id},
+            synchronize_session=False,
+        )
+
+        db.delete(team)
+        return True
+
+
+def get_team_agent_members(team_id: int) -> List[Dict[str, Any]]:
+    """Get all members of a team agent"""
+    with get_db() as db:
+        members = db.query(TeamAgentMember).filter_by(team_agent_id=team_id).order_by(
+            TeamAgentMember.sort_order
+        ).all()
+        result = []
+        for m in members:
+            agent = db.query(Agent).filter_by(id=m.agent_id).first()
+            result.append({
+                "agent_id": m.agent_id,
+                "agent_name": agent.name if agent else "Unknown",
+                "role": m.role,
+                "sort_order": m.sort_order,
+            })
+        return result
+
+
+def set_team_agent_members(
+    team_id: int, member_agent_ids: List[int], starting_agent_id: Optional[int] = None
+) -> bool:
+    """Set the members of a team agent, replacing existing members.
+
+    Ensures the team has exactly one starting agent when it has members and
+    removes handoff edges from team members to agents outside the team.
+    """
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        if not team:
+            return False
+
+        valid_agent_ids = [
+            row.id for row in db.query(Agent.id).filter(Agent.id.in_(member_agent_ids)).all()
+        ] if member_agent_ids else []
+        member_agent_ids = list(dict.fromkeys(valid_agent_ids))
+        if member_agent_ids and starting_agent_id not in member_agent_ids:
+            starting_agent_id = member_agent_ids[0]
+        if not member_agent_ids:
+            starting_agent_id = None
+
+        # Remove existing members
+        db.query(TeamAgentMember).filter_by(team_agent_id=team_id).delete()
+
+        # Add new members
+        for sort_order, agent_id in enumerate(member_agent_ids):
+            role = "starting" if agent_id == starting_agent_id else "member"
+            member = TeamAgentMember(
+                team_agent_id=team_id,
+                agent_id=agent_id,
+                role=role,
+                sort_order=sort_order,
+            )
+            db.add(member)
+
+        if member_agent_ids:
+            db.query(AgentHandoff).filter(
+                AgentHandoff.from_agent_id.in_(member_agent_ids),
+                ~AgentHandoff.to_agent_id.in_(member_agent_ids),
+            ).delete(synchronize_session=False)
+
+        return True
+
+
+def set_starting_agent(team_id: int, agent_id: int) -> bool:
+    """Set the starting agent for a team"""
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        if not team:
+            return False
+
+        # Verify agent is a member
+        member = db.query(TeamAgentMember).filter_by(
+            team_agent_id=team_id, agent_id=agent_id
+        ).first()
+        if not member:
+            return False
+
+        # Unset current starting
+        db.query(TeamAgentMember).filter_by(
+            team_agent_id=team_id, role="starting"
+        ).update({"role": "member"})
+
+        # Set new starting
+        member.role = "starting"
+        return True
+
+
+def get_team_tools(team_id: int) -> List[Dict[str, Any]]:
+    """Get tools available to a team (owned + shared_in + global)"""
+    with get_db() as db:
+        # Tools owned by this team
+        owned = db.query(Tool).filter_by(owner_team_agent_id=team_id).all()
+        # Global tools
+        global_tools = db.query(Tool).filter_by(visibility="global").all()
+        # Tools shared into this team via team_tool_assignments
+        shared_ids = [
+            row.tool_id for row in
+            db.query(TeamToolAssignment.tool_id).filter_by(
+                team_agent_id=team_id, relationship="shared_in"
+            ).all()
+        ]
+        shared = db.query(Tool).filter(Tool.id.in_(shared_ids)).all() if shared_ids else []
+
+        all_tools = {t.id: t for t in owned + global_tools + shared}
+        return [
+            {
+                "id": t.id,
+                "name": t.name,
+                "type": t.type,
+                "config": json.dumps(t.config) if t.config else None,
+                "visibility": t.visibility,
+                "owner_team_agent_id": t.owner_team_agent_id,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            }
+            for t in all_tools.values()
+        ]
+
+
+def get_default_team_id() -> Optional[int]:
+    """Get the ID of the Default Team"""
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(slug="default").first()
+        return team.id if team else None
 
 
 # Initialize database on module import

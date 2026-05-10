@@ -9,6 +9,7 @@ import {
     getChannelConfigs,
     updateChannelConfig,
 } from "@/lib/channelConfigs";
+import { useTeam } from "@/lib/team-context";
 
 interface FieldDef {
     key: string;
@@ -42,6 +43,7 @@ const FIELD_PLACEHOLDERS: Record<string, Record<string, string>> = {
 };
 
 export default function ChannelConfigForm({ channelType }: { channelType: MessagingChannelType }) {
+    const { selectedTeamId } = useTeam();
     const [config, setConfig] = useState<ChannelConfig | null>(null);
     const [formValues, setFormValues] = useState<Record<string, string>>({});
     const [isActive, setIsActive] = useState(false);
@@ -58,7 +60,7 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
         if (!token) return;
         try {
             setLoading(true);
-            const configs = await getChannelConfigs(token);
+            const configs = await getChannelConfigs(token, selectedTeamId);
             const cfg = configs.find((c) => c.type === channelType);
             if (cfg) {
                 setConfig(cfg);
@@ -71,7 +73,7 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
         } finally {
             setLoading(false);
         }
-    }, [channelType, token]);
+    }, [channelType, token, selectedTeamId]);
 
     useEffect(() => {
         loadConfig();
@@ -88,7 +90,7 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
                 config: formValues,
                 is_active: isActive,
             };
-            const updated = await updateChannelConfig(token, channelType, data);
+            const updated = await updateChannelConfig(token, channelType, data, selectedTeamId);
             setConfig(updated);
             setSuccess("Configuration saved successfully.");
             setTimeout(() => setSuccess(null), 3000);
@@ -100,9 +102,10 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
     };
 
     const webhookPath =
-        channelType === "line"
+        formValues.webhook_url ||
+        (channelType === "line"
             ? "/api/public/channels/line/webhook"
-            : "/api/public/channels/facebook/webhook";
+            : "/api/public/channels/facebook/webhook");
 
     const webhookUrl = `${serverUrl}${webhookPath}`;
 

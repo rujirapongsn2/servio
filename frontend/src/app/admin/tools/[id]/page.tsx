@@ -1,15 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { IconPicker } from "@/components/IconPicker";
+import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { getApiBaseUrl } from "@/lib/api";
+import { useTeam } from "@/lib/team-context";
 
-export default function EditToolPage() {
+function EditToolForm() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const toolId = params.id as string;
   const apiBaseUrl = getApiBaseUrl();
+  const { selectedTeamId, setSelectedTeamId } = useTeam();
+  const routeTeamId = searchParams.get("team_agent_id")
+    ? parseInt(searchParams.get("team_agent_id") as string)
+    : null;
+  const effectiveTeamId = routeTeamId ?? selectedTeamId;
 
   const [loading, setLoading] = useState(true);
   const [toolType, setToolType] = useState<"custom_api" | "mcp_streamable_http">("custom_api");
@@ -26,6 +34,7 @@ export default function EditToolPage() {
     auth_param_name: "apikey",
     auth_header_name: "X-API-Key",
     icon: "Wrench",
+    visibility: "team",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -37,7 +46,8 @@ export default function EditToolPage() {
   const fetchTool = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/tools/${toolId}`, {
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools/${toolId}${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -62,6 +72,7 @@ export default function EditToolPage() {
         auth_param_name: config.auth_param_name || "apikey",
         auth_header_name: config.auth_header_name || "X-API-Key",
         icon: tool.icon || "Wrench",
+        visibility: tool.visibility || "team",
       });
     } catch (err: any) {
       setError(err.message || "Failed to load tool");
@@ -108,7 +119,8 @@ export default function EditToolPage() {
         config.timeout_seconds = parseInt(formData.timeout_seconds) || 60;
       }
 
-      const response = await fetch(`${apiBaseUrl}/api/admin/tools/${toolId}`, {
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools/${toolId}${params}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -118,6 +130,7 @@ export default function EditToolPage() {
           name: formData.name,
           config: config,
           icon: formData.icon,
+          visibility: formData.visibility,
         }),
       });
 
@@ -140,6 +153,16 @@ export default function EditToolPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
+      <WorkflowNavigator
+        backLabel="Tools"
+        backHref="/admin/tools"
+        steps={[
+          { label: "Team Agents", href: "/admin/teams" },
+          { label: "Tools", href: "/admin/tools" },
+          { label: "Edit Tool", active: true },
+        ]}
+      />
+
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
           Edit Tool
@@ -193,6 +216,22 @@ export default function EditToolPage() {
               selectedIcon={formData.icon}
               onIconSelect={(icon) => setFormData({ ...formData, icon })}
             />
+
+            {effectiveTeamId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Visibility
+                </label>
+                <select
+                  value={formData.visibility}
+                  onChange={(e) => setFormData({ ...formData, visibility: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                >
+                  <option value="team">Private (this team only)</option>
+                  <option value="global">Global (all teams can use)</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -381,5 +420,13 @@ export default function EditToolPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function EditToolPage() {
+  return (
+    <Suspense>
+      <EditToolForm />
+    </Suspense>
   );
 }

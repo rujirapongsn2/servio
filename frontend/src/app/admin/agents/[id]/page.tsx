@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { Sparkles, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
+import { useTeam } from "@/lib/team-context";
 
 interface Tool {
   id: number;
@@ -33,9 +35,23 @@ interface Agent {
 export default function AgentEditorPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const apiBaseUrl = getApiBaseUrl();
+  const { selectedTeamId, setSelectedTeamId } = useTeam();
   const isNew = params.id === "new";
   const agentId = isNew ? null : parseInt(params.id as string);
+  const routeTeamId = searchParams.get("team_agent_id")
+    ? parseInt(searchParams.get("team_agent_id") as string)
+    : null;
+  const returnTeamId = searchParams.get("return_team_id")
+    ? parseInt(searchParams.get("return_team_id") as string)
+    : null;
+  const returnTeamName = searchParams.get("return_team_name");
+  const effectiveTeamId = routeTeamId ?? selectedTeamId;
+  const teamManageHref = returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams";
+  const autoSelectToolId = searchParams.get("auto_select_tool_id")
+    ? parseInt(searchParams.get("auto_select_tool_id") as string)
+    : null;
 
   const [formData, setFormData] = useState<Agent>({
     name: "",
@@ -61,13 +77,16 @@ export default function AgentEditorPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (routeTeamId) {
+      setSelectedTeamId(routeTeamId);
+    }
     fetchTools();
     fetchAgents();
     fetchProviders();
     if (!isNew && agentId) {
       fetchAgent();
     }
-  }, []);
+  }, [effectiveTeamId]);
 
   const fetchProviders = async () => {
     try {
@@ -107,11 +126,27 @@ export default function AgentEditorPage() {
   const fetchTools = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/tools`, {
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       setAvailableTools(data);
+      setFormData((prev) => {
+        let tools = prev.tools;
+        const dateTimeTool = data.find((tool: Tool) => tool.name === "DateTimeTool");
+        if (dateTimeTool && !tools.some((t) => t.id === dateTimeTool.id)) {
+          tools = [...tools, dateTimeTool];
+        }
+        if (autoSelectToolId) {
+          const autoTool = data.find((tool: Tool) => tool.id === autoSelectToolId);
+          if (autoTool && !tools.some((t) => t.id === autoTool.id)) {
+            tools = [...tools, autoTool];
+          }
+        }
+        if (tools === prev.tools) return prev;
+        return { ...prev, tools };
+      });
     } catch (error) {
       console.error("Failed to fetch tools:", error);
     }
@@ -120,7 +155,8 @@ export default function AgentEditorPage() {
   const fetchAgents = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/agents`, {
+      const query = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/agents${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -135,8 +171,9 @@ export default function AgentEditorPage() {
   const fetchAgent = async () => {
     try {
       const token = localStorage.getItem("adminToken");
+      const query = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
       const response = await fetch(
-        `${apiBaseUrl}/api/admin/agents/${agentId}`,
+        `${apiBaseUrl}/api/admin/agents/${agentId}${query}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -173,20 +210,32 @@ export default function AgentEditorPage() {
     try {
       const token = localStorage.getItem("adminToken");
       const payload = {
+        ...(availableTools.find((tool) => tool.name === "DateTimeTool")
+          ? {
+              tool_ids: Array.from(
+                new Set([
+                  ...formData.tools.map((t) => t.id),
+                  availableTools.find((tool) => tool.name === "DateTimeTool")!.id,
+                ])
+              ),
+            }
+          : {
+              tool_ids: formData.tools.map((t) => t.id),
+            }),
         name: formData.name,
         model: formData.model,
         instructions: formData.instructions,
-        tool_ids: formData.tools.map((t) => t.id),
         handoff_agent_ids: formData.handoffs.map((h) => h.id),
         is_starting_agent: formData.is_starting_agent,
         llm_provider_id: formData.llm_provider_id,
       };
 
+      const query = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
       const url = isNew
         ? `${apiBaseUrl}/api/admin/agents`
         : `${apiBaseUrl}/api/admin/agents/${agentId}`;
 
-      const response = await fetch(url, {
+      const response = await fetch(`${url}${query}`, {
         method: isNew ? "POST" : "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -200,7 +249,41 @@ export default function AgentEditorPage() {
         throw new Error(data.detail || "Failed to save agent");
       }
 
-      router.push("/admin/agents");
+      const result = await response.json();
+      if (isNew && returnTeamId) {
+        const idMatch = result.message?.match(/ID\s+(\d+)/);
+        const createdAgentId = idMatch ? parseInt(idMatch[1]) : null;
+        if (createdAgentId) {
+          const teamRes = await fetch(`${apiBaseUrl}/api/admin/team-agents/${returnTeamId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (teamRes.ok) {
+            const team = await teamRes.json();
+            const existingMembers = team.members || [];
+            const memberIds = Array.from(new Set([
+              ...existingMembers.map((member: any) => member.agent_id),
+              createdAgentId,
+            ]));
+            const currentStarting = existingMembers.find((member: any) => member.role === "starting")?.agent_id;
+            const startingAgentId = formData.is_starting_agent || !currentStarting
+              ? createdAgentId
+              : currentStarting;
+            await fetch(`${apiBaseUrl}/api/admin/team-agents/${returnTeamId}/members`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                member_agent_ids: memberIds,
+                starting_agent_id: startingAgentId,
+              }),
+            });
+          }
+        }
+      }
+
+      router.push(teamManageHref);
     } catch (err: any) {
       setError(err.message || "An error occurred while saving");
     } finally {
@@ -209,6 +292,9 @@ export default function AgentEditorPage() {
   };
 
   const toggleTool = (tool: Tool) => {
+    if (tool.name === "DateTimeTool") {
+      return;
+    }
     if (formData.tools.some((t) => t.id === tool.id)) {
       setFormData({
         ...formData,
@@ -311,6 +397,22 @@ export default function AgentEditorPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
+      <WorkflowNavigator
+        backLabel={returnTeamId ? "Team Manage" : "Team Agents"}
+        backHref={teamManageHref}
+        steps={[
+          { label: "Team Agents", href: returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams" },
+          ...(returnTeamId
+            ? [{ label: returnTeamName || "Manage Team", href: teamManageHref }]
+            : []),
+          { label: isNew ? "Create Agent" : "Edit Agent", active: true },
+        ]}
+        actions={[
+          { label: "Tools", href: `/admin/tools?team_agent_id=${effectiveTeamId}`, variant: "outline" },
+          { label: "Providers", href: "/admin/providers", variant: "outline" },
+        ]}
+      />
+
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
           {isNew ? "Create New Agent" : `Edit Agent: ${formData.name}`}
@@ -466,9 +568,7 @@ export default function AgentEditorPage() {
               Tools
             </h2>
             <Link
-              href="/admin/tools"
-              target="_blank"
-              rel="noopener noreferrer"
+              href={`/admin/tools?team_agent_id=${effectiveTeamId}${agentId ? `&source_agent_id=${agentId}` : ""}&return_agent_id=${params.id}&return_team_id=${returnTeamId ?? ""}&return_team_name=${encodeURIComponent(returnTeamName || "")}`}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/20 hover:bg-blue-200 dark:hover:bg-blue-900/30 transition-colors"
             >
               <Wrench className="w-3.5 h-3.5" />
@@ -488,6 +588,7 @@ export default function AgentEditorPage() {
                   type="checkbox"
                   checked={formData.tools.some((t) => t.id === tool.id)}
                   onChange={() => toggleTool(tool)}
+                  disabled={tool.name === "DateTimeTool"}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <div className="flex-1">
@@ -546,7 +647,7 @@ export default function AgentEditorPage() {
         <div className="flex justify-end space-x-3">
           <button
             type="button"
-            onClick={() => router.push("/admin/agents")}
+            onClick={() => router.push(teamManageHref)}
             className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             Cancel

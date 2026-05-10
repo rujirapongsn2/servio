@@ -9,6 +9,7 @@ import {
   deleteApiKey,
   type ApiKey,
 } from "@/lib/apiKeys";
+import { useTeam } from "@/lib/team-context";
 
 interface ApiKeyManagerProps {
   onApiKeySelect?: (apiKey: string) => void;
@@ -16,6 +17,7 @@ interface ApiKeyManagerProps {
 }
 
 export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerProps) {
+  const { selectedTeamId } = useTeam();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -58,7 +60,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
 
   useEffect(() => {
     loadApiKeys();
-  }, [token]); // Re-load when token changes
+  }, [token, selectedTeamId]); // Re-load when token or selected team changes
 
   const loadApiKeys = async (): Promise<ApiKey[] | undefined> => {
     setError("");
@@ -70,7 +72,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
 
     try {
       setLoading(true);
-      const keys = await getAllApiKeys(token);
+      const keys = await getAllApiKeys(token, selectedTeamId);
       setApiKeys(keys);
       // ... logic continues ...
 
@@ -126,6 +128,8 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
         expires_days: newKeyExpireDays || undefined,
         allowed_domains: allowedDomains.length > 0 ? allowedDomains : undefined,
         voice_response_enabled: newKeyVoiceResponse,
+        team_agent_id: selectedTeamId,
+        channel_type: "web_widget",
       });
 
       // Extract API key from message
@@ -171,7 +175,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
     if (!token) return;
 
     try {
-      await updateApiKey(token, keyId, { is_active: !isActive });
+      await updateApiKey(token, keyId, { is_active: !isActive, team_agent_id: selectedTeamId ?? undefined });
       await loadApiKeys();
     } catch (err) {
       setError(
@@ -240,6 +244,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
       await updateApiKey(token, keyId, {
         allowed_domains: allowedDomains.length > 0 ? allowedDomains : undefined,
         voice_response_enabled: editVoiceResponse,
+        team_agent_id: selectedTeamId ?? undefined,
       });
 
       setEditingKeyId(null);

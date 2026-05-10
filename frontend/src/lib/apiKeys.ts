@@ -12,6 +12,8 @@ export interface ApiKey {
   allowed_domains: string[] | null;
   voice_response_enabled: boolean;
   slug?: string;
+  team_agent_id?: number | null;
+  channel_type?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +23,8 @@ export interface CreateApiKeyRequest {
   expires_days?: number;
   allowed_domains?: string[];
   voice_response_enabled?: boolean;
+  team_agent_id?: number | null;
+  channel_type?: string;
 }
 
 export interface UpdateApiKeyRequest {
@@ -29,10 +33,13 @@ export interface UpdateApiKeyRequest {
   expires_at?: string;
   allowed_domains?: string[];
   voice_response_enabled?: boolean;
+  team_agent_id?: number | null;
+  channel_type?: string;
 }
 
-export async function getAllApiKeys(token: string): Promise<ApiKey[]> {
-  const response = await fetch(buildApiUrl("/api/admin/api-keys"), {
+export async function getAllApiKeys(token: string, teamAgentId?: number | null): Promise<ApiKey[]> {
+  const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
+  const response = await fetch(buildApiUrl(`/api/admin/api-keys${params}`), {
     headers: {
       Authorization: `Bearer ${token}`,
     },

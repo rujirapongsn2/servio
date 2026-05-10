@@ -1,5 +1,6 @@
 import base64
 import json
+from typing import Optional
 
 import numpy as np
 from agents import (
@@ -74,7 +75,18 @@ def concat_audio_chunks(chunks) -> AudioInput:
 
 
 class WebsocketHelper:
-    def __init__(self, websocket: WebSocket, history: list, initial_agent: Agent, session_id: str, voice_response_enabled: bool = True):
+    def __init__(
+        self,
+        websocket: WebSocket,
+        history: list,
+        initial_agent: Agent,
+        session_id: str,
+        voice_response_enabled: bool = True,
+        team_agent_id: Optional[int] = None,
+        channel_type: Optional[str] = None,
+        channel_user_id: Optional[str] = None,
+        api_key_id: Optional[int] = None,
+    ):
         self.websocket = websocket
         self.history = history or []
         self.latest_agent = initial_agent
@@ -84,7 +96,13 @@ class WebsocketHelper:
 
         # Initialize analytics tracking
         self.analytics = get_analytics_service()
-        self.conversation_id = self.analytics.start_conversation(session_id)
+        self.conversation_id = self.analytics.start_conversation(
+            session_id,
+            team_agent_id=team_agent_id,
+            channel_type=channel_type,
+            channel_user_id=channel_user_id,
+            api_key_id=api_key_id,
+        )
 
     async def show_user_input(self, user_input: str):
         self.history.append(

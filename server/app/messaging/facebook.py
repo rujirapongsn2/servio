@@ -134,8 +134,8 @@ class FacebookClient:
             raise
 
 
-def get_facebook_client_from_db(db_getter) -> Optional[FacebookClient]:
-    config = db_getter("facebook")
+def get_facebook_client_from_db(db_getter, team_agent_id=None) -> Optional[FacebookClient]:
+    config = db_getter("facebook", team_agent_id=team_agent_id)
     if not config or not config.get("is_active"):
         return None
     cfg = config.get("config", {})

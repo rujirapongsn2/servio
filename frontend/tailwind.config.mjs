@@ -1,7 +1,7 @@
 const config = {
   theme: {
     fontFamily: {
-      sans: ['"SF Pro text"', "system-ui", "sans-serif"],
+      sans: ['"Softnix Cereal VF"', "Circular", "-apple-system", "system-ui", "Roboto", '"Helvetica Neue"', "sans-serif"],
       serif: ['"New York"', "serif"],
     },
     extend: {

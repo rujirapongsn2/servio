@@ -2,6 +2,7 @@
 
 # Servio service manager
 # Usage examples:
+#   ./services.sh install
 #   ./services.sh start
 #   ./services.sh start frontend
 #   ./services.sh restart backend
@@ -30,6 +31,7 @@ Usage:
   ./services.sh <command> [service] [options]
 
 Commands:
+  install               Guided first-time setup for Linux, then build and start
   start [service]       Start services in the background
   restart [service]     Restart running services
   rebuild [service]     Rebuild image(s), then recreate services
@@ -51,8 +53,11 @@ Options:
   --no-cache            For rebuild/update: rebuild images without cache
   --kill-ports          Kill non-Docker processes using ports 80/443 before start
   --allow-dirty         For update: allow git pull with local changes
+  --no-start            For install: write config and build, but do not start
+  --force-env           For install: replace existing .env after making a backup
 
 Examples:
+  ./services.sh install
   ./services.sh start
   ./services.sh start frontend
   ./services.sh restart backend
@@ -87,10 +92,7 @@ check_docker() {
 
 ensure_env() {
   if [ ! -f ".env" ]; then
-    if [ -f ".env.example" ]; then
-      fail ".env file not found. Create it first: cp .env.example .env, then add OPENAI_API_KEY."
-    fi
-    fail ".env file not found. Create .env with at least OPENAI_API_KEY."
+    fail ".env file not found. Run ./services.sh install first, or create .env manually with at least OPENAI_API_KEY."
   fi
 
   if ! grep -E '^OPENAI_API_KEY=.+$' .env >/dev/null 2>&1; then
@@ -219,6 +221,8 @@ parse_common_args() {
   NO_CACHE=0
   KILL_PORTS=0
   ALLOW_DIRTY=0
+  NO_START=0
+  FORCE_ENV=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -226,6 +230,8 @@ parse_common_args() {
       --no-cache) NO_CACHE=1 ;;
       --kill-ports) KILL_PORTS=1 ;;
       --allow-dirty) ALLOW_DIRTY=1 ;;
+      --no-start) NO_START=1 ;;
+      --force-env) FORCE_ENV=1 ;;
       -h|--help) usage; exit 0 ;;
       -*)
         fail "Unknown option '$1'"
@@ -252,6 +258,218 @@ run_compose_with_optional_services() {
   else
     "${COMPOSE[@]}" "$@"
   fi
+}
+
+is_interactive() {
+  [ -t 0 ] && [ -t 1 ]
+}
+
+random_hex() {
+  local bytes="${1:-24}"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex "$bytes"
+  else
+    tr -dc 'A-Za-z0-9' </dev/urandom | head -c $((bytes * 2))
+    echo
+  fi
+}
+
+prompt_value() {
+  local label="$1"
+  local default_value="${2:-}"
+  local required="${3:-0}"
+  local value=""
+
+  if ! is_interactive; then
+    echo "$default_value"
+    return 0
+  fi
+
+  while true; do
+    if [ -n "$default_value" ]; then
+      read -r -p "$label [$default_value]: " value
+      value="${value:-$default_value}"
+    else
+      read -r -p "$label: " value
+    fi
+
+    if [ "$required" != "1" ] || [ -n "$value" ]; then
+      echo "$value"
+      return 0
+    fi
+    warn "This value is required."
+  done
+}
+
+prompt_secret_value() {
+  local label="$1"
+  local required="${2:-0}"
+  local value=""
+
+  if ! is_interactive; then
+    echo ""
+    return 0
+  fi
+
+  while true; do
+    read -r -s -p "$label: " value
+    echo >&2
+    if [ "$required" != "1" ] || [ -n "$value" ]; then
+      echo "$value"
+      return 0
+    fi
+    warn "This value is required."
+  done
+}
+
+write_env_file() {
+  local tmp_file=".env.install.tmp"
+  local openai_api_key="$1"
+  local softnix_api_key="$2"
+  local gemini_api_key="$3"
+  local postgres_user="$4"
+  local postgres_password="$5"
+  local postgres_db="$6"
+  local postgres_port="$7"
+  local backend_port="$8"
+  local frontend_port="$9"
+  local public_api_url="${10}"
+  local public_ws_endpoint="${11}"
+  local allowed_origins="${12}"
+  local jwt_secret="${13}"
+
+  {
+    printf 'OPENAI_API_KEY=%s\n' "$openai_api_key"
+    printf 'SOFTNIX_API_KEY=%s\n' "$softnix_api_key"
+    printf 'GEMINI_API_KEY=%s\n' "$gemini_api_key"
+    printf '\n'
+    printf 'POSTGRES_USER=%s\n' "$postgres_user"
+    printf 'POSTGRES_PASSWORD=%s\n' "$postgres_password"
+    printf 'POSTGRES_DB=%s\n' "$postgres_db"
+    printf 'POSTGRES_PORT=%s\n' "$postgres_port"
+    printf 'DATABASE_URL=postgresql://%s:%s@postgres:5432/%s\n' "$postgres_user" "$postgres_password" "$postgres_db"
+    printf '\n'
+    printf 'BACKEND_PORT=%s\n' "$backend_port"
+    printf 'FRONTEND_PORT=%s\n' "$frontend_port"
+    printf '\n'
+    printf 'NEXT_PUBLIC_API_URL=%s\n' "$public_api_url"
+    printf 'NEXT_PUBLIC_WEBSOCKET_ENDPOINT=%s\n' "$public_ws_endpoint"
+    printf 'ALLOWED_ORIGINS=%s\n' "$allowed_origins"
+    printf '\n'
+    printf 'JWT_SECRET_KEY=%s\n' "$jwt_secret"
+  } > "$tmp_file"
+
+  chmod 600 "$tmp_file" 2>/dev/null || true
+  mv "$tmp_file" ".env"
+}
+
+cmd_install() {
+  parse_common_args "$@"
+  TARGET="all"
+
+  if [ "$(uname -s)" != "Linux" ]; then
+    warn "This installer is designed for Linux. Continuing because Docker-based setup may still work on this OS."
+  fi
+
+  check_docker
+
+  if [ -f ".env" ] && [ "$FORCE_ENV" != "1" ]; then
+    if is_interactive; then
+      local answer
+      read -r -p ".env already exists. Reconfigure it now? [y/N]: " answer
+      case "$answer" in
+        y|Y|yes|YES) ;;
+        *)
+          info "Keeping existing .env"
+          generate_certs
+          check_ports "$KILL_PORTS"
+          info "Building images..."
+          "${COMPOSE[@]}" build
+          if [ "$NO_START" = "1" ]; then
+            success "Install completed. Start later with: ./services.sh start"
+            return 0
+          fi
+          info "Starting Servio..."
+          "${COMPOSE[@]}" up -d
+          refresh_proxy_if_needed "all"
+          show_urls
+          return 0
+          ;;
+      esac
+    else
+      info "Keeping existing .env in non-interactive mode."
+      generate_certs
+      check_ports "$KILL_PORTS"
+      "${COMPOSE[@]}" build
+      [ "$NO_START" = "1" ] || "${COMPOSE[@]}" up -d
+      [ "$NO_START" = "1" ] || show_urls
+      return 0
+    fi
+  fi
+
+  if [ -f ".env" ]; then
+    local backup=".env.backup.$(date +%Y%m%d%H%M%S)"
+    cp .env "$backup"
+    chmod 600 "$backup" 2>/dev/null || true
+    warn "Existing .env backed up to $backup"
+  fi
+
+  info "Configuring Servio environment..."
+  local default_public_url="https://localhost"
+  local default_ws_endpoint="wss://localhost/ws"
+  local default_allowed_origins="https://localhost,http://localhost"
+  local postgres_user postgres_password postgres_db postgres_port backend_port frontend_port
+  local public_api_url public_ws_endpoint allowed_origins jwt_secret
+  local openai_api_key softnix_api_key gemini_api_key
+
+  openai_api_key="$(prompt_secret_value "OpenAI API key (leave blank to configure later)" 0)"
+  softnix_api_key="$(prompt_secret_value "Softnix API key (optional, leave blank to skip)" 0)"
+  gemini_api_key="$(prompt_secret_value "Gemini API key (optional, leave blank to skip)" 0)"
+
+  postgres_user="$(prompt_value "PostgreSQL user" "postgres" 1)"
+  postgres_password="$(prompt_value "PostgreSQL password" "$(random_hex 18)" 1)"
+  postgres_db="$(prompt_value "PostgreSQL database" "voice_agents" 1)"
+  postgres_port="$(prompt_value "PostgreSQL port" "5432" 1)"
+  backend_port="$(prompt_value "Backend internal port" "8000" 1)"
+  frontend_port="$(prompt_value "Frontend internal port" "3000" 1)"
+  public_api_url="$(prompt_value "Public API URL" "$default_public_url" 1)"
+  public_ws_endpoint="$(prompt_value "Public WebSocket endpoint" "$default_ws_endpoint" 1)"
+  allowed_origins="$(prompt_value "Allowed CORS origins" "$default_allowed_origins" 1)"
+  jwt_secret="$(prompt_value "JWT secret" "$(random_hex 32)" 1)"
+
+  write_env_file \
+    "$openai_api_key" \
+    "$softnix_api_key" \
+    "$gemini_api_key" \
+    "$postgres_user" \
+    "$postgres_password" \
+    "$postgres_db" \
+    "$postgres_port" \
+    "$backend_port" \
+    "$frontend_port" \
+    "$public_api_url" \
+    "$public_ws_endpoint" \
+    "$allowed_origins" \
+    "$jwt_secret"
+
+  mkdir -p server/data nginx/certs
+  chmod 700 server/data 2>/dev/null || true
+  generate_certs
+  check_ports "$KILL_PORTS"
+
+  info "Building Servio images..."
+  "${COMPOSE[@]}" build
+
+  if [ "$NO_START" = "1" ]; then
+    success "Install completed. Start later with: ./services.sh start"
+    return 0
+  fi
+
+  info "Starting Servio..."
+  "${COMPOSE[@]}" up -d
+  refresh_proxy_if_needed "all"
+  show_urls
+  success "Install completed."
 }
 
 cmd_start() {
@@ -383,6 +601,7 @@ main() {
   shift || true
 
   case "$command" in
+    install) cmd_install "$@" ;;
     start) cmd_start "$@" ;;
     stop) cmd_stop "$@" ;;
     restart) cmd_restart "$@" ;;

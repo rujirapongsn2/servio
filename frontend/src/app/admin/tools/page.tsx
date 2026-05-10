@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Wrench,
   Plus,
@@ -16,13 +17,16 @@ import {
   Cloud,
   Database,
   Upload,
-  Play
+  Play,
+  Shield,
 } from "lucide-react";
 import { AVAILABLE_ICONS } from "@/components/IconPicker";
+import WorkflowNavigator from "@/components/WorkflowNavigator";
 import CreateFileStoreModal from "@/components/CreateFileStoreModal";
 import FileStoreDetailModal from "@/components/FileStoreDetailModal";
 import TestFileStoreModal from "@/components/TestFileStoreModal";
 import { getApiBaseUrl } from "@/lib/api";
+import { useTeam } from "@/lib/team-context";
 
 interface Tool {
   id: number;
@@ -31,6 +35,11 @@ interface Tool {
   config: string | null;
   icon: string;
   created_at: string;
+  visibility?: string;
+  owner_team_agent_id?: number | null;
+  owner_team_name?: string | null;
+  created_by_username?: string | null;
+  agent_usage_count?: number;
 }
 
 // Helper function to get icon for tool
@@ -51,8 +60,28 @@ const getToolIcon = (toolName: string, toolType: string) => {
   return Wrench;
 };
 
-export default function ToolsPage() {
+function ToolsPageInner() {
   const apiBaseUrl = getApiBaseUrl();
+  const { selectedTeamId, setSelectedTeamId } = useTeam();
+  const searchParams = useSearchParams();
+  const routeTeamId = searchParams.get("team_agent_id")
+    ? parseInt(searchParams.get("team_agent_id") as string)
+    : null;
+  const sourceAgentId = searchParams.get("source_agent_id")
+    ? parseInt(searchParams.get("source_agent_id") as string)
+    : null;
+  const returnAgentId = searchParams.get("return_agent_id");
+  const returnTeamId = searchParams.get("return_team_id");
+  const returnTeamName = searchParams.get("return_team_name");
+  const effectiveTeamId = routeTeamId ?? selectedTeamId;
+  const newToolQuery = [
+    effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
+    sourceAgentId ? `source_agent_id=${sourceAgentId}` : "",
+    returnAgentId ? `return_agent_id=${returnAgentId}` : "",
+    returnTeamId ? `return_team_id=${returnTeamId}` : "",
+    returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+  ].filter(Boolean).join("&");
+
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFileStoreModal, setShowFileStoreModal] = useState(false);
@@ -61,13 +90,17 @@ export default function ToolsPage() {
   const [showTestModal, setShowTestModal] = useState(false);
 
   useEffect(() => {
+    if (routeTeamId && routeTeamId !== selectedTeamId) {
+      setSelectedTeamId(routeTeamId);
+    }
     fetchTools();
-  }, []);
+  }, [effectiveTeamId]);
 
   const fetchTools = async () => {
     try {
       const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/tools`, {
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/tools${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -87,8 +120,9 @@ export default function ToolsPage() {
 
     try {
       const token = localStorage.getItem("adminToken");
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
       const response = await fetch(
-        `${apiBaseUrl}/api/admin/tools/${id}`,
+        `${apiBaseUrl}/api/admin/tools/${id}${params}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
@@ -173,6 +207,19 @@ export default function ToolsPage() {
 
   return (
     <div className="space-y-6">
+      <WorkflowNavigator
+        backLabel="Team Agents"
+        backHref="/admin/teams"
+        steps={[
+          { label: "Team Agents", href: "/admin/teams" },
+          { label: "Tools", active: true },
+        ]}
+        actions={[
+          { label: "New Tool", href: `/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`, variant: "primary" },
+          { label: "Channels", href: "/admin/tools/channels", variant: "outline" },
+        ]}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -183,7 +230,7 @@ export default function ToolsPage() {
           </p>
         </div>
         <Link
-          href="/admin/tools/new"
+          href={`/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`}
           className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           <Plus className="w-4 h-4" />
@@ -215,6 +262,9 @@ export default function ToolsPage() {
                         </h3>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                           {config.description || "Built-in system tool"}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                          Owner: {tool.owner_team_name || "N/A"} | Created by: {tool.created_by_username || "N/A"} | Used by {tool.agent_usage_count ?? 0} agent(s)
                         </p>
                       </div>
                     </div>
@@ -286,6 +336,9 @@ export default function ToolsPage() {
                       <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
                         {config.description || "No description"}
                       </p>
+                      <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        Owner: {tool.owner_team_name || "N/A"} | Created by: {tool.created_by_username || "N/A"} | Used by {tool.agent_usage_count ?? 0} agent(s)
+                      </p>
                     </div>
 
                     {/* Actions */}
@@ -331,7 +384,7 @@ export default function ToolsPage() {
               No custom tools found. Create your first custom tool to integrate external APIs or MCP servers.
             </p>
             <Link
-              href="/admin/tools/new"
+              href={`/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
             >
               Create Custom Tool
@@ -342,6 +395,10 @@ export default function ToolsPage() {
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {customTools.map((tool) => {
                 const config = tool.config ? JSON.parse(tool.config) : {};
+                const isOwned = effectiveTeamId && tool.owner_team_agent_id === effectiveTeamId;
+                const isGlobal = tool.visibility === "global";
+                const isSystem = tool.type === "builtin";
+                const canEdit = !effectiveTeamId || isOwned || isSystem;
                 // Use stored icon or fallback to helper function
                 const IconComponent = AVAILABLE_ICONS[tool.icon] || getToolIcon(tool.name, tool.type);
                 return (
@@ -371,9 +428,28 @@ export default function ToolsPage() {
                             }`}>
                               {tool.type === "mcp_streamable_http" ? "MCP" : "Custom API"}
                             </span>
+                            {/* Ownership badges */}
+                            {effectiveTeamId && isOwned && (
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400">
+                                Owned by this team
+                              </span>
+                            )}
+                            {effectiveTeamId && isGlobal && !isOwned && (
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400">
+                                Global shared
+                              </span>
+                            )}
+                            {effectiveTeamId && !isOwned && !isGlobal && (
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                                Other team
+                              </span>
+                            )}
                           </div>
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {config.description || "Custom API tool"}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                            Owner: {tool.owner_team_name || "N/A"} | Created by: {tool.created_by_username || "N/A"} | Used by {tool.agent_usage_count ?? 0} agent(s)
                           </p>
                           {config.endpoint && (
                             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500 truncate">
@@ -383,20 +459,32 @@ export default function ToolsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Link
-                          href={`/admin/tools/${tool.id}`}
-                          className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-                          title="Edit Tool"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Link>
-                        <button
-                          onClick={() => handleDelete(tool.id)}
-                          className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete Tool"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canEdit ? (
+                          <Link
+                            href={`/admin/tools/${tool.id}?team_agent_id=${effectiveTeamId}`}
+                            className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                            title="Edit Tool"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Link>
+                        ) : (
+                          <span className="p-2 text-gray-300 dark:text-gray-600 cursor-not-allowed" title="Only the owning team can edit this tool">
+                            <Pencil className="w-4 h-4" />
+                          </span>
+                        )}
+                        {canEdit ? (
+                          <button
+                            onClick={() => handleDelete(tool.id)}
+                            className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                            title="Delete Tool"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <span className="p-2 text-gray-300 dark:text-gray-600 cursor-not-allowed" title="Only the owning team can delete this tool">
+                            <Trash2 className="w-4 h-4" />
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -410,6 +498,8 @@ export default function ToolsPage() {
       {/* File Store Modals */}
       {showFileStoreModal && (
         <CreateFileStoreModal
+          teamAgentId={effectiveTeamId}
+          assignAgentId={sourceAgentId}
           onClose={() => {
             setShowFileStoreModal(false);
           }}
@@ -440,5 +530,13 @@ export default function ToolsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ToolsPage() {
+  return (
+    <Suspense>
+      <ToolsPageInner />
+    </Suspense>
   );
 }

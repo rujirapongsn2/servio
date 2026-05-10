@@ -153,9 +153,9 @@ class LineClient:
             return None
 
 
-def get_line_client_from_db(db_getter) -> Optional[LineClient]:
+def get_line_client_from_db(db_getter, team_agent_id=None) -> Optional[LineClient]:
     """Create a LineClient from the channel config stored in the database."""
-    config = db_getter("line")
+    config = db_getter("line", team_agent_id=team_agent_id)
     if not config or not config.get("is_active"):
         return None
     cfg = config.get("config", {})

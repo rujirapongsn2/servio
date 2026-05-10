@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Widget from "@/app/widget/page";
+import WidgetContent from "@/components/WidgetContent";
 
 export default function ShortcutPage() {
     const params = useParams();
@@ -69,7 +69,7 @@ export default function ShortcutPage() {
 
     return (
         <div className="w-full h-screen overflow-hidden bg-slate-950">
-            <Widget overrideApiKey={config.apiKey} />
+            <WidgetContent overrideApiKey={config.apiKey} />
         </div>
     );
 }

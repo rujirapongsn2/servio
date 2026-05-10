@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     String, Integer, Boolean, Text, Float, DateTime, ForeignKey,
-    JSON, Index
+    JSON, Index, text
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -44,6 +44,7 @@ class Admin(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -101,7 +102,11 @@ class Tool(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     type: Mapped[str] = mapped_column(String(100), nullable=False)  # builtin, custom_api, mcp, gemini
     config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    owner_team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
+    visibility: Mapped[str] = mapped_column(String(50), default="team")  # team, global
+    created_by_admin_id: Mapped[Optional[int]] = mapped_column(ForeignKey("admins.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     agents: Mapped[List["Agent"]] = relationship(
@@ -178,12 +183,17 @@ class ChannelConfig(Base):
     __tablename__ = "channel_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    type: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_channel_configs_type_team", "type", "team_agent_id", unique=True),
+    )
 
 
 class ApiKey(Base):
@@ -201,10 +211,69 @@ class ApiKey(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Admin username
     allowed_domains: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Domain whitelist for Origin validation
     voice_response_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # Enable TTS voice responses
+    team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
+    channel_type: Mapped[str] = mapped_column(String(50), default="web_widget")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+
+
+# ============================================================================
+# Team Models
+# ============================================================================
+
+class TeamAgent(Base):
+    """Primary entity for multi-team workspaces"""
+    __tablename__ = "team_agents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="active", index=True)  # active, archived
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TeamAgentMember(Base):
+    """Maps Agents into a Team Agent"""
+    __tablename__ = "team_agent_members"
+
+    team_agent_id: Mapped[int] = mapped_column(ForeignKey("team_agents.id", ondelete="CASCADE"), primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(50), default="member")  # starting, member
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_team_agent_members_starting", "team_agent_id", unique=True,
+              postgresql_where=text("role = 'starting'")),
+    )
+
+
+class TeamToolAssignment(Base):
+    """Maps Tools into Team Agents with ownership/visibility"""
+    __tablename__ = "team_tool_assignments"
+
+    team_agent_id: Mapped[int] = mapped_column(ForeignKey("team_agents.id", ondelete="CASCADE"), primary_key=True)
+    tool_id: Mapped[int] = mapped_column(ForeignKey("tools.id", ondelete="CASCADE"), primary_key=True)
+    relationship: Mapped[str] = mapped_column(String(50), default="owned")  # owned, shared_in
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_team_tool_assignments_tool", "tool_id"),
+    )
+
+
+class TeamUserMembership(Base):
+    """Maps admin users to Team Agents with roles"""
+    __tablename__ = "team_user_memberships"
+
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="CASCADE"), primary_key=True)
+    team_agent_id: Mapped[int] = mapped_column(ForeignKey("team_agents.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(50), default="admin")  # owner, admin, operator, viewer
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 # ============================================================================
@@ -217,6 +286,10 @@ class Conversation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
+    channel_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    channel_user_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    api_key_id: Mapped[Optional[int]] = mapped_column(ForeignKey("api_keys.id"), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

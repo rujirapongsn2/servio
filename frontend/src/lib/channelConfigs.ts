@@ -8,6 +8,7 @@ export interface ChannelConfig {
   name: string;
   config: Record<string, string>;
   is_active: boolean;
+  team_agent_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -18,8 +19,9 @@ export interface UpdateChannelConfigRequest {
   is_active: boolean;
 }
 
-export async function getChannelConfigs(token: string): Promise<ChannelConfig[]> {
-  const response = await fetch(buildApiUrl("/api/admin/channel-configs"), {
+export async function getChannelConfigs(token: string, teamAgentId?: number | null): Promise<ChannelConfig[]> {
+  const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
+  const response = await fetch(buildApiUrl(`/api/admin/channel-configs${params}`), {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -35,9 +37,11 @@ export async function getChannelConfigs(token: string): Promise<ChannelConfig[]>
 export async function updateChannelConfig(
   token: string,
   channelType: MessagingChannelType,
-  data: UpdateChannelConfigRequest
+  data: UpdateChannelConfigRequest,
+  teamAgentId?: number | null
 ): Promise<ChannelConfig> {
-  const response = await fetch(buildApiUrl(`/api/admin/channel-configs/${channelType}`), {
+  const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
+  const response = await fetch(buildApiUrl(`/api/admin/channel-configs/${channelType}${params}`), {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${token}`,

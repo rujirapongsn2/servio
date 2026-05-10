@@ -22,7 +22,14 @@ class AnalyticsService:
         self.agents_used = set()
         self.tools_called = []
 
-    def start_conversation(self, session_id: str) -> int:
+    def start_conversation(
+        self,
+        session_id: str,
+        team_agent_id: Optional[int] = None,
+        channel_type: Optional[str] = None,
+        channel_user_id: Optional[str] = None,
+        api_key_id: Optional[int] = None,
+    ) -> int:
         """Start tracking a new conversation"""
         self.session_id = session_id
         self.started_at = datetime.now().isoformat()
@@ -33,7 +40,11 @@ class AnalyticsService:
         # Create conversation record in database
         self.conversation_id = database.create_conversation(
             session_id=session_id,
-            started_at=self.started_at
+            started_at=self.started_at,
+            team_agent_id=team_agent_id,
+            channel_type=channel_type,
+            channel_user_id=channel_user_id,
+            api_key_id=api_key_id,
         )
 
         return self.conversation_id

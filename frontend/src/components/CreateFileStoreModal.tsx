@@ -6,6 +6,8 @@ import MultiFileUploader from "./MultiFileUploader";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface CreateFileStoreModalProps {
+  teamAgentId?: number | null;
+  assignAgentId?: number | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -16,6 +18,8 @@ interface ExistingFileStore {
 }
 
 export default function CreateFileStoreModal({
+  teamAgentId,
+  assignAgentId,
   onClose,
   onSuccess,
 }: CreateFileStoreModalProps) {
@@ -34,7 +38,8 @@ export default function CreateFileStoreModal({
     const fetchExistingStores = async () => {
       try {
         const token = localStorage.getItem("adminToken");
-        const response = await fetch(`${apiBaseUrl}/api/admin/file-stores`, {
+        const teamQuery = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
+        const response = await fetch(`${apiBaseUrl}/api/admin/file-stores${teamQuery}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (response.ok) {
@@ -87,7 +92,8 @@ export default function CreateFileStoreModal({
 
       // Step 1: Create file store
       const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/file-stores`, {
+      const teamQuery = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/file-stores${teamQuery}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -96,6 +102,7 @@ export default function CreateFileStoreModal({
         body: JSON.stringify({
           display_name: displayName,
           create_tool: createTool,
+          assign_agent_id: assignAgentId || undefined,
         }),
       });
 

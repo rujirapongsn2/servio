@@ -15,7 +15,7 @@ if [ ! -d "$CERT_DIR" ]; then
 fi
 
 if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
-    echo "WARNING: Certificates not found. Running start.sh logic might be needed first."
+    echo "WARNING: Certificates not found. Run ./services.sh install or ./services.sh start first."
     exit 1
 fi
 
@@ -31,4 +31,3 @@ else
     echo "Failed to update permissions. Try running with sudo."
     exit 1
 fi
-

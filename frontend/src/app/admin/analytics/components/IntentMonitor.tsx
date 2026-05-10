@@ -32,7 +32,7 @@ function getTextColor(bgColor: string): string {
   }
 }
 
-export default function IntentMonitor() {
+export default function IntentMonitor({ teamAgentId }: { teamAgentId?: number | null }) {
   const [stats, setStats] = useState<IntentStatistics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -41,7 +41,8 @@ export default function IntentMonitor() {
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem('adminToken')
-        const response = await fetch('/api/admin/intent-statistics', {
+        const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : ''
+        const response = await fetch(`/api/admin/intent-statistics${params}`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -65,7 +66,7 @@ export default function IntentMonitor() {
     fetchStats()
     const interval = setInterval(fetchStats, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [teamAgentId])
 
   if (loading) {
     return (
