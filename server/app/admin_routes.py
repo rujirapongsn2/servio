@@ -162,7 +162,7 @@ def _process_file_store_upload_job(
         _set_upload_job_state(
             job_id,
             progress=35,
-            stage="Uploading file to Gemini",
+            stage="Uploading file to Vector Database",
         )
         result = service.upload_file(
             store_id=gemini_store_id,

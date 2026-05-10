@@ -61,6 +61,36 @@ const getToolIcon = (toolName: string, toolType: string) => {
   return Wrench;
 };
 
+const getDocumentLibraryDisplayName = (tool: Tool, config: Record<string, unknown>) => {
+  const normalizeDisplayName = (raw: string) =>
+    raw
+      .replace(/_search$/i, "")
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map((part) => {
+        if (/^[a-z]{2,4}$/i.test(part)) return part.toUpperCase();
+        return part.charAt(0).toUpperCase() + part.slice(1);
+      })
+      .join(" ");
+
+  const description =
+    typeof config.description === "string" ? config.description.trim() : "";
+  const descriptionMatch = description.match(/^search documents in\s+(.+)$/i);
+  if (descriptionMatch?.[1]) {
+    return normalizeDisplayName(descriptionMatch[1].trim());
+  }
+
+  const configuredName = [
+    config.display_name,
+    config.file_store_display_name,
+    config.file_store_name,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) as string | undefined;
+
+  if (configuredName) return normalizeDisplayName(configuredName.trim());
+
+  return normalizeDisplayName(tool.name || "");
+};
+
 function ToolsPageInner() {
   const apiBaseUrl = getApiBaseUrl();
   const { selectedTeamId, setSelectedTeamId } = useTeam();
@@ -339,7 +369,13 @@ function ToolsPageInner() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-base font-medium text-gray-900 dark:text-white truncate">
-                          {tool.name}
+                          {(() => {
+                            const description =
+                              typeof config.description === "string" ? config.description.trim() : "";
+                            const descriptionMatch = description.match(/^search documents in\s+(.+)$/i);
+                            if (descriptionMatch?.[1]) return descriptionMatch[1].trim();
+                            return getDocumentLibraryDisplayName(tool, config);
+                          })()}
                         </h3>
                         <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-300 text-xs font-medium rounded">
                           {UI_COPY.tools.badges.documentSearch}

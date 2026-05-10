@@ -38,6 +38,10 @@ def is_text_output(event):
     )
 
 
+def is_agent_updated(event):
+    return isinstance(event, AgentUpdatedStreamEvent)
+
+
 def is_sync_message(data):
     return data["type"] == "history.update" and (
         not data["inputs"] or data["inputs"][-1].get("role") != "user"
@@ -159,7 +163,19 @@ class WebsocketHelper:
         self,
         event: RawResponsesStreamEvent | RunItemStreamEvent | AgentUpdatedStreamEvent,
     ):
-        if is_new_output_item(event):
+        if is_agent_updated(event):
+            self.latest_agent = event.new_agent
+            await self.websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "history.updated",
+                        "reason": "agent.updated",
+                        "inputs": self.history,
+                        "agent_name": self.latest_agent.name,
+                    }
+                )
+            )
+        elif is_new_output_item(event):
             item = event.item.to_input_item()  # type: ignore
             self.history.append(item)
 

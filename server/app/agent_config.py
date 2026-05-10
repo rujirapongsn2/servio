@@ -705,9 +705,10 @@ def load_agents_from_db():
 def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
     """Resolve the runtime starting agent.
 
-    For Team Agents, the selected team member with role='starting' is the
-    actual entry agent. Handoffs are limited to members of the same team.
-    Legacy/global calls keep the previous global starting-agent behavior.
+    For Team Agents, a virtual Coordinator Agent is the actual entry agent and
+    routes each request to the best matching member. The team's role='starting'
+    member is used only as the fallback/default route. Legacy/global calls keep
+    the previous global starting-agent behavior.
     """
     from app import database
 
@@ -785,10 +786,42 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
                 return all_agents[agent_data["id"]]
         return db_agents[0] if db_agents else starting_agent
 
-    if starting_agent_id and starting_agent_id in all_agents:
-        return all_agents[starting_agent_id]
     if db_agents:
-        return db_agents[0]
+        default_member_agent = (
+            all_agents.get(starting_agent_id)
+            if starting_agent_id and starting_agent_id in all_agents
+            else db_agents[0]
+        )
+        team_name = team.get("name") if team_agent_id is not None and team else "this team"
+        routing_lines = []
+        for agent_data in db_agents_data:
+            member_agent = all_agents.get(agent_data["id"])
+            if not member_agent:
+                continue
+            raw_instructions = (agent_data.get("instructions") or "").strip()
+            instruction_preview = raw_instructions[:300] + ("..." if len(raw_instructions) > 300 else "")
+            default_label = " (default fallback)" if member_agent is default_member_agent else ""
+            routing_lines.append(
+                f"- {member_agent.name}{default_label}: {instruction_preview or 'No specific instructions provided.'}"
+            )
+
+        routing_guide = "\n".join(routing_lines)
+        coordinator_instructions = (
+            f"You are the Coordinator Agent for the '{team_name}' team.\n"
+            "Your primary job is routing. Read the user's latest request, choose the single best team member, "
+            "and transfer to that agent immediately using the available transfer tool.\n"
+            "Do not answer the user's domain question yourself when a team member can handle it.\n"
+            f"If the best match is unclear, transfer to {default_member_agent.name}.\n\n"
+            "Team members:\n"
+            f"{routing_guide}\n\n"
+            "After transferring, let the selected agent answer the user."
+        )
+        return Agent(
+            name="Coordinator Agent",
+            model=getattr(default_member_agent, "model", triage_agent.model),
+            instructions=coordinator_instructions,
+            handoffs=db_agents,
+        )
 
     # Enrich instructions with dynamic agent list and routing hints
     extra = "\n\nAdditional agents available for transfer:"

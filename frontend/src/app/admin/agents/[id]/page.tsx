@@ -11,8 +11,9 @@ import { useTeam } from "@/lib/team-context";
 
 interface Tool {
   id: number;
-  name: string;
-  type: string;
+  name?: string | null;
+  type?: string | null;
+  config?: string | null;
 }
 
 interface Provider {
@@ -101,6 +102,38 @@ export default function AgentEditorPage() {
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
+  const safeInstructions = typeof formData.instructions === "string" ? formData.instructions : "";
+
+  const getCapabilityDisplayName = (tool: Tool): string => {
+    if ((tool.type || "") === "gemini_file_search") {
+      try {
+        const parsedConfig =
+          typeof tool.config === "string" ? JSON.parse(tool.config) : null;
+        const displayName =
+          parsedConfig?.display_name ||
+          parsedConfig?.file_store_display_name ||
+          parsedConfig?.file_store_name;
+        if (typeof displayName === "string" && displayName.trim()) {
+          return displayName.trim();
+        }
+      } catch {
+        // Fall back to formatted tool name below.
+      }
+    }
+
+    const rawName = typeof tool.name === "string" ? tool.name.trim() : "";
+    if (!rawName) return "Unnamed Capability";
+    const normalizedName = rawName.replace(/_search$/i, "");
+    return normalizedName
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map((part) => {
+        const cleaned = part.trim();
+        if (/^[a-z]{2,4}$/i.test(cleaned)) return cleaned.toUpperCase();
+        return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+      })
+      .join(" ");
+  };
 
   useEffect(() => {
     if (!isNew || routeDraftId) {
@@ -195,10 +228,15 @@ export default function AgentEditorPage() {
       const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!response.ok) {
+        setAvailableProviders([]);
+        return;
+      }
       const data = await response.json();
-      setAvailableProviders(data);
+      setAvailableProviders(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to fetch providers:", error);
+      setAvailableProviders([]);
     }
   };
 
@@ -231,16 +269,21 @@ export default function AgentEditorPage() {
       const response = await fetch(`${apiBaseUrl}/api/admin/tools${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!response.ok) {
+        setAvailableTools([]);
+        return;
+      }
       const data = await response.json();
-      setAvailableTools(data);
+      const fetchedTools = Array.isArray(data) ? data : [];
+      setAvailableTools(fetchedTools);
       setFormData((prev) => {
         let tools = prev.tools;
-        const dateTimeTool = data.find((tool: Tool) => tool.name === "DateTimeTool");
+        const dateTimeTool = fetchedTools.find((tool: Tool) => tool.name === "DateTimeTool");
         if (dateTimeTool && !tools.some((t) => t.id === dateTimeTool.id)) {
           tools = [...tools, dateTimeTool];
         }
         if (autoSelectToolId) {
-          const autoTool = data.find((tool: Tool) => tool.id === autoSelectToolId);
+          const autoTool = fetchedTools.find((tool: Tool) => tool.id === autoSelectToolId);
           if (autoTool && !tools.some((t) => t.id === autoTool.id)) {
             tools = [...tools, autoTool];
           }
@@ -250,6 +293,7 @@ export default function AgentEditorPage() {
       });
     } catch (error) {
       console.error("Failed to fetch tools:", error);
+      setAvailableTools([]);
     } finally {
       setToolsLoaded(true);
     }
@@ -262,12 +306,18 @@ export default function AgentEditorPage() {
       const response = await fetch(`${apiBaseUrl}/api/admin/agents${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!response.ok) {
+        setAvailableAgents([]);
+        return;
+      }
       const data = await response.json();
+      const agents = Array.isArray(data) ? data : [];
       setAvailableAgents(
-        data.filter((a: any) => a.id !== agentId).map((a: any) => ({ id: a.id, name: a.name }))
+        agents.filter((a: any) => a.id !== agentId).map((a: any) => ({ id: a.id, name: a.name }))
       );
     } catch (error) {
       console.error("Failed to fetch agents:", error);
+      setAvailableAgents([]);
     } finally {
       setAgentsLoaded(true);
     }
@@ -283,6 +333,9 @@ export default function AgentEditorPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+      if (!response.ok) {
+        return;
+      }
       const data = await response.json();
 
       // Extract provider ID from nested object if present
@@ -290,6 +343,11 @@ export default function AgentEditorPage() {
 
       setFormData({
         ...data,
+        name: typeof data.name === "string" ? data.name : "",
+        model: typeof data.model === "string" ? data.model : "",
+        instructions: typeof data.instructions === "string" ? data.instructions : "",
+        tools: Array.isArray(data.tools) ? data.tools : [],
+        handoffs: Array.isArray(data.handoffs) ? data.handoffs : [],
         llm_provider_id: providerId
       });
 
@@ -453,7 +511,7 @@ export default function AgentEditorPage() {
   };
 
   const handleOptimizePrompt = async () => {
-    if (!formData.instructions.trim()) {
+    if (!safeInstructions.trim()) {
       alert("Please enter some instructions first");
       return;
     }
@@ -472,7 +530,7 @@ export default function AgentEditorPage() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            instructions: formData.instructions,
+            instructions: safeInstructions,
             agent_name: formData.name,
             model: formData.model,
             llm_provider_id: formData.llm_provider_id,
@@ -623,7 +681,7 @@ export default function AgentEditorPage() {
                 <button
                   type="button"
                   onClick={handleOptimizePrompt}
-                  disabled={optimizing || !formData.instructions.trim()}
+                  disabled={optimizing || !safeInstructions.trim()}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/20 hover:bg-purple-200 dark:hover:bg-purple-900/30 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Use AI to optimize and improve your instructions"
                 >
@@ -701,10 +759,7 @@ export default function AgentEditorPage() {
                 />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    {tool.name}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    {tool.type}
+                    {getCapabilityDisplayName(tool)}
                   </div>
                 </div>
               </label>
