@@ -246,12 +246,19 @@ def init_database():
             password_hash = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             admin = Admin(
                 username="admin",
-                password_hash=password_hash
+                password_hash=password_hash,
+                is_super_admin=True,
             )
             db.add(admin)
             logger.info("Default admin user created (username: admin, password: admin123)")
         else:
             logger.info("Admin user already exists")
+
+        super_admin_exists = db.query(Admin).filter_by(is_super_admin=True).first()
+        default_admin = db.query(Admin).filter_by(username="admin").first()
+        if default_admin and not default_admin.is_super_admin and not super_admin_exists:
+            default_admin.is_super_admin = True
+            logger.info("Promoted default admin user to super admin because no super admin existed")
 
         # Create Default Team if not exists
         default_team = db.query(TeamAgent).filter_by(slug="default").first()

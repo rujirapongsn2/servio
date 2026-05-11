@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import WidgetContent from "@/components/WidgetContent";
+import { getApiBaseUrl } from "@/lib/api";
 
 export default function ShortcutPage() {
     const params = useParams();
@@ -16,7 +17,7 @@ export default function ShortcutPage() {
 
         const fetchConfig = async () => {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+                const apiUrl = getApiBaseUrl();
                 const response = await fetch(`${apiUrl}/api/public/widget-config/${slug}`);
 
                 if (!response.ok) {

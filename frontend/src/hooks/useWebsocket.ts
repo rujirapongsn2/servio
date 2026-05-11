@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Message } from "@/lib/types";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "@/lib/utils";
-import { getApiBaseUrl } from "@/lib/api";
+import { getWebsocketBaseUrl } from "@/lib/api";
 
 export function useWebsocket({
   url,
@@ -15,9 +15,7 @@ export function useWebsocket({
   onNewAudio?: (audio: Int16Array<ArrayBuffer>) => void;
   onAudioDone?: () => void;
 } = {}) {
-  const defaultWs = (process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT
-    ? process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT.replace(/\/$/, "")
-    : `${getApiBaseUrl().replace(/^http/, "ws")}/ws`);
+  const defaultWs = getWebsocketBaseUrl();
 
   // Add API key to URL if provided
   let wsUrl = url ?? defaultWs;

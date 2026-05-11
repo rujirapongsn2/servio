@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/Button";
-import { getApiBaseUrl } from "@/lib/api";
+import { getApiBaseUrl, getWebsocketBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
 import ReactMarkdown from "react-markdown";
 
@@ -66,9 +66,7 @@ export default function MonitorPage() {
     const [inputMessage, setInputMessage] = useState("");
     const [isConnected, setIsConnected] = useState(false);
     const apiBaseUrl = getApiBaseUrl();
-    const websocketBase = (process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT
-        ? process.env.NEXT_PUBLIC_WEBSOCKET_ENDPOINT.replace(/\/$/, "")
-        : `${apiBaseUrl.replace(/^http/, "ws")}/ws`);
+    const websocketBase = getWebsocketBaseUrl();
 
     const wsRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);

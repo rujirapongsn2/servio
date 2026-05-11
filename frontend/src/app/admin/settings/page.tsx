@@ -570,16 +570,16 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Default Credentials Info */}
+            {/* Initial credentials info */}
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
               <h3 className="text-sm font-medium text-yellow-900 dark:text-yellow-300 mb-2">
-                Default Login Credentials
+                Initial Admin Credentials
               </h3>
               <div className="text-sm text-yellow-800 dark:text-yellow-400 space-y-1">
                 <p>• Username: <span className="font-mono">admin</span></p>
-                <p>• Password: <span className="font-mono">admin123</span></p>
+                <p>• Fresh database only: <span className="font-mono">admin123</span></p>
                 <p className="mt-2 text-xs">
-                  For security, please change the default password immediately.
+                  Existing deployments keep the password already stored in PostgreSQL.
                 </p>
               </div>
             </div>
