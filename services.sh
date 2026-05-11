@@ -113,29 +113,50 @@ generate_certs() {
   local cert_file="$cert_dir/server.crt"
   local key_file="$cert_dir/server.key"
 
-  if [ -f "$cert_file" ] && [ -f "$key_file" ]; then
+  mkdir -p "$cert_dir"
+
+  if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
+    command -v openssl >/dev/null 2>&1 || fail "openssl is required to generate local HTTPS certificates."
+
+    info "Generating local HTTPS certificates..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout "$key_file" \
+      -out "$cert_file" \
+      -subj "/C=TH/ST=Bangkok/L=Bangkok/O=Servio/CN=localhost" >/dev/null 2>&1
+    success "Generated certificates in $cert_dir"
+  fi
+
+  chmod 755 "$cert_dir" 2>/dev/null || true
+  chmod 644 "$cert_file" "$key_file" 2>/dev/null || true
+}
+
+read_env_value() {
+  local key="$1"
+  local default_value="${2:-}"
+
+  if [ ! -f ".env" ]; then
+    echo "$default_value"
     return 0
   fi
 
-  command -v openssl >/dev/null 2>&1 || fail "openssl is required to generate local HTTPS certificates."
-
-  info "Generating local HTTPS certificates..."
-  mkdir -p "$cert_dir"
-  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout "$key_file" \
-    -out "$cert_file" \
-    -subj "/C=TH/ST=Bangkok/L=Bangkok/O=Servio/CN=localhost" >/dev/null 2>&1
-  success "Generated certificates in $cert_dir"
+  local value
+  value="$(grep -E "^${key}=" .env | head -n 1 | cut -d= -f2- || true)"
+  echo "${value:-$default_value}"
 }
 
 show_urls() {
-  cat <<'EOF'
+  local public_api_url websocket_endpoint admin_url
+  public_api_url="$(read_env_value "NEXT_PUBLIC_API_URL" "https://localhost")"
+  websocket_endpoint="$(read_env_value "NEXT_PUBLIC_WEBSOCKET_ENDPOINT" "wss://localhost/ws")"
+  admin_url="${public_api_url%/}/admin"
+
+  cat <<EOF
 
 Servio is available at:
-  Frontend:    https://localhost
-  Backend API: https://localhost/api
-  WebSocket:   wss://localhost/ws
-  Admin:       https://localhost/admin
+  Frontend:    ${public_api_url}
+  Backend API: ${public_api_url%/}/api
+  WebSocket:   ${websocket_endpoint}
+  Admin:       ${admin_url}
 
 EOF
 }
@@ -330,6 +351,87 @@ prompt_secret_value() {
   done
 }
 
+derive_public_endpoints() {
+  local raw_input="$1"
+  local normalized origin scheme host_port
+
+  normalized="$(printf '%s' "$raw_input" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [ -n "$normalized" ] || normalized="localhost"
+
+  if [[ "$normalized" != http://* && "$normalized" != https://* ]]; then
+    normalized="https://$normalized"
+  fi
+
+  origin="$(printf '%s' "$normalized" | sed -E 's#^(https?://[^/]+).*$#\1#')"
+  scheme="${origin%%:*}"
+  host_port="${origin#*://}"
+
+  DERIVED_PUBLIC_API_URL="$origin"
+  if [ "$scheme" = "https" ]; then
+    DERIVED_PUBLIC_WS_ENDPOINT="wss://${host_port}/ws"
+  else
+    DERIVED_PUBLIC_WS_ENDPOINT="ws://${host_port}/ws"
+  fi
+
+  case "$host_port" in
+    localhost)
+      DERIVED_ALLOWED_ORIGINS="https://localhost,http://localhost"
+      ;;
+    127.0.0.1)
+      DERIVED_ALLOWED_ORIGINS="https://127.0.0.1,http://127.0.0.1"
+      ;;
+    *)
+      DERIVED_ALLOWED_ORIGINS="$origin"
+      ;;
+  esac
+}
+
+wait_for_backend_exec() {
+  local attempts="${1:-60}"
+  local attempt
+
+  for attempt in $(seq 1 "$attempts"); do
+    if run_compose exec -T backend python -c "from app.db_config import get_db; print('ready')" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
+ensure_default_admin_login() {
+  info "Ensuring built-in admin account is ready..."
+
+  if ! wait_for_backend_exec 60; then
+    warn "Backend did not become ready in time. Skipping admin credential reset."
+    return 1
+  fi
+
+  local python_cmd
+  python_cmd="$(cat <<'PY'
+import bcrypt
+from app.db_config import get_db
+from app.orm_models import Admin
+
+password_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+with get_db() as db:
+    admin = db.query(Admin).filter_by(username="admin").first()
+    if admin is None:
+        db.add(Admin(username="admin", password_hash=password_hash, is_super_admin=True))
+    else:
+        admin.password_hash = password_hash
+        admin.is_super_admin = True
+
+print("admin-ready")
+PY
+)"
+
+  run_compose exec -T backend python -c "$python_cmd" >/dev/null
+  success "Built-in admin credentials are set to username: admin / password: admin123"
+}
+
 write_env_file() {
   local tmp_file=".env.install.tmp"
   local openai_api_key="$1"
@@ -399,6 +501,7 @@ cmd_install() {
           fi
           info "Starting Servio..."
           run_compose up -d
+          ensure_default_admin_login
           refresh_proxy_if_needed "all"
           show_urls
           return 0
@@ -410,6 +513,7 @@ cmd_install() {
       check_ports "$KILL_PORTS"
       run_compose build
       [ "$NO_START" = "1" ] || run_compose up -d
+      [ "$NO_START" = "1" ] || ensure_default_admin_login
       [ "$NO_START" = "1" ] || show_urls
       return 0
     fi
@@ -423,9 +527,7 @@ cmd_install() {
   fi
 
   info "Configuring Servio environment..."
-  local default_public_url="https://localhost"
-  local default_ws_endpoint="wss://localhost/ws"
-  local default_allowed_origins="https://localhost,http://localhost"
+  local public_access_entry derived_public_api_url derived_public_ws_endpoint derived_allowed_origins
   local postgres_user postgres_password postgres_db postgres_port backend_port frontend_port
   local public_api_url public_ws_endpoint allowed_origins jwt_secret
   local openai_api_key softnix_api_key gemini_api_key
@@ -440,9 +542,14 @@ cmd_install() {
   postgres_port="$(prompt_value "PostgreSQL port" "5432" 1)"
   backend_port="$(prompt_value "Backend internal port" "8000" 1)"
   frontend_port="$(prompt_value "Frontend internal port" "3000" 1)"
-  public_api_url="$(prompt_value "Public API URL" "$default_public_url" 1)"
-  public_ws_endpoint="$(prompt_value "Public WebSocket endpoint" "$default_ws_endpoint" 1)"
-  allowed_origins="$(prompt_value "Allowed CORS origins" "$default_allowed_origins" 1)"
+  public_access_entry="$(prompt_value "Public hostname, IP, or base URL for browser access" "localhost" 1)"
+  derive_public_endpoints "$public_access_entry"
+  derived_public_api_url="$DERIVED_PUBLIC_API_URL"
+  derived_public_ws_endpoint="$DERIVED_PUBLIC_WS_ENDPOINT"
+  derived_allowed_origins="$DERIVED_ALLOWED_ORIGINS"
+  public_api_url="$(prompt_value "Public API URL" "$derived_public_api_url" 1)"
+  public_ws_endpoint="$(prompt_value "Public WebSocket endpoint" "$derived_public_ws_endpoint" 1)"
+  allowed_origins="$(prompt_value "Allowed CORS origins" "$derived_allowed_origins" 1)"
   jwt_secret="$(prompt_value "JWT secret" "$(random_hex 32)" 1)"
 
   write_env_file \
@@ -475,6 +582,7 @@ cmd_install() {
 
   info "Starting Servio..."
   run_compose up -d
+  ensure_default_admin_login
   refresh_proxy_if_needed "all"
   show_urls
   success "Install completed."

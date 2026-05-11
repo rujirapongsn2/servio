@@ -204,7 +204,7 @@ function AdminLayoutInner({
                 collapsed={collapsed}
                 icon={Activity}
               >
-                Online Agent
+                Online Agents
               </NavLink>
             ) : (
               <>
@@ -225,20 +225,20 @@ function AdminLayoutInner({
                   Team Agents
                 </NavLink>
                 <NavLink
-                  href="/admin/monitor"
-                  active={pathname.startsWith("/admin/monitor")}
-                  collapsed={collapsed}
-                  icon={Activity}
-                >
-                  Online Agent
-                </NavLink>
-                <NavLink
                   href="/admin/tools/channels"
                   active={pathname.startsWith("/admin/tools/channels") || pathname.startsWith("/admin/tools/widget")}
                   collapsed={collapsed}
                   icon={Puzzle}
                 >
                   Channels
+                </NavLink>
+                <NavLink
+                  href="/admin/monitor"
+                  active={pathname.startsWith("/admin/monitor")}
+                  collapsed={collapsed}
+                  icon={Activity}
+                >
+                  Online Agents
                 </NavLink>
                 <NavLink
                   href="/admin/analytics"
@@ -316,7 +316,9 @@ function AdminLayoutInner({
       >
         {/* Top bar with team switcher */}
         <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-[#E2E8F0] bg-white px-8">
-          <TeamSwitcher />
+          {!(pathname.startsWith("/admin/tools/channels") || pathname.startsWith("/admin/tools/widget")) && (
+            <TeamSwitcher />
+          )}
         </div>
         <main className="p-8">{children}</main>
       </div>

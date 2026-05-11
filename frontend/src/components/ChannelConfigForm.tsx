@@ -43,7 +43,7 @@ const FIELD_PLACEHOLDERS: Record<string, Record<string, string>> = {
 };
 
 export default function ChannelConfigForm({ channelType }: { channelType: MessagingChannelType }) {
-    const { selectedTeamId } = useTeam();
+    const { selectedTeamId, selectedTeam } = useTeam();
     const [config, setConfig] = useState<ChannelConfig | null>(null);
     const [formValues, setFormValues] = useState<Record<string, string>>({});
     const [isActive, setIsActive] = useState(false);
@@ -92,7 +92,7 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
             };
             const updated = await updateChannelConfig(token, channelType, data, selectedTeamId);
             setConfig(updated);
-            setSuccess("Configuration saved successfully.");
+            setSuccess(isActive ? "Channel settings saved and kept live." : "Draft saved successfully.");
             setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
             setError(err.message || "Failed to save configuration.");
@@ -114,17 +114,20 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
     const placeholders = FIELD_PLACEHOLDERS[channelType];
 
     if (loading) {
-        return (
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-xl border border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500">Loading configuration...</p>
-            </div>
-        );
+        return <p className="text-sm text-gray-500">Loading configuration...</p>;
     }
 
     return (
-        <div className="space-y-6">
-            {/* Status badge */}
-            <div className="flex items-center gap-3">
+        <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {channelType === "line" ? "LINE Official Account" : "Facebook Messenger"}
+                    </h3>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Team: {selectedTeam?.name || "Selected team"}
+                    </p>
+                </div>
                 <span
                     className={`inline-flex px-3 py-1 text-xs font-medium rounded-full ${
                         isActive
@@ -132,83 +135,67 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
                             : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                     }`}
                 >
-                    {isActive ? "Active" : "Inactive"}
+                    {isActive ? "Live" : "Draft"}
                 </span>
-                {config && (
-                    <span className="text-xs text-gray-400">
-                        Last updated: {new Date(config.updated_at).toLocaleString()}
-                    </span>
-                )}
             </div>
 
-            {/* Feedback messages */}
             {error && (
-                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
                     {error}
                 </div>
             )}
             {success && (
-                <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-700 dark:text-green-300">
+                <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300">
                     {success}
                 </div>
             )}
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {channelType === "line" ? "LINE" : "Facebook"} Configuration
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Enter your {channelType === "line" ? "LINE Messaging API" : "Facebook Messenger Platform"} credentials.
-                    </p>
+            <div className="grid gap-5 md:grid-cols-2">
+                <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Display Name
+                    </label>
+                    <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full rounded-md border border-gray-200 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                    />
                 </div>
 
-                <div className="p-6 space-y-5">
-                    {/* Name field */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Display Name
+                {fields.map((field) => (
+                    <div
+                        key={field.key}
+                        className={field.key === "page_access_token" || field.key === "channel_access_token" ? "md:col-span-2" : ""}
+                    >
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {labels[field.key]}
                         </label>
                         <input
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full p-2.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                            type={field.type}
+                            value={formValues[field.key] || ""}
+                            onChange={(e) =>
+                                setFormValues((prev) => ({
+                                    ...prev,
+                                    [field.key]: e.target.value,
+                                }))
+                            }
+                            placeholder={placeholders[field.key]}
+                            className="w-full rounded-md border border-gray-200 bg-gray-50 p-2.5 text-sm font-mono text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         />
                     </div>
+                ))}
 
-                    {/* Credential fields */}
-                    {fields.map((field) => (
-                        <div key={field.key}>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                {labels[field.key]}
-                            </label>
-                            <input
-                                type={field.type}
-                                value={formValues[field.key] || ""}
-                                onChange={(e) =>
-                                    setFormValues((prev) => ({
-                                        ...prev,
-                                        [field.key]: e.target.value,
-                                    }))
-                                }
-                                placeholder={placeholders[field.key]}
-                                className="w-full p-2.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-white font-mono"
-                            />
-                        </div>
-                    ))}
-
-                    {/* Webhook URL (read-only) */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Webhook URL
-                        </label>
-                        <div className="flex items-center gap-2">
+                <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Webhook URL
+                    </label>
+                    <div className="flex items-center gap-2">
                             <input
                                 type="text"
                                 readOnly
                                 value={webhookUrl}
-                                className="flex-1 p-2.5 text-sm bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-600 dark:text-gray-300 focus:outline-none font-mono"
+                            className="flex-1 rounded-md border border-gray-200 bg-gray-100 p-2.5 text-sm font-mono text-gray-600 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                             />
                             <Button
                                 size="sm"
@@ -221,74 +208,39 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
                                 Copy
                             </Button>
                         </div>
-                        <p className="mt-1 text-xs text-gray-400">
-                            {channelType === "line"
-                                ? "Set this as your LINE Bot's webhook URL in the LINE Developers Console."
-                                : "Set this as your Callback URL in the Facebook App's Messenger settings."}
-                        </p>
                     </div>
-
-                    {/* Active toggle */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <div>
-                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Enable Channel
-                            </label>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                                When enabled, incoming messages will be processed by your agents.
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={isActive}
-                            onClick={() => setIsActive(!isActive)}
-                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
-                                isActive
-                                    ? "bg-blue-600"
-                                    : "bg-gray-200 dark:bg-gray-700"
-                            }`}
-                        >
-                            <span
-                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
-                                    isActive ? "translate-x-5" : "translate-x-0"
-                                }`}
-                            />
-                        </button>
-                    </div>
-                </div>
-
-                {/* Save button */}
-                <div className="p-6 border-t border-gray-200 dark:border-gray-700">
-                    <Button onClick={handleSave} disabled={saving} variant="primary">
-                        {saving ? "Saving..." : "Save Configuration"}
-                    </Button>
-                </div>
             </div>
 
-            {/* Webhook setup instructions */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-100 dark:border-blue-800">
-                <h3 className="text-blue-800 dark:text-blue-300 font-semibold mb-2">
-                    Setup Instructions
-                </h3>
-                {channelType === "line" ? (
-                    <ol className="text-sm text-blue-600 dark:text-blue-400 space-y-1 list-decimal list-inside">
-                        <li>Go to LINE Developers Console and select your channel</li>
-                        <li>Under Messaging API settings, paste the webhook URL above</li>
-                        <li>Copy Channel ID, Channel Secret, and create a Channel Access Token</li>
-                        <li>Paste the credentials here and save</li>
-                        <li>Enable the channel toggle to start receiving messages</li>
-                    </ol>
-                ) : (
-                    <ol className="text-sm text-blue-600 dark:text-blue-400 space-y-1 list-decimal list-inside">
-                        <li>Create a Facebook App with Messenger product on Meta for Developers</li>
-                        <li>Generate a Page Access Token for your Facebook Page</li>
-                        <li>Set the webhook URL above as the Callback URL in Messenger settings</li>
-                        <li>Enter the same Verify Token you used during webhook setup</li>
-                        <li>Subscribe your page to the webhook events (messages, messaging_postbacks)</li>
-                        <li>Enable the channel toggle to start receiving messages</li>
-                    </ol>
-                )}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+                <label className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isActive}
+                        onClick={() => setIsActive(!isActive)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                            isActive ? "bg-blue-600" : "bg-gray-200 dark:bg-gray-700"
+                        }`}
+                    >
+                        <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                                isActive ? "translate-x-5" : "translate-x-0"
+                            }`}
+                        />
+                    </button>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Go live</span>
+                </label>
+
+                <div className="flex items-center gap-3">
+                    {config && (
+                        <span className="text-xs text-gray-400">
+                            Updated {new Date(config.updated_at).toLocaleDateString()}
+                        </span>
+                    )}
+                    <Button onClick={handleSave} disabled={saving} variant="primary">
+                        {saving ? "Saving..." : isActive ? "Save and Keep Live" : "Save Draft"}
+                    </Button>
+                </div>
             </div>
         </div>
     );
