@@ -39,6 +39,7 @@ from app.models import (
     OKFBundleResponse,
     OKFImportJobResponse,
     OKFConceptResponse,
+    UpdateOKFConceptRequest,
     TestOKFBundleRequest,
     TestOKFBundleResponse,
     VoIPProviderResponse,
@@ -1750,6 +1751,45 @@ async def get_okf_concept(
     if not concept:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
     return concept
+
+
+@router.patch("/okf-bundles/{bundle_id}/concepts/{concept_id:path}", response_model=OKFConceptResponse)
+async def update_okf_concept(
+    bundle_id: int,
+    concept_id: str,
+    request: UpdateOKFConceptRequest,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Edit one OKF concept source file and rebuild the local search index."""
+    require_team_access(current_user, team_agent_id, "admin")
+    bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not bundle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    admin = database.get_admin_by_username(current_user)
+    if (
+        bundle.get("owner_team_agent_id") is not None
+        and bundle.get("owner_team_agent_id") != team_agent_id
+        and not (admin and admin.get("is_super_admin"))
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can edit this OKF bundle")
+    try:
+        return OKFService().update_concept(
+            bundle_id=bundle_id,
+            concept_id=concept_id,
+            team_agent_id=team_agent_id,
+            title=request.title,
+            description=request.description,
+            tags=request.tags,
+            body=request.body,
+            expected_updated_at=request.expected_updated_at,
+        )
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
+    except OKFValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update OKF concept: {str(e)}")
 
 
 @router.post("/okf-bundles/{bundle_id}/test", response_model=TestOKFBundleResponse)

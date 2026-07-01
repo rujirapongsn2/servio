@@ -923,6 +923,95 @@ class OKFService:
             data["links"] = self._links_for_concept(db, bundle_id, concept_id)
             return data
 
+    def update_concept(
+        self,
+        bundle_id: int,
+        concept_id: str,
+        team_agent_id: Optional[int],
+        title: Optional[str],
+        description: Optional[str],
+        tags: Optional[List[str]],
+        body: str,
+        expected_updated_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not body or not body.strip():
+            raise OKFValidationError("Content cannot be empty")
+
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                raise KeyError("OKF bundle not found")
+
+            concept = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id, concept_id=concept_id).first()
+            if not concept:
+                raise KeyError("OKF concept not found")
+
+            current_updated_at = concept.updated_at.isoformat() if concept.updated_at else None
+            if expected_updated_at and current_updated_at and expected_updated_at != current_updated_at:
+                raise OKFValidationError("This document changed since it was opened. Reload it before saving.")
+
+            source = Path(bundle.storage_path)
+            path = source / concept.file_path
+            _ensure_within(source, path)
+
+            markdown = path.read_text(encoding="utf-8")
+            frontmatter, _ = _parse_frontmatter(markdown, concept.file_path)
+            original_markdown = markdown
+            if title is not None:
+                cleaned_title = title.strip()
+                if not cleaned_title:
+                    raise OKFValidationError("Title cannot be empty")
+                frontmatter["title"] = cleaned_title
+            if description is not None:
+                frontmatter["description"] = description.strip()
+            if tags is not None:
+                frontmatter["tags"] = _normalize_tags(tags)
+
+            next_markdown = (
+                "---\n"
+                + yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False)
+                + "---\n\n"
+                + body.strip()
+                + "\n"
+            )
+            _parse_frontmatter(next_markdown, concept.file_path)
+            path.write_text(next_markdown, encoding="utf-8")
+
+            try:
+                bundle.status = "indexing"
+                concepts, metadata = parse_okf_directory(source)
+                bundle.okf_version = metadata.get("okf_version")
+                bundle.validation_summary = {
+                    "warnings": metadata.get("warnings", []),
+                    "edited_at": datetime.utcnow().isoformat() + "Z",
+                }
+                self._replace_index(db, bundle, concepts)
+                bundle.status = "ready"
+                bundle.updated_at = datetime.utcnow()
+                db.flush()
+            except Exception as exc:
+                path.write_text(original_markdown, encoding="utf-8")
+                bundle.status = "failed"
+                bundle.validation_summary = {
+                    "warnings": [],
+                    "error": str(exc),
+                    "edited_at": datetime.utcnow().isoformat() + "Z",
+                }
+                bundle.updated_at = datetime.utcnow()
+                raise
+
+            updated = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id, concept_id=concept_id).first()
+            if not updated:
+                raise OKFValidationError("Updated document could not be found after re-indexing")
+            data = self._concept_to_dict(updated)
+            updated_markdown = self._read_concept_markdown(bundle, updated)
+            updated_frontmatter, updated_body = _parse_frontmatter(updated_markdown, updated.file_path)
+            data["markdown"] = updated_markdown
+            data["frontmatter"] = updated_frontmatter
+            data["body"] = updated_body
+            data["links"] = self._links_for_concept(db, bundle_id, concept_id)
+            return data
+
     def delete_bundle(self, bundle_id: int, team_agent_id: Optional[int]) -> bool:
         with get_db() as db:
             bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()

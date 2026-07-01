@@ -6,10 +6,12 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
+  Edit3,
   FileText,
   Loader2,
   Play,
   RefreshCw,
+  Save,
   Search,
   X,
 } from "lucide-react";
@@ -129,6 +131,14 @@ export default function OKFBundleDetailDrawer({
   const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
   const [showRawIssues, setShowRawIssues] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isEditingConcept, setIsEditingConcept] = useState(false);
+  const [savingConcept, setSavingConcept] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const warnings = bundle?.validation_summary?.warnings || [];
 
@@ -174,7 +184,10 @@ export default function OKFBundleDetailDrawer({
       const nextConcepts: OKFConcept[] = await conceptsResponse.json();
       setBundle(nextBundle);
       setConcepts(nextConcepts);
-      setSelectedConceptId((current) => current || nextConcepts[0]?.concept_id || null);
+      setSelectedConceptId((current) => {
+        if (current && nextConcepts.some((concept) => concept.concept_id === current)) return current;
+        return nextConcepts[0]?.concept_id || null;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load local knowledge details");
     } finally {
@@ -196,7 +209,12 @@ export default function OKFBundleDetailDrawer({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) throw new Error("Failed to load concept detail");
-      setSelectedConcept(await response.json());
+      const concept: OKFConcept = await response.json();
+      setSelectedConcept(concept);
+      setEditTitle(concept.title || "");
+      setEditDescription(concept.description || "");
+      setEditTags((concept.tags || []).join(", "));
+      setEditBody(concept.body || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load concept detail");
     } finally {
@@ -211,6 +229,9 @@ export default function OKFBundleDetailDrawer({
   useEffect(() => {
     loadConcept(selectedConceptId);
     setShowAdvancedDetails(false);
+    setIsEditingConcept(false);
+    setSaveMessage(null);
+    setSaveError(null);
   }, [selectedConceptId, bundleId, teamAgentId]);
 
   const handleReindex = async () => {
@@ -269,6 +290,76 @@ export default function OKFBundleDetailDrawer({
     setConceptQuery("");
     setShowAdvancedDetails(false);
     setActiveTab("documents");
+  };
+
+  const handleEditConcept = () => {
+    if (!selectedConcept) return;
+    setEditTitle(selectedConcept.title || "");
+    setEditDescription(selectedConcept.description || "");
+    setEditTags((selectedConcept.tags || []).join(", "));
+    setEditBody(selectedConcept.body || "");
+    setSaveMessage(null);
+    setSaveError(null);
+    setIsEditingConcept(true);
+  };
+
+  const handleCancelEdit = () => {
+    if (!selectedConcept) return;
+    setEditTitle(selectedConcept.title || "");
+    setEditDescription(selectedConcept.description || "");
+    setEditTags((selectedConcept.tags || []).join(", "));
+    setEditBody(selectedConcept.body || "");
+    setSaveMessage(null);
+    setSaveError(null);
+    setIsEditingConcept(false);
+  };
+
+  const handleSaveConcept = async () => {
+    if (!bundleId || !selectedConcept || !editBody.trim()) return;
+    setSavingConcept(true);
+    setSaveMessage(null);
+    setSaveError(null);
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(
+        `${apiBaseUrl}/api/admin/okf-bundles/${bundleId}/concepts/${encodeURIComponent(selectedConcept.concept_id)}${params}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title: editTitle,
+            description: editDescription,
+            tags: editTags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+            body: editBody,
+            expected_updated_at: selectedConcept.updated_at,
+          }),
+        },
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Failed to save document");
+      }
+      const updatedConcept: OKFConcept = await response.json();
+      setSelectedConcept(updatedConcept);
+      setEditTitle(updatedConcept.title || "");
+      setEditDescription(updatedConcept.description || "");
+      setEditTags((updatedConcept.tags || []).join(", "));
+      setEditBody(updatedConcept.body || "");
+      setIsEditingConcept(false);
+      setSaveMessage("Saved and re-indexed.");
+      await loadBundle();
+      onReindexed?.();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save document");
+    } finally {
+      setSavingConcept(false);
+    }
   };
 
   return (
@@ -468,12 +559,107 @@ export default function OKFBundleDetailDrawer({
                         )}
 
                         <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                          <div className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
-                            Content Preview
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                Content Preview
+                              </div>
+                              {saveMessage && !isEditingConcept && (
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                                  <span>{saveMessage}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTab("ask")}
+                                    className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                                  >
+                                    <Play className="h-3 w-3" />
+                                    Test now
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isEditingConcept ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEdit}
+                                    disabled={savingConcept}
+                                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <X className="h-4 w-4" />
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveConcept}
+                                    disabled={savingConcept || !editBody.trim() || !editTitle.trim()}
+                                    className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                  >
+                                    {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                    Save
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handleEditConcept}
+                                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                >
+                                  <Edit3 className="h-4 w-4" />
+                                  Edit
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div className="max-h-[520px] overflow-y-auto whitespace-pre-wrap p-4 text-sm leading-7 text-gray-800 dark:text-gray-100">
-                            {selectedConcept.body || "No readable content found."}
-                          </div>
+                          {isEditingConcept ? (
+                            <div className="space-y-4 p-4">
+                              {saveError && (
+                                <div className="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
+                                  {saveError}
+                                </div>
+                              )}
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <label className="block text-sm font-semibold text-gray-900 dark:text-white">
+                                  Title
+                                  <input
+                                    value={editTitle}
+                                    onChange={(event) => setEditTitle(event.target.value)}
+                                    className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                  />
+                                </label>
+                                <label className="block text-sm font-semibold text-gray-900 dark:text-white">
+                                  Tags
+                                  <input
+                                    value={editTags}
+                                    onChange={(event) => setEditTags(event.target.value)}
+                                    className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                  />
+                                </label>
+                              </div>
+                              <label className="block text-sm font-semibold text-gray-900 dark:text-white">
+                                Description
+                                <input
+                                  value={editDescription}
+                                  onChange={(event) => setEditDescription(event.target.value)}
+                                  className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                />
+                              </label>
+                              <label className="block text-sm font-semibold text-gray-900 dark:text-white">
+                                Content
+                                <textarea
+                                  value={editBody}
+                                  onChange={(event) => setEditBody(event.target.value)}
+                                  rows={18}
+                                  className="mt-2 w-full resize-y rounded-md border border-gray-300 px-3 py-3 font-mono text-sm leading-6 focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                />
+                              </label>
+                            </div>
+                          ) : (
+                            <div className="max-h-[520px] overflow-y-auto whitespace-pre-wrap p-4 text-sm leading-7 text-gray-800 dark:text-gray-100">
+                              {selectedConcept.body || "No readable content found."}
+                            </div>
+                          )}
                         </div>
 
                         <div className="rounded-lg border border-gray-200 dark:border-gray-800">

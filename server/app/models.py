@@ -251,6 +251,14 @@ class OKFConceptResponse(BaseModel):
     links: List[Dict[str, Any]] = []
 
 
+class UpdateOKFConceptRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    body: str
+    expected_updated_at: Optional[str] = None
+
+
 class TestOKFBundleRequest(BaseModel):
     query: str
 
