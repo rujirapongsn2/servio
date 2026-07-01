@@ -625,31 +625,49 @@ async def admin_monitor_endpoint(
         await websocket.send_json({"type": "error", "message": f"Invalid token: {str(e)}"})
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
+    if not current_user:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "Authentication required"})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    from app import database as _db
 
     # Team enforcement: verify session team context
     session_team_id = None
+    allowed_team_ids = None
     if session_id and session_id in session_manager.sessions:
         session_team_id = session_manager.sessions[session_id].team_agent_id
-        if not current_user:
-            await websocket.accept()
-            await websocket.send_json({"type": "error", "message": "Authentication required"})
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        from app import database as _db
-        if not _db.has_team_access(current_user, session_team_id, "operator"):
+        if session_team_id is None:
+            allowed_team_ids = _db.get_accessible_team_ids(current_user, "operator")
+            if allowed_team_ids is not None:
+                await websocket.accept()
+                await websocket.send_json({"type": "error", "message": "You do not have access to this session"})
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        elif not _db.has_team_access(current_user, session_team_id, "operator"):
             await websocket.accept()
             await websocket.send_json({"type": "error", "message": "You do not have access to this session"})
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+        else:
+            allowed_team_ids = [session_team_id]
     elif team_agent_id is not None:
-        from app import database as _db
         if not _db.has_team_access(current_user, team_agent_id, "operator"):
             await websocket.accept()
             await websocket.send_json({"type": "error", "message": "You do not have access to this Team Agent"})
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+        allowed_team_ids = [team_agent_id]
+    else:
+        allowed_team_ids = _db.get_accessible_team_ids(current_user, "operator")
 
-    await session_manager.connect_admin(websocket, session_id, team_agent_id=team_agent_id)
+    await session_manager.connect_admin(
+        websocket,
+        session_id,
+        team_agent_id=team_agent_id,
+        allowed_team_ids=allowed_team_ids,
+    )
 
     # Send team context to the admin client
     if session_id:
@@ -667,9 +685,13 @@ async def admin_monitor_endpoint(
                 target_session_id = data.get("session_id")
                 mode = data.get("mode")
                 if target_session_id and mode in ["AI", "MANUAL"]:
-                    target_team_id = session_manager.sessions.get(target_session_id).team_agent_id if target_session_id in session_manager.sessions else None
-                    from app import database as _db
-                    if not _db.has_team_access(current_user, target_team_id, "operator"):
+                    target_session = session_manager.sessions.get(target_session_id)
+                    target_team_id = target_session.team_agent_id if target_session else None
+                    if target_session is None:
+                        continue
+                    if target_team_id is None and _db.get_accessible_team_ids(current_user, "operator") is not None:
+                        continue
+                    if target_team_id is not None and not _db.has_team_access(current_user, target_team_id, "operator"):
                         continue
                     session_manager.set_mode(target_session_id, mode)
 
@@ -677,9 +699,13 @@ async def admin_monitor_endpoint(
                 target_session_id = data.get("session_id")
                 content = data.get("content")
                 if target_session_id and content:
-                    target_team_id = session_manager.sessions.get(target_session_id).team_agent_id if target_session_id in session_manager.sessions else None
-                    from app import database as _db
-                    if not _db.has_team_access(current_user, target_team_id, "operator"):
+                    target_session = session_manager.sessions.get(target_session_id)
+                    target_team_id = target_session.team_agent_id if target_session else None
+                    if target_session is None:
+                        continue
+                    if target_team_id is None and _db.get_accessible_team_ids(current_user, "operator") is not None:
+                        continue
+                    if target_team_id is not None and not _db.has_team_access(current_user, target_team_id, "operator"):
                         continue
                     await session_manager.send_to_user(target_session_id, content)
 
@@ -693,13 +719,18 @@ async def get_active_sessions(
     current_user: str = Depends(get_current_user),
 ):
     from app import database as _db
-    if not _db.has_team_access(current_user, team_agent_id, "operator"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this Team Agent")
-    if team_agent_id is None and _db.is_operator_only_user(current_user):
-        operator_team_ids = _db.get_accessible_team_ids(current_user, "operator") or []
-        sessions = session_manager.get_all_sessions(team_agent_id=None)
-        return [s for s in sessions if s.get("team_agent_id") in operator_team_ids]
-    return session_manager.get_all_sessions(team_agent_id=team_agent_id)
+    if team_agent_id is not None:
+        if not _db.has_team_access(current_user, team_agent_id, "operator"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this Team Agent")
+        return session_manager.get_all_sessions(team_agent_id=team_agent_id)
+
+    accessible_team_ids = _db.get_accessible_team_ids(current_user, "operator")
+    sessions = session_manager.get_all_sessions(team_agent_id=None)
+    if accessible_team_ids is None:
+        return sessions
+    if not accessible_team_ids:
+        return []
+    return [s for s in sessions if s.team_agent_id in accessible_team_ids]
 
 
 @app.post("/incoming-call")

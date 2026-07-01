@@ -442,15 +442,21 @@ export default function TeamsPage() {
                     size="sm"
                     onClick={() => {
                       setSelectedTeamId(editingTeam.id);
+                      const autoAssignAgentId =
+                        startingAgentId ?? (memberAgentIds.length === 1 ? memberAgentIds[0] : null);
                       const params = new URLSearchParams({
                         team_agent_id: String(editingTeam.id),
+                        return_to: "team_manage",
                         return_team_id: String(editingTeam.id),
                         return_team_name: editingTeam.name,
                       });
+                      if (autoAssignAgentId) {
+                        params.set("source_agent_id", String(autoAssignAgentId));
+                      }
                       router.push(`/admin/tools?${params.toString()}`);
                     }}
                   >
-                    Agent Capabilities
+                    Manage Team Capabilities
                   </Button>
                 </div>
                 <div className="overflow-hidden rounded-[14px] border border-[#E2E8F0]">
@@ -592,7 +598,7 @@ export default function TeamsPage() {
                 {workflowTeam.name} — Workflow
               </h2>
               <p className="text-sm font-medium text-[#778DA9]">
-                Workflow Overview: Starts from Coordinator and hands off between Agents in this Team.
+                Digital employee map showing routing, handoffs, and tool responsibilities in this Team Agent.
               </p>
               {workflowLoading ? (
                 <div className="rounded-[14px] border border-dashed border-[#CBD5E1] py-12 text-center text-sm font-medium text-[#778DA9]">

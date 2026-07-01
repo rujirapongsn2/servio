@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Wrench,
   Plus,
@@ -13,18 +13,21 @@ import {
   Globe,
   Info,
   Zap,
-  Code,
   Cloud,
   Database,
   Upload,
   Play,
-  Shield,
+  BookOpen,
+  Eye,
 } from "lucide-react";
 import { AVAILABLE_ICONS } from "@/components/IconPicker";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
 import CreateFileStoreModal from "@/components/CreateFileStoreModal";
 import FileStoreDetailModal from "@/components/FileStoreDetailModal";
 import TestFileStoreModal from "@/components/TestFileStoreModal";
+import CreateOKFBundleModal from "@/components/CreateOKFBundleModal";
+import OKFBundleDetailDrawer from "@/components/OKFBundleDetailDrawer";
+import TestOKFBundleModal from "@/components/TestOKFBundleModal";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
 import { UI_COPY } from "@/lib/ui-copy";
@@ -56,6 +59,7 @@ const getToolIcon = (toolName: string, toolType: string) => {
   // Custom/MCP tools
   if (toolType === 'mcp_streamable_http') return Cloud;
   if (toolType === 'custom_api') return Zap;
+  if (toolType === 'okf_knowledge_graph') return BookOpen;
 
   // Default
   return Wrench;
@@ -92,6 +96,7 @@ const getDocumentLibraryDisplayName = (tool: Tool, config: Record<string, unknow
 };
 
 function ToolsPageInner() {
+  const router = useRouter();
   const apiBaseUrl = getApiBaseUrl();
   const { selectedTeamId, setSelectedTeamId } = useTeam();
   const searchParams = useSearchParams();
@@ -102,22 +107,38 @@ function ToolsPageInner() {
     ? parseInt(searchParams.get("source_agent_id") as string)
     : null;
   const returnAgentId = searchParams.get("return_agent_id");
+  const returnTo = searchParams.get("return_to");
   const returnTeamId = searchParams.get("return_team_id");
   const returnTeamName = searchParams.get("return_team_name");
   const draftId = searchParams.get("draft_id");
   const effectiveTeamId = routeTeamId ?? selectedTeamId;
+  const isTeamSetupMode = returnTo === "team_manage" && Boolean(returnTeamId);
+  const teamManageHref = returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams";
   const agentReturnQuery = [
     effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
+    returnTo ? `return_to=${encodeURIComponent(returnTo)}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
   const agentReturnHref = returnAgentId
     ? `/admin/agents/${returnAgentId}${agentReturnQuery ? `?${agentReturnQuery}` : ""}`
-    : "/admin/teams";
+    : isTeamSetupMode
+      ? teamManageHref
+      : "/admin/teams";
+  const contextQuery = [
+    effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
+    sourceAgentId ? `source_agent_id=${sourceAgentId}` : "",
+    returnTo ? `return_to=${encodeURIComponent(returnTo)}` : "",
+    returnAgentId ? `return_agent_id=${returnAgentId}` : "",
+    returnTeamId ? `return_team_id=${returnTeamId}` : "",
+    returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    draftId ? `draft_id=${draftId}` : "",
+  ].filter(Boolean).join("&");
   const newToolQuery = [
     effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
     sourceAgentId ? `source_agent_id=${sourceAgentId}` : "",
+    returnTo ? `return_to=${encodeURIComponent(returnTo)}` : "",
     returnAgentId ? `return_agent_id=${returnAgentId}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
@@ -130,6 +151,10 @@ function ToolsPageInner() {
   const [selectedFileStore, setSelectedFileStore] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
+  const [showOKFModal, setShowOKFModal] = useState(false);
+  const [selectedOKFTool, setSelectedOKFTool] = useState<Tool | null>(null);
+  const [showOKFTestModal, setShowOKFTestModal] = useState(false);
+  const [showOKFDetailDrawer, setShowOKFDetailDrawer] = useState(false);
 
   useEffect(() => {
     if (routeTeamId && routeTeamId !== selectedTeamId) {
@@ -183,6 +208,7 @@ function ToolsPageInner() {
 
   const builtinTools = tools.filter((t) => t.type === "builtin");
   const fileStoreTools = tools.filter((t) => t.type === "gemini_file_search");
+  const okfTools = tools.filter((t) => t.type === "okf_knowledge_graph");
   const customTools = tools.filter((t) => t.type === "custom_api" || t.type === "mcp_streamable_http");
 
   const handleManageFiles = async (tool: Tool) => {
@@ -241,6 +267,66 @@ function ToolsPageInner() {
     }
   };
 
+  const handleTestOKF = (tool: Tool) => {
+    setSelectedOKFTool(tool);
+    setShowOKFTestModal(true);
+  };
+
+  const handleViewOKF = (tool: Tool) => {
+    setSelectedOKFTool(tool);
+    setShowOKFDetailDrawer(true);
+  };
+
+  const handleDeleteOKF = async (tool: Tool) => {
+    const config = tool.config ? JSON.parse(tool.config) : {};
+    const bundleId = config.okf_bundle_id;
+    if (!bundleId) {
+      handleDelete(tool.id);
+      return;
+    }
+    if (!confirm("Are you sure you want to delete this OKF knowledge bundle? This will remove the local files and its capability.")) return;
+
+    try {
+      const token = localStorage.getItem("adminToken");
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/okf-bundles/${bundleId}${params}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) throw new Error("Failed to delete OKF bundle");
+      fetchTools();
+    } catch (error) {
+      console.error("Failed to delete OKF bundle:", error);
+      alert("Failed to delete OKF knowledge bundle.");
+    }
+  };
+
+  const handleReindexOKF = async (tool: Tool) => {
+    const config = tool.config ? JSON.parse(tool.config) : {};
+    const bundleId = config.okf_bundle_id;
+    if (!bundleId) return;
+
+    try {
+      const token = localStorage.getItem("adminToken");
+      const params = effectiveTeamId ? `?team_agent_id=${effectiveTeamId}` : "";
+      const response = await fetch(`${apiBaseUrl}/api/admin/okf-bundles/${bundleId}/reindex${params}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Failed to re-index local knowledge");
+      }
+      alert("Local knowledge re-indexed successfully.");
+      fetchTools();
+    } catch (error) {
+      console.error("Failed to re-index OKF bundle:", error);
+      alert(error instanceof Error ? error.message : "Failed to re-index local knowledge.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="text-gray-600 dark:text-gray-400">Loading tools...</div>
@@ -250,25 +336,34 @@ function ToolsPageInner() {
   return (
     <div className="space-y-6">
       <WorkflowNavigator
-        backLabel={returnAgentId ? "Back to Agent" : "Team Agents"}
+        backLabel={returnAgentId ? "Back to Agent" : isTeamSetupMode ? "Back to Team Agent" : "Team Agents"}
         backHref={agentReturnHref}
         steps={[
-          { label: returnAgentId ? "Agent Editor" : "Team Agents", href: agentReturnHref },
-          { label: UI_COPY.tools.navLabel, active: true },
+          { label: "Team Agents", href: "/admin/teams" },
+          ...(isTeamSetupMode && returnTeamName
+            ? [{ label: returnTeamName, href: teamManageHref }]
+            : returnAgentId
+              ? [{ label: "Agent Editor", href: agentReturnHref }]
+              : []),
+          { label: isTeamSetupMode ? "Capabilities" : UI_COPY.tools.navLabel, active: true },
         ]}
         actions={[
           { label: UI_COPY.tools.actions.addIntegration, href: `/admin/tools/new${newToolQuery ? `?${newToolQuery}` : ""}`, variant: "primary" },
-          { label: "Channels", href: "/admin/tools/channels", variant: "outline" },
+          ...(isTeamSetupMode
+            ? [{ label: "Back to Team Agent", href: teamManageHref, variant: "outline" as const }]
+            : [{ label: "Channels", href: "/admin/tools/channels", variant: "outline" as const }]),
         ]}
       />
 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {UI_COPY.tools.pageTitle}
+            {isTeamSetupMode && returnTeamName ? `${returnTeamName} — Capabilities` : UI_COPY.tools.pageTitle}
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            {UI_COPY.tools.pageSubtitle}
+            {isTeamSetupMode
+              ? "Add knowledge and integrations for this Team Agent, then return to finish agent setup."
+              : UI_COPY.tools.pageSubtitle}
           </p>
         </div>
         <Link
@@ -279,6 +374,18 @@ function ToolsPageInner() {
           {UI_COPY.tools.actions.addIntegration}
         </Link>
       </div>
+
+      {isTeamSetupMode && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-100">
+          <div className="font-semibold">Team setup mode</div>
+          <p className="mt-1">
+            New capabilities are created for {returnTeamName || "this Team Agent"}
+            {sourceAgentId
+              ? " and will be assigned to the selected starting agent automatically."
+              : ". After creating them, return to the Team Agent and edit the agents that should use them."}
+          </p>
+        </div>
+      )}
 
       {/* Built-in Tools */}
       <div>
@@ -421,6 +528,108 @@ function ToolsPageInner() {
         </div>
       </div>
 
+      {/* Local Knowledge */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Local Knowledge
+          </h2>
+          <button
+            onClick={() => setShowOKFModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+          >
+            <Plus className="w-4 h-4" />
+            Add Knowledge
+          </button>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+          {okfTools.length === 0 ? (
+            <div className="p-8 text-center">
+              <BookOpen className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                No local knowledge yet. Upload files or paste text to create searchable local knowledge for this team.
+              </p>
+              <button
+                onClick={() => setShowOKFModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Plus className="w-4 h-4" />
+                Add Knowledge
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {okfTools.map((tool) => {
+                const config = tool.config ? JSON.parse(tool.config) : {};
+                const displayName = config.display_name || tool.name;
+                return (
+                  <div
+                    key={tool.id}
+                    className="p-4 flex items-start gap-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                  >
+                    <div className="flex-shrink-0 w-10 h-10 bg-emerald-100 dark:bg-emerald-900 rounded-lg flex items-center justify-center">
+                      <BookOpen className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <button
+                          type="button"
+                          onClick={() => handleViewOKF(tool)}
+                          className="truncate text-left text-base font-medium text-gray-900 hover:text-emerald-700 dark:text-white dark:hover:text-emerald-300"
+                          title="View local knowledge details"
+                        >
+                          {displayName}
+                        </button>
+                        <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300 text-xs font-medium rounded">
+                          Local Knowledge
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                        {config.description || "Searches local knowledge generated as Markdown/YAML OKF."}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        {UI_COPY.tools.meta.ownedBy}: {tool.owner_team_name || "N/A"} | {UI_COPY.tools.meta.createdBy}: {tool.created_by_username || "N/A"} | {UI_COPY.tools.meta.usedByAgents} {tool.agent_usage_count ?? 0} {UI_COPY.tools.meta.agents}
+                      </p>
+                    </div>
+                    <div className="flex-shrink-0 flex gap-2">
+                      <button
+                        onClick={() => handleViewOKF(tool)}
+                        className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                        title="View details"
+                      >
+                        <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleTestOKF(tool)}
+                        className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                        title="Test local knowledge"
+                      >
+                        <Play className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleReindexOKF(tool)}
+                        className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                        title="Re-index local knowledge"
+                      >
+                        <RotateCcw className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteOKF(tool)}
+                        className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-md transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Custom Tools */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
@@ -509,7 +718,7 @@ function ToolsPageInner() {
                       <div className="flex items-center gap-2">
                         {canEdit ? (
                           <Link
-                            href={`/admin/tools/${tool.id}?team_agent_id=${effectiveTeamId}`}
+                            href={`/admin/tools/${tool.id}${contextQuery ? `?${contextQuery}` : ""}`}
                             className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                             title="Edit integration"
                           >
@@ -555,6 +764,46 @@ function ToolsPageInner() {
             setShowFileStoreModal(false);
             fetchTools(); // Refresh tool list after creation
           }}
+        />
+      )}
+
+      {showOKFModal && (
+        <CreateOKFBundleModal
+          teamAgentId={effectiveTeamId}
+          assignAgentId={sourceAgentId}
+          onClose={() => setShowOKFModal(false)}
+          teamSetupMode={isTeamSetupMode}
+          teamName={returnTeamName}
+          onReturnToTeam={() => {
+            setShowOKFModal(false);
+            router.push(teamManageHref);
+          }}
+          onSuccess={() => {
+            fetchTools();
+          }}
+        />
+      )}
+
+      {showOKFTestModal && selectedOKFTool && (
+        <TestOKFBundleModal
+          tool={selectedOKFTool}
+          teamAgentId={effectiveTeamId}
+          onClose={() => {
+            setShowOKFTestModal(false);
+            setSelectedOKFTool(null);
+          }}
+        />
+      )}
+
+      {showOKFDetailDrawer && selectedOKFTool && (
+        <OKFBundleDetailDrawer
+          tool={selectedOKFTool}
+          teamAgentId={effectiveTeamId}
+          onClose={() => {
+            setShowOKFDetailDrawer(false);
+            setSelectedOKFTool(null);
+          }}
+          onReindexed={fetchTools}
         />
       )}
 

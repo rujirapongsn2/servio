@@ -16,6 +16,20 @@ interface ApiKeyManagerProps {
   onSlugSelect?: (slug: string) => void;
 }
 
+const fallbackAllowedDomains = "localhost";
+
+const getDefaultAllowedDomains = () => {
+  const domains = [fallbackAllowedDomains];
+
+  if (typeof window !== "undefined" && window.location.hostname) {
+    domains.push(window.location.hostname);
+  }
+
+  return Array.from(new Set(domains)).join(", ");
+};
+
+const defaultAllowedDomains = getDefaultAllowedDomains();
+
 export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerProps) {
   const { selectedTeamId } = useTeam();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -23,7 +37,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyExpireDays, setNewKeyExpireDays] = useState<number | "">("");
-  const [newKeyDomains, setNewKeyDomains] = useState("localhost");
+  const [newKeyDomains, setNewKeyDomains] = useState(defaultAllowedDomains);
   const [newKeyVoiceResponse, setNewKeyVoiceResponse] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -34,6 +48,16 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
   const [editingKeyId, setEditingKeyId] = useState<number | null>(null);
   const [editDomains, setEditDomains] = useState("");
   const [editVoiceResponse, setEditVoiceResponse] = useState(true);
+
+  useEffect(() => {
+    const currentDefaultAllowedDomains = getDefaultAllowedDomains();
+
+    setNewKeyDomains((domains) =>
+      domains === defaultAllowedDomains || domains === fallbackAllowedDomains
+        ? currentDefaultAllowedDomains
+        : domains
+    );
+  }, []);
 
   // Check for token on mount and when storage changes
   useEffect(() => {
@@ -162,7 +186,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
       // Reset form
       setNewKeyName("");
       setNewKeyExpireDays("");
-      setNewKeyDomains("");
+      setNewKeyDomains(getDefaultAllowedDomains());
       setNewKeyVoiceResponse(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create API key");

@@ -43,6 +43,7 @@ next-env.d.ts
 # server
 server/data/*.db
 server/data/agents.db*
+server/data/okf_bundles/
 
 # nginx
 nginx/certs/*.crt

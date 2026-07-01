@@ -21,4 +21,6 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "alembic>=1.13.0",
     "line-bot-sdk>=3.11.0",
+    "PyYAML>=6.0.2",
+    "pypdf>=5.1.0",
 ]

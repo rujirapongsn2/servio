@@ -203,6 +203,64 @@ class TestFileStoreResponse(BaseModel):
     response_time: float
 
 
+# OKF Knowledge models
+class OKFBundleResponse(BaseModel):
+    id: int
+    name: str
+    display_name: str
+    okf_version: Optional[str] = None
+    status: str
+    concept_count: int
+    link_count: int
+    validation_summary: Dict[str, Any] = {}
+    visibility: Optional[str] = None
+    owner_team_agent_id: Optional[int] = None
+    owner_team_name: Optional[str] = None
+    created_by_username: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    tool_id: Optional[int] = None
+
+
+class OKFImportJobResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+    bundle: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    warnings: List[str] = []
+    created_at: str
+    updated_at: str
+
+
+class OKFConceptResponse(BaseModel):
+    id: int
+    bundle_id: int
+    concept_id: str
+    file_path: str
+    type: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    resource: Optional[str] = None
+    tags: List[str] = []
+    timestamp: Optional[str] = None
+    updated_at: Optional[str] = None
+    markdown: Optional[str] = None
+    frontmatter: Optional[Dict[str, Any]] = None
+    body: Optional[str] = None
+    links: List[Dict[str, Any]] = []
+
+
+class TestOKFBundleRequest(BaseModel):
+    query: str
+
+
+class TestOKFBundleResponse(BaseModel):
+    response: str
+    concepts: List[Dict[str, Any]] = []
+    response_time: float
+
+
 # VoIP Provider models
 class VoIPProviderResponse(BaseModel):
     id: int

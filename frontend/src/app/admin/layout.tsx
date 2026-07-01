@@ -20,6 +20,21 @@ import TeamSwitcher from "@/components/TeamSwitcher";
 
 const OPERATOR_ALLOWED_PATHS = ["/admin/monitor", "/admin/account"];
 
+function shouldShowTeamContextSwitcher(pathname: string) {
+  if (pathname.startsWith("/admin/tools/channels") || pathname.startsWith("/admin/tools/widget")) {
+    return false;
+  }
+
+  return (
+    pathname === "/admin/tools" ||
+    pathname.startsWith("/admin/tools/new") ||
+    /^\/admin\/tools\/[^/]+$/.test(pathname) ||
+    pathname.startsWith("/admin/monitor") ||
+    pathname.startsWith("/admin/analytics") ||
+    /^\/admin\/agents\/[^/]+$/.test(pathname)
+  );
+}
+
 function AdminLayoutInner({
   children,
 }: {
@@ -314,10 +329,10 @@ function AdminLayoutInner({
         className={`${collapsed ? "ml-16" : "ml-64"} transition-all duration-200 relative z-0`}
         style={{ "--admin-sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
       >
-        {/* Top bar with team switcher */}
+        {/* Top bar */}
         <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-[#E2E8F0] bg-white px-8">
-          {!(pathname.startsWith("/admin/tools/channels") || pathname.startsWith("/admin/tools/widget")) && (
-            <TeamSwitcher />
+          {shouldShowTeamContextSwitcher(pathname) && (
+            <TeamSwitcher label="Team Agent" />
           )}
         </div>
         <main className="p-8">{children}</main>

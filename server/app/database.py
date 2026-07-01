@@ -7,7 +7,9 @@ for the Voice Agents SDK application. Refactored from raw SQL to ORM.
 
 import json
 import bcrypt
+import shutil
 from datetime import datetime, date, timedelta
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, update as sql_update, delete as sql_delete, func, and_, or_
 from sqlalchemy.orm import selectinload
@@ -17,7 +19,8 @@ from app.orm_models import (
     Admin, Agent, Tool, AgentTool, AgentHandoff,
     FileStore, FileStoreFile, VoIPProvider, ChannelConfig, ApiKey,
     Conversation, ConversationMessage, ConversationAnalytics, AnalyticsDailySummary,
-    IntentRule, TeamAgent, TeamAgentMember, TeamToolAssignment, TeamUserMembership
+    IntentRule, TeamAgent, TeamAgentMember, TeamToolAssignment, TeamUserMembership,
+    OKFBundle
 )
 
 
@@ -833,7 +836,7 @@ def update_custom_tool(
     with get_db() as db:
         query = db.query(Tool).filter(
             Tool.id == tool_id,
-            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search"])
+            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search", "okf_knowledge_graph"])
         )
         tool = query.first()
 
@@ -867,7 +870,7 @@ def delete_custom_tool(tool_id: int, team_agent_id: Optional[int] = None) -> boo
     with get_db() as db:
         tool = db.query(Tool).filter(
             Tool.id == tool_id,
-            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search"])
+            Tool.type.in_(["custom_api", "mcp_streamable_http", "gemini_file_search", "okf_knowledge_graph"])
         ).first()
 
         if not tool:
@@ -2115,6 +2118,8 @@ def delete_team_agent(team_id: int) -> bool:
             for row in db.query(TeamAgentMember.agent_id).filter_by(team_agent_id=team_id).all()
         ]
         owned_tools = db.query(Tool).filter_by(owner_team_agent_id=team_id).all()
+        owned_okf_bundles = db.query(OKFBundle).filter_by(owner_team_agent_id=team_id).all()
+        okf_paths_to_delete: List[str] = []
 
         for tool in owned_tools:
             external_use_query = db.query(AgentTool).filter(AgentTool.tool_id == tool.id)
@@ -2132,6 +2137,28 @@ def delete_team_agent(team_id: int) -> bool:
                 ).delete(synchronize_session=False)
             else:
                 db.delete(tool)
+
+        for bundle in owned_okf_bundles:
+            bundle_tools = [
+                tool for tool in db.query(Tool).filter_by(type="okf_knowledge_graph").all()
+                if isinstance(tool.config, dict) and tool.config.get("okf_bundle_id") == bundle.id
+            ]
+            external_use_exists = False
+            for tool in bundle_tools:
+                external_use_query = db.query(AgentTool).filter(AgentTool.tool_id == tool.id)
+                if member_agent_ids:
+                    external_use_query = external_use_query.filter(~AgentTool.agent_id.in_(member_agent_ids))
+                if external_use_query.first() is not None or tool.visibility == "global":
+                    external_use_exists = True
+                    break
+
+            if bundle.visibility == "global" and external_use_exists:
+                bundle.owner_team_agent_id = None
+                bundle.updated_at = datetime.utcnow()
+            else:
+                if bundle.storage_path:
+                    okf_paths_to_delete.append(bundle.storage_path)
+                db.delete(bundle)
 
         if member_agent_ids:
             db.query(Agent).filter(Agent.id.in_(member_agent_ids)).delete(synchronize_session=False)
@@ -2160,6 +2187,14 @@ def delete_team_agent(team_id: int) -> bool:
         )
 
         db.delete(team)
+        for storage_path in okf_paths_to_delete:
+            try:
+                path = Path(storage_path)
+                bundle_dir = path.parent if path.name == "source" else path
+                if bundle_dir.exists():
+                    shutil.rmtree(bundle_dir)
+            except Exception:
+                pass
         return True
 
 

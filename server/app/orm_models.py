@@ -277,6 +277,118 @@ class TeamUserMembership(Base):
 
 
 # ============================================================================
+# OKF Knowledge Models
+# ============================================================================
+
+class OKFBundle(Base):
+    """Local file-backed OKF bundle metadata.
+
+    The markdown/YAML files on disk are the canonical source. This table only
+    stores ownership and index metadata that can be rebuilt from those files.
+    """
+    __tablename__ = "okf_bundles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    okf_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="ready")
+    concept_count: Mapped[int] = mapped_column(Integer, default=0)
+    link_count: Mapped[int] = mapped_column(Integer, default=0)
+    validation_summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    owner_team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
+    visibility: Mapped[str] = mapped_column(String(50), default="team")
+    created_by_admin_id: Mapped[Optional[int]] = mapped_column(ForeignKey("admins.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    concepts: Mapped[List["OKFConceptIndex"]] = relationship(
+        back_populates="bundle",
+        cascade="all, delete-orphan",
+    )
+    links: Mapped[List["OKFLinkIndex"]] = relationship(
+        back_populates="bundle",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_okf_bundles_owner_visibility", "owner_team_agent_id", "visibility"),
+    )
+
+
+class OKFImportJob(Base):
+    """Tracks background local knowledge import jobs for user-visible status."""
+    __tablename__ = "okf_import_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(50), default="queued", index=True)
+    message: Mapped[str] = mapped_column(String(500), default="")
+    bundle: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
+    created_by_admin_id: Mapped[Optional[int]] = mapped_column(ForeignKey("admins.id"), nullable=True)
+    created_by_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_okf_import_jobs_team_created", "team_agent_id", "created_at"),
+    )
+
+
+class OKFConceptIndex(Base):
+    """Search/filter cache for one OKF concept document."""
+    __tablename__ = "okf_concept_index"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bundle_id: Mapped[int] = mapped_column(ForeignKey("okf_bundles.id", ondelete="CASCADE"), nullable=False, index=True)
+    concept_id: Mapped[str] = mapped_column(String(1000), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    type: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resource: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    timestamp: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    search_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    bundle: Mapped["OKFBundle"] = relationship(back_populates="concepts")
+
+    __table_args__ = (
+        Index("ix_okf_concepts_bundle_concept", "bundle_id", "concept_id", unique=True),
+        Index("ix_okf_concepts_bundle_type", "bundle_id", "type"),
+    )
+
+
+class OKFLinkIndex(Base):
+    """Directed markdown links discovered in an OKF bundle."""
+    __tablename__ = "okf_link_index"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bundle_id: Mapped[int] = mapped_column(ForeignKey("okf_bundles.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_concept_id: Mapped[str] = mapped_column(String(1000), nullable=False, index=True)
+    target: Mapped[str] = mapped_column(String(1000), nullable=False)
+    target_concept_id: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True, index=True)
+    label: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_external: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_citation: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_broken: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    bundle: Mapped["OKFBundle"] = relationship(back_populates="links")
+
+    __table_args__ = (
+        Index("ix_okf_links_bundle_source", "bundle_id", "source_concept_id"),
+        Index("ix_okf_links_bundle_target", "bundle_id", "target_concept_id"),
+    )
+
+
+# ============================================================================
 # Analytics Models
 # ============================================================================
 

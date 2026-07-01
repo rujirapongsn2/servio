@@ -98,6 +98,9 @@ def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
     elif tool_config and tool_config.get("type") == "gemini_file_search":
         # Create a dynamic function tool for Gemini File Search
         return create_gemini_file_search_tool(tool_name, tool_config)
+    elif tool_config and tool_config.get("type") == "okf_knowledge_graph":
+        # Create a local file-backed OKF knowledge retrieval tool
+        return create_okf_knowledge_graph_tool(tool_name, tool_config)
     elif tool_config and tool_config.get("type") == "mcp_streamable_http":
         # Respect safe-mode: allow disabling MCP for offline/dev environments
         if os.getenv("DISABLE_MCP", "").lower() in {"1", "true", "yes"} or os.getenv(
@@ -295,6 +298,39 @@ def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
 
     # Apply the decorator
     return function_tool(dynamic_gemini_tool)
+
+
+def create_okf_knowledge_graph_tool(tool_name: str, config: Dict[str, Any]):
+    """Create a local OKF knowledge graph search tool from configuration."""
+    from app.okf_service import OKFService
+
+    bundle_id = int(config.get("okf_bundle_id", 0) or 0)
+    description = config.get("description", f"Search local OKF knowledge using {tool_name}")
+    retrieval = config.get("retrieval", {}) if isinstance(config.get("retrieval"), dict) else {}
+    limit = int(retrieval.get("limit", 5) or 5)
+    expand_links = bool(retrieval.get("expand_links", True))
+    team_agent_id = config.get("team_agent_id")
+
+    def dynamic_okf_tool(query: str):
+        """Search a local Open Knowledge Format bundle."""
+        try:
+            log_tool_call(tool_name, {"query": query, "okf_bundle_id": bundle_id})
+            if not bundle_id:
+                return "OKF bundle is not configured for this capability."
+            result = OKFService().query_bundle(
+                bundle_id=bundle_id,
+                query=query,
+                team_agent_id=team_agent_id,
+                limit=limit,
+                expand_links=expand_links,
+            )
+            return result.get("response", "No matching OKF concepts found.")
+        except Exception as e:
+            return f"Error searching OKF knowledge: {str(e)}"
+
+    dynamic_okf_tool.__name__ = tool_name
+    dynamic_okf_tool.__doc__ = description
+    return function_tool(dynamic_okf_tool)
 
 
 def create_softnix_tool(tool_name: str, config: Dict[str, Any]):

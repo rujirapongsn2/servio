@@ -58,7 +58,7 @@ interface Session {
 }
 
 export default function MonitorPage() {
-    const { selectedTeamId, selectedTeam } = useTeam();
+    const { selectedTeamId, selectedTeam, loading: teamsLoading } = useTeam();
     const [sessions, setSessions] = useState<Session[]>([]);
     const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
     const [messages, setMessages] = useState<any[]>([]);
@@ -73,6 +73,8 @@ export default function MonitorPage() {
 
     // Poll for active sessions
     useEffect(() => {
+        if (teamsLoading) return;
+
         const fetchSessions = async () => {
             try {
                 const token = localStorage.getItem("adminToken");
@@ -94,7 +96,15 @@ export default function MonitorPage() {
         fetchSessions();
         const interval = setInterval(fetchSessions, 5000);
         return () => clearInterval(interval);
-    }, [apiBaseUrl, selectedTeamId]);
+    }, [apiBaseUrl, selectedTeamId, teamsLoading]);
+
+    useEffect(() => {
+        if (selectedSessionId && !sessions.some((session) => session.session_id === selectedSessionId)) {
+            setSelectedSessionId(null);
+            setMessages([]);
+            setIsConnected(false);
+        }
+    }, [selectedSessionId, sessions]);
 
     // Group sessions by team
     const sessionsByTeam = useMemo(() => {

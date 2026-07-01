@@ -33,8 +33,9 @@ class SessionManager:
         self.admin_connections: Dict[str, List[WebSocket]] = {}
         # Dashboard admin websockets (viewing all sessions, no specific session_id)
         self.dashboard_admins: List[WebSocket] = []
-        # Map admin websocket -> team_agent_id filter context
-        self.admin_team_context: Dict[int, Optional[int]] = {}
+        # Map admin websocket -> allowed team filter context.
+        # None means all teams (super admin or legacy fallback).
+        self.admin_team_context: Dict[int, Optional[set[int]]] = {}
 
     async def connect(
         self,
@@ -82,9 +83,15 @@ class SessionManager:
         websocket: WebSocket,
         session_id: Optional[str] = None,
         team_agent_id: Optional[int] = None,
+        allowed_team_ids: Optional[List[int]] = None,
     ):
         await websocket.accept()
-        self.admin_team_context[id(websocket)] = team_agent_id
+        if team_agent_id is not None:
+            self.admin_team_context[id(websocket)] = {team_agent_id}
+        elif allowed_team_ids is not None:
+            self.admin_team_context[id(websocket)] = set(allowed_team_ids)
+        else:
+            self.admin_team_context[id(websocket)] = None
         if session_id:
             # Admin monitoring specific session
             if session_id not in self.admin_connections:
@@ -148,11 +155,11 @@ class SessionManager:
         stale = []
         for admin_ws in self.dashboard_admins:
             try:
-                team_agent_id = self.admin_team_context.get(id(admin_ws))
+                allowed_team_ids = self.admin_team_context.get(id(admin_ws))
                 # Send all sessions as a summary list (without full message history)
                 session_list = []
                 for s in self.sessions.values():
-                    if team_agent_id is not None and s.team_agent_id != team_agent_id:
+                    if allowed_team_ids is not None and s.team_agent_id not in allowed_team_ids:
                         continue
                     session_list.append({
                         "session_id": s.session_id,

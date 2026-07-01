@@ -105,7 +105,7 @@ export default function AgentEditorPage() {
   const safeInstructions = typeof formData.instructions === "string" ? formData.instructions : "";
 
   const getCapabilityDisplayName = (tool: Tool): string => {
-    if ((tool.type || "") === "gemini_file_search") {
+    if ((tool.type || "") === "gemini_file_search" || (tool.type || "") === "okf_knowledge_graph") {
       try {
         const parsedConfig =
           typeof tool.config === "string" ? JSON.parse(tool.config) : null;

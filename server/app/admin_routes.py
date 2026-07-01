@@ -1,7 +1,9 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request, UploadFile, File, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request, UploadFile, File, Response, Form
 import json
 import os
 import re
+import shutil
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -10,6 +12,7 @@ from pathlib import Path
 
 from app import database
 from app.auth import get_current_user, verify_password, create_access_token
+from app.db_config import get_db
 from app.models import (
     LoginRequest,
     LoginResponse,
@@ -33,6 +36,11 @@ from app.models import (
     FileUploadJobResponse,
     TestFileStoreRequest,
     TestFileStoreResponse,
+    OKFBundleResponse,
+    OKFImportJobResponse,
+    OKFConceptResponse,
+    TestOKFBundleRequest,
+    TestOKFBundleResponse,
     VoIPProviderResponse,
     CreateVoIPProviderRequest,
     UpdateVoIPProviderRequest,
@@ -58,11 +66,14 @@ from app.models import (
     UpdateAdminUserRequest,
     UpdateTeamUsersRequest,
 )
+from app.okf_service import MAX_ARCHIVE_BYTES, OKFService, OKFValidationError
+from app.orm_models import OKFImportJob
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 MAX_FILE_STORE_FILE_SIZE_BYTES = 50 * 1024 * 1024
 FILE_UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
+OKF_IMPORT_JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 def require_team_access(current_user: str, team_agent_id: Optional[int], min_role: str = "viewer") -> None:
@@ -1219,6 +1230,586 @@ async def update_tool_visibility(
             detail="Tool not found"
         )
     return MessageResponse(message=f"Tool visibility updated to {visibility}")
+
+
+# OKF Knowledge endpoints
+async def _save_okf_upload_sources(
+    upload_dir: Path,
+    display_name: str,
+    files: Optional[List[UploadFile]],
+    file: Optional[UploadFile],
+    pasted_text: Optional[str],
+) -> List[Path]:
+    source_paths: List[Path] = []
+    total = 0
+    uploads = list(files or [])
+    if file is not None:
+        uploads.append(file)
+
+    for upload in uploads:
+        filename = Path(upload.filename or "knowledge.txt").name
+        target = upload_dir / filename
+        with target.open("wb") as temp_file:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_ARCHIVE_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Knowledge upload exceeds 50MB",
+                    )
+                temp_file.write(chunk)
+        source_paths.append(target)
+
+    if pasted_text and pasted_text.strip():
+        paste_name = sanitize_tool_name(display_name) or "pasted_knowledge"
+        paste_path = upload_dir / f"{paste_name}.md"
+        paste_path.write_text(pasted_text.strip(), encoding="utf-8")
+        source_paths.append(paste_path)
+
+    if not source_paths:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload knowledge files or paste text",
+        )
+    return source_paths
+
+
+def _okf_job_timestamp(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat() + "Z"
+    return str(value)
+
+
+def _okf_job_response(job: Any) -> Dict[str, Any]:
+    if isinstance(job, OKFImportJob):
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "message": job.message or "",
+            "bundle": job.bundle,
+            "error": job.error,
+            "warnings": job.warnings or [],
+            "created_at": _okf_job_timestamp(job.created_at),
+            "updated_at": _okf_job_timestamp(job.updated_at),
+        }
+    return {
+        "job_id": job["job_id"],
+        "status": job["status"],
+        "message": job.get("message") or "",
+        "bundle": job.get("bundle"),
+        "error": job.get("error"),
+        "warnings": job.get("warnings") or [],
+        "created_at": job["created_at"],
+        "updated_at": job["updated_at"],
+    }
+
+
+def _update_okf_job(job_id: str, **updates: Any) -> None:
+    job = OKF_IMPORT_JOBS.get(job_id)
+    now = datetime.utcnow()
+    if job:
+        job.update(updates)
+        job["updated_at"] = now.isoformat() + "Z"
+
+    with get_db() as db:
+        row = db.query(OKFImportJob).filter_by(id=job_id).first()
+        if not row:
+            return
+        for key, value in updates.items():
+            if hasattr(row, key):
+                setattr(row, key, value)
+        row.updated_at = now
+        db.add(row)
+
+
+def _create_okf_tool_for_bundle(
+    bundle: Dict[str, Any],
+    display_name: str,
+    team_agent_id: Optional[int],
+    visibility: str,
+    current_user: str,
+    assign_agent_id: Optional[int],
+) -> int:
+    tool_config = {
+        "type": "okf_knowledge_graph",
+        "description": f"Search local knowledge in {display_name.strip()}",
+        "okf_bundle_id": bundle["id"],
+        "display_name": display_name.strip(),
+        "team_agent_id": team_agent_id,
+        "retrieval": {
+            "limit": 5,
+            "expand_links": True,
+        },
+    }
+    tool_id = database.create_custom_tool(
+        f"{sanitize_tool_name(display_name)}_okf_{bundle['id']}",
+        tool_config,
+        icon="BookOpen",
+        team_agent_id=team_agent_id,
+        visibility=visibility,
+        created_by_username=current_user,
+    )
+    bundle["tool_id"] = tool_id
+    if assign_agent_id is not None:
+        assigned = database.assign_tool_to_agent(
+            agent_id=assign_agent_id,
+            tool_id=tool_id,
+            team_agent_id=team_agent_id,
+        )
+        if not assigned:
+            raise OKFValidationError("Failed to auto-assign OKF capability to target agent")
+    return tool_id
+
+
+def _run_okf_import_job(
+    job_id: str,
+    source_paths: List[str],
+    import_mode: str,
+    display_name: str,
+    team_agent_id: Optional[int],
+    visibility: str,
+    current_user: str,
+    create_tool: bool,
+    assign_agent_id: Optional[int],
+    cleanup_dir: str,
+) -> None:
+    try:
+        _update_okf_job(job_id, status="processing", message="Reading files and preparing local knowledge")
+        service = OKFService()
+        paths = [Path(path) for path in source_paths]
+        if import_mode == "archive":
+            if len(paths) != 1:
+                raise OKFValidationError("Advanced OKF archive import accepts one archive file")
+            bundle = service.import_archive(
+                archive_path=paths[0],
+                display_name=display_name.strip(),
+                team_agent_id=team_agent_id,
+                visibility=visibility,
+                created_by_username=current_user,
+            )
+        else:
+            bundle = service.import_knowledge_files(
+                source_paths=paths,
+                display_name=display_name.strip(),
+                team_agent_id=team_agent_id,
+                visibility=visibility,
+                created_by_username=current_user,
+            )
+
+        if create_tool:
+            _update_okf_job(job_id, message="Creating agent capability")
+            _create_okf_tool_for_bundle(
+                bundle=bundle,
+                display_name=display_name,
+                team_agent_id=team_agent_id,
+                visibility=visibility,
+                current_user=current_user,
+                assign_agent_id=assign_agent_id,
+            )
+
+        summary = bundle.get("validation_summary") or {}
+        _update_okf_job(
+            job_id,
+            status="succeeded",
+            message="Local knowledge is ready",
+            bundle=bundle,
+            warnings=summary.get("warnings", []),
+        )
+    except Exception as exc:
+        _update_okf_job(
+            job_id,
+            status="failed",
+            message="Import failed",
+            error=str(exc),
+        )
+    finally:
+        try:
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+@router.get("/okf-bundles", response_model=List[OKFBundleResponse])
+async def get_okf_bundles(
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Get OKF bundles available to the selected Team Agent."""
+    require_team_access(current_user, team_agent_id, "viewer")
+    return OKFService().list_bundles(team_agent_id=team_agent_id)
+
+
+@router.post("/okf-bundles/preview")
+async def preview_okf_knowledge(
+    team_agent_id: Optional[int] = None,
+    display_name: str = Form("Knowledge Preview"),
+    pasted_text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    current_user: str = Depends(get_current_user),
+):
+    """Preview friendly knowledge uploads before creating a local OKF bundle."""
+    require_team_access(current_user, team_agent_id, "admin")
+    temp_dir = None
+    try:
+        temp_dir = tempfile.TemporaryDirectory(prefix="okf_preview_")
+        source_paths = await _save_okf_upload_sources(
+            upload_dir=Path(temp_dir.name),
+            display_name=display_name,
+            files=files,
+            file=file,
+            pasted_text=pasted_text,
+        )
+        return OKFService().preview_knowledge_files(
+            source_paths=source_paths,
+            team_agent_id=team_agent_id,
+        )
+    except OKFValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except HTTPException:
+        raise
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
+
+
+@router.post("/okf-bundles/import-jobs", response_model=OKFImportJobResponse)
+async def start_okf_import_job(
+    background_tasks: BackgroundTasks,
+    team_agent_id: Optional[int] = None,
+    display_name: str = Form(...),
+    visibility: str = Form("team"),
+    import_mode: str = Form("knowledge"),
+    pasted_text: Optional[str] = Form(None),
+    create_tool: bool = Form(True),
+    assign_agent_id: Optional[int] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    current_user: str = Depends(get_current_user),
+):
+    """Start a background import job for local OKF knowledge."""
+    require_team_access(current_user, team_agent_id, "admin")
+    if visibility not in ("team", "global"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Visibility must be 'team' or 'global'",
+        )
+    if import_mode not in ("knowledge", "archive"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Import mode must be 'knowledge' or 'archive'",
+        )
+    if not display_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Display name is required",
+        )
+    if assign_agent_id is not None and not database.user_can_access_agent(current_user, assign_agent_id, "admin", team_agent_id=team_agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to assign tools to this agent",
+        )
+
+    upload_dir = Path(tempfile.mkdtemp(prefix="okf_import_job_"))
+    try:
+        source_paths = await _save_okf_upload_sources(
+            upload_dir=upload_dir,
+            display_name=display_name,
+            files=files,
+            file=file,
+            pasted_text=pasted_text,
+        )
+    except Exception:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise
+
+    if import_mode == "archive" and len(source_paths) != 1:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Advanced OKF archive import accepts one archive file",
+        )
+
+    now_dt = datetime.utcnow()
+    now = now_dt.isoformat() + "Z"
+    job_id = str(uuid.uuid4())
+    OKF_IMPORT_JOBS[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Import job queued",
+        "bundle": None,
+        "error": None,
+        "warnings": [],
+        "created_by": current_user,
+        "team_agent_id": team_agent_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+    admin = database.get_admin_by_username(current_user)
+    with get_db() as db:
+        db.add(OKFImportJob(
+            id=job_id,
+            status="queued",
+            message="Import job queued",
+            bundle=None,
+            error=None,
+            warnings=[],
+            team_agent_id=team_agent_id,
+            created_by_admin_id=admin.get("id") if admin else None,
+            created_by_username=current_user,
+            created_at=now_dt,
+            updated_at=now_dt,
+        ))
+    background_tasks.add_task(
+        _run_okf_import_job,
+        job_id,
+        [str(path) for path in source_paths],
+        import_mode,
+        display_name.strip(),
+        team_agent_id,
+        visibility,
+        current_user,
+        create_tool,
+        assign_agent_id,
+        str(upload_dir),
+    )
+    return _okf_job_response(OKF_IMPORT_JOBS[job_id])
+
+
+@router.get("/okf-bundles/import-jobs/{job_id}", response_model=OKFImportJobResponse)
+async def get_okf_import_job(
+    job_id: str,
+    current_user: str = Depends(get_current_user),
+):
+    """Get the status of a background OKF import job."""
+    with get_db() as db:
+        job = db.query(OKFImportJob).filter_by(id=job_id).first()
+        if job:
+            if job.created_by_username != current_user:
+                require_team_access(current_user, job.team_agent_id, "admin")
+            return _okf_job_response(job)
+
+    job = OKF_IMPORT_JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Import job not found")
+    if job.get("created_by") != current_user:
+        require_team_access(current_user, job.get("team_agent_id"), "admin")
+    return _okf_job_response(job)
+
+
+@router.post("/okf-bundles", response_model=OKFBundleResponse)
+async def import_okf_bundle(
+    team_agent_id: Optional[int] = None,
+    display_name: str = Form(...),
+    visibility: str = Form("team"),
+    import_mode: str = Form("knowledge"),
+    pasted_text: Optional[str] = Form(None),
+    create_tool: bool = Form(True),
+    assign_agent_id: Optional[int] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    current_user: str = Depends(get_current_user),
+):
+    """Import OKF knowledge from friendly uploads, pasted text, or advanced OKF archives."""
+    require_team_access(current_user, team_agent_id, "admin")
+    if visibility not in ("team", "global"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Visibility must be 'team' or 'global'",
+        )
+    if import_mode not in ("knowledge", "archive"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Import mode must be 'knowledge' or 'archive'",
+        )
+    if not display_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Display name is required",
+        )
+    if assign_agent_id is not None and not database.user_can_access_agent(current_user, assign_agent_id, "admin", team_agent_id=team_agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to assign tools to this agent",
+        )
+
+    temp_dir = None
+    try:
+        temp_dir = tempfile.TemporaryDirectory(prefix="okf_upload_")
+        source_paths = await _save_okf_upload_sources(
+            upload_dir=Path(temp_dir.name),
+            display_name=display_name,
+            files=files,
+            file=file,
+            pasted_text=pasted_text,
+        )
+
+        service = OKFService()
+        if import_mode == "archive":
+            if len(source_paths) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Advanced OKF archive import accepts one archive file",
+                )
+            bundle = service.import_archive(
+                archive_path=source_paths[0],
+                display_name=display_name.strip(),
+                team_agent_id=team_agent_id,
+                visibility=visibility,
+                created_by_username=current_user,
+            )
+        else:
+            bundle = service.import_knowledge_files(
+                source_paths=source_paths,
+                display_name=display_name.strip(),
+                team_agent_id=team_agent_id,
+                visibility=visibility,
+                created_by_username=current_user,
+            )
+
+        if create_tool:
+            _create_okf_tool_for_bundle(
+                bundle=bundle,
+                display_name=display_name,
+                team_agent_id=team_agent_id,
+                visibility=visibility,
+                current_user=current_user,
+                assign_agent_id=assign_agent_id,
+            )
+
+        return bundle
+    except OKFValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import OKF bundle: {str(e)}",
+        )
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
+
+
+@router.get("/okf-bundles/{bundle_id}", response_model=OKFBundleResponse)
+async def get_okf_bundle(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Get OKF bundle metadata."""
+    require_team_access(current_user, team_agent_id, "viewer")
+    bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not bundle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    return bundle
+
+
+@router.get("/okf-bundles/{bundle_id}/concepts", response_model=List[OKFConceptResponse])
+async def get_okf_concepts(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    query: Optional[str] = None,
+    type: Optional[str] = None,
+    tag: Optional[str] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """List concepts in an OKF bundle."""
+    require_team_access(current_user, team_agent_id, "viewer")
+    if not OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    return OKFService().list_concepts(
+        bundle_id=bundle_id,
+        team_agent_id=team_agent_id,
+        query=query,
+        concept_type=type,
+        tag=tag,
+    )
+
+
+@router.get("/okf-bundles/{bundle_id}/concepts/{concept_id:path}", response_model=OKFConceptResponse)
+async def get_okf_concept(
+    bundle_id: int,
+    concept_id: str,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Read one OKF concept directly from the local bundle files."""
+    require_team_access(current_user, team_agent_id, "viewer")
+    concept = OKFService().get_concept(bundle_id, concept_id, team_agent_id=team_agent_id)
+    if not concept:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
+    return concept
+
+
+@router.post("/okf-bundles/{bundle_id}/test", response_model=TestOKFBundleResponse)
+async def test_okf_bundle(
+    bundle_id: int,
+    request: TestOKFBundleRequest,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Test local OKF retrieval without calling external file search services."""
+    require_team_access(current_user, team_agent_id, "viewer")
+    start_time = time.time()
+    result = OKFService().query_bundle(bundle_id, request.query, team_agent_id=team_agent_id)
+    return TestOKFBundleResponse(
+        response=result["response"],
+        concepts=result.get("concepts", []),
+        response_time=time.time() - start_time,
+    )
+
+
+@router.post("/okf-bundles/{bundle_id}/reindex", response_model=OKFBundleResponse)
+async def reindex_okf_bundle(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Rebuild an OKF bundle index from its local source files."""
+    require_team_access(current_user, team_agent_id, "admin")
+    bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not bundle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    admin = database.get_admin_by_username(current_user)
+    if (
+        bundle.get("owner_team_agent_id") is not None
+        and bundle.get("owner_team_agent_id") != team_agent_id
+        and not (admin and admin.get("is_super_admin"))
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can re-index this OKF bundle")
+    try:
+        return OKFService().reindex_bundle(bundle_id, team_agent_id=team_agent_id)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    except OKFValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to re-index OKF bundle: {str(e)}")
+
+
+@router.delete("/okf-bundles/{bundle_id}", response_model=MessageResponse)
+async def delete_okf_bundle(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Delete an owned OKF bundle, its local files, index rows, and tools."""
+    require_team_access(current_user, team_agent_id, "admin")
+    success = OKFService().delete_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    return MessageResponse(message="OKF bundle deleted successfully")
 
 
 # File Store endpoints
