@@ -13,7 +13,7 @@ from agents.voice import AudioInput, VoiceStreamEvent, VoiceStreamEventAudio
 from fastapi import WebSocket
 from openai.types.responses import ResponseTextDeltaEvent
 
-from app.analytics_service import get_analytics_service
+from app.analytics_service import AnalyticsService
 
 
 def transform_data_to_events(audio_np: np.ndarray) -> dict:
@@ -99,7 +99,7 @@ class WebsocketHelper:
         self.voice_response_enabled = voice_response_enabled
 
         # Initialize analytics tracking
-        self.analytics = get_analytics_service()
+        self.analytics = AnalyticsService()
         self.conversation_id = self.analytics.start_conversation(
             session_id,
             team_agent_id=team_agent_id,
@@ -164,7 +164,9 @@ class WebsocketHelper:
         event: RawResponsesStreamEvent | RunItemStreamEvent | AgentUpdatedStreamEvent,
     ):
         if is_agent_updated(event):
+            previous_agent_name = getattr(self.latest_agent, "name", None)
             self.latest_agent = event.new_agent
+            self.analytics.track_handoff(previous_agent_name, getattr(self.latest_agent, "name", None))
             await self.websocket.send_text(
                 json.dumps(
                     {
@@ -187,7 +189,7 @@ class WebsocketHelper:
                 except:
                     arguments = {}
 
-                self.analytics.track_tool_call(tool_name, arguments)
+                self.analytics.track_tool_call(tool_name, arguments, agent_name=self.latest_agent.name)
 
             await self.websocket.send_text(
                 json.dumps(
@@ -236,6 +238,32 @@ class WebsocketHelper:
                     }
                 )
             )
+
+    async def send_assistant_message(self, content: str, agent_name: Optional[str] = None):
+        self.history.append(
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": content,
+            }
+        )
+
+        self.analytics.track_message(
+            role="assistant",
+            content=content,
+            agent_name=agent_name or self.latest_agent.name
+        )
+
+        await self.websocket.send_text(
+            json.dumps(
+                {
+                    "type": "history.updated",
+                    "reason": "assistant.message",
+                    "inputs": self.history,
+                    "agent_name": self.latest_agent.name,
+                }
+            )
+        )
 
     async def send_admin_message(self, content: str):
         self.history.append(

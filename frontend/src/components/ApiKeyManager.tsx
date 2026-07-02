@@ -157,7 +157,7 @@ export function ApiKeyManager({ onApiKeySelect, onSlugSelect }: ApiKeyManagerPro
       });
 
       // Extract API key from message
-      const keyMatch = result.message.match(/Key: (sk_\w+)/);
+      const keyMatch = result.message.match(/Key: (sk_[A-Za-z0-9_-]+)/);
       if (keyMatch) {
         const newKey = keyMatch[1];
         // Copy to clipboard
