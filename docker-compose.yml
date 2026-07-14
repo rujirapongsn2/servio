@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
     env_file:
       - .env
     environment:
@@ -88,7 +88,8 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /dev/shm:rw,noexec,nosuid,nodev,size=64m
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://localhost}
       - NEXT_PUBLIC_WEBSOCKET_ENDPOINT=${NEXT_PUBLIC_WEBSOCKET_ENDPOINT:-wss://localhost/ws}
@@ -102,7 +103,7 @@ services:
     cap_drop:
       - ALL
     healthcheck:
-      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" ]
+      test: [ "CMD", "node", "-e", "const req = require('http').get('http://localhost:3000/admin', (r) => process.exit((r.statusCode || 500) < 400 ? 0 : 1)); req.on('error', () => process.exit(1));" ]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -51,7 +51,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "const req = require('http').get('http://localhost:3000/admin', (r) => process.exit((r.statusCode || 500) < 400 ? 0 : 1)); req.on('error', () => process.exit(1));"
 
 # Start Next.js
 CMD ["npm", "run", "start"]
