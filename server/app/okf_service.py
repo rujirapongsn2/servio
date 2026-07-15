@@ -53,6 +53,48 @@ SUPPORTED_KNOWLEDGE_EXTENSIONS = {
 }
 SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".tar", ".tgz", ".gz"}
 
+QUERY_STOPWORD_FRAGMENTS = (
+    "สอบถาม",
+    "ข้อมูล",
+    "หน่อย",
+    "ครับ",
+    "ค่ะ",
+    "คะ",
+    "รองรับ",
+    "อะไรบ้าง",
+    "อะไร",
+    "แบบใด",
+    "ได้บ้าง",
+    "บ้าง",
+    "มี",
+    "การ",
+)
+LOW_VALUE_QUERY_TERMS = {"softnix", "logger", "slg"}
+
+
+def _query_terms(query: str) -> List[str]:
+    raw_terms = [term.lower() for term in re.findall(r"[\w\u0E00-\u0E7F]+", query) if len(term) > 1]
+    expanded: List[str] = []
+    for term in raw_terms:
+        expanded.append(term)
+        stripped = term
+        for fragment in QUERY_STOPWORD_FRAGMENTS:
+            stripped = stripped.replace(fragment, "")
+        stripped = stripped.strip("_- ")
+        if len(stripped) > 1:
+            expanded.append(stripped)
+
+    unique: List[str] = []
+    for term in expanded:
+        if term and term not in unique:
+            unique.append(term)
+    return unique
+
+
+def _excerpt_terms(terms: Iterable[str]) -> List[str]:
+    useful = [term for term in terms if term not in LOW_VALUE_QUERY_TERMS and len(term) > 2]
+    return useful or list(terms)
+
 FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)(.*)\Z", re.S)
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
@@ -1045,7 +1087,8 @@ class OKFService:
         limit: int = 5,
         expand_links: bool = True,
     ) -> Dict[str, Any]:
-        terms = [term.lower() for term in re.findall(r"[\w\u0E00-\u0E7F]+", query) if len(term) > 1]
+        terms = _query_terms(query)
+        excerpt_terms = _excerpt_terms(terms)
         with get_db() as db:
             bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
             if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
@@ -1090,7 +1133,7 @@ class OKFService:
                     _, body = _parse_frontmatter(markdown, concept.file_path)
                 except OKFValidationError:
                     body = markdown
-                item["excerpt"] = self._excerpt(body, terms)
+                item["excerpt"] = self._excerpt(body, excerpt_terms)
                 item["score"] = score
                 item["match_reason"] = self._format_match_reason(reasons)
                 if expand_links:
@@ -1141,13 +1184,36 @@ class OKFService:
             for link in links
         ]
 
-    def _excerpt(self, body: str, terms: Iterable[str], size: int = 420) -> str:
+    def _excerpt(self, body: str, terms: Iterable[str], size: int = 1800) -> str:
         plain = re.sub(r"\s+", " ", body).strip()
         if not plain:
             return ""
+
+        ordered_terms = sorted(set(terms), key=len, reverse=True)
+        paragraphs = [
+            re.sub(r"\s+", " ", paragraph).strip()
+            for paragraph in re.split(r"\n\s*\n+", body)
+            if paragraph.strip()
+        ]
+        matched_paragraphs = []
+        for paragraph in paragraphs:
+            lower_paragraph = paragraph.lower()
+            if any(term in lower_paragraph for term in ordered_terms):
+                matched_paragraphs.append(paragraph)
+
+        if matched_paragraphs:
+            excerpt = " ".join(matched_paragraphs)
+            if len(excerpt) > size:
+                excerpt = excerpt[: size - 3].rstrip() + "..."
+            return excerpt
+
         lower = plain.lower()
-        positions = [lower.find(term) for term in terms if lower.find(term) >= 0]
-        start = max(0, min(positions) - 120) if positions else 0
+        position = -1
+        for term in ordered_terms:
+            position = lower.find(term)
+            if position >= 0:
+                break
+        start = max(0, position - 180) if position >= 0 else 0
         excerpt = plain[start : start + size]
         if start > 0:
             excerpt = "..." + excerpt
@@ -1168,13 +1234,19 @@ class OKFService:
         if not concepts:
             return "No matching OKF concepts found."
 
-        lines = [f"Found {len(concepts)} relevant source document{'s' if len(concepts) != 1 else ''}:"]
+        lines = [
+            "Use only the source excerpts below to answer. "
+            "If the excerpts do not contain the requested detail, say that the local knowledge does not specify it."
+        ]
+        lines.append(f"Found {len(concepts)} relevant source document{'s' if len(concepts) != 1 else ''}:")
         for index, concept in enumerate(concepts, start=1):
-            summary = concept.get("description") or concept.get("excerpt") or "No summary available."
-            summary = re.sub(r"\s+", " ", str(summary)).strip()
-            if len(summary) > 360:
-                summary = summary[:357].rstrip() + "..."
-            lines.append(f"{index}. {concept.get('title') or concept.get('concept_id')}: {summary}")
+            excerpt = re.sub(r"\s+", " ", str(concept.get("excerpt") or "")).strip()
+            if len(excerpt) > 1600:
+                excerpt = excerpt[:1597].rstrip() + "..."
+            description = re.sub(r"\s+", " ", str(concept.get("description") or "")).strip()
+            lines.append(f"{index}. {concept.get('title') or concept.get('concept_id')}")
+            if description:
+                lines.append(f"Source: {description}")
+            lines.append(f"Excerpt: {excerpt or 'No excerpt available.'}")
 
-        lines.append("Open a source document to review the original content.")
         return "\n".join(lines)

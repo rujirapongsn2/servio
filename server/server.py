@@ -163,18 +163,28 @@ class Workflow(VoiceWorkflowBase):
             # We might want to send a "typing" indicator or just nothing.
             return
 
-        output = Runner.run_streamed(
-            latest_agent,
-            conversation_history,
-        )
+        try:
+            output = Runner.run_streamed(
+                latest_agent,
+                conversation_history,
+            )
 
-        async for event in output.stream_events():
-            await self.connection.handle_new_item(event)
+            async for event in output.stream_events():
+                await self.connection.handle_new_item(event)
 
-            if is_text_output(event):
-                yield event.data.delta  # type: ignore
+                if is_text_output(event):
+                    yield event.data.delta  # type: ignore
 
-        await self.connection.text_output_complete(output, is_done=True)
+            await self.connection.text_output_complete(output, is_done=True)
+        except Exception:
+            logger.exception("Agent run failed for session %s", self.session_id)
+            error_message = (
+                "ขออภัย ระบบตัวแทนของทีมนี้ขัดข้องชั่วคราว "
+                "กรุณาลองใหม่อีกครั้ง หรือให้ผู้ดูแลตรวจสอบการตั้งค่า agent และ tools"
+            )
+            await self.connection.send_assistant_message(error_message)
+            await session_manager.update_session(self.session_id, {"content": error_message}, is_user=False)
+            return
         
         # Update session manager with agent response (full response is in connection.partial_response or we can capture it here)
         # Actually connection.text_output_complete clears partial_response.
@@ -413,7 +423,7 @@ async def twilio_stream_endpoint(websocket: WebSocket):
             dynamic_starting_agent = get_runtime_starting_agent(default_team_id)
             # Initialize history list to track context
             history = []
-            connection = TwilioHelper(websocket, history, dynamic_starting_agent, session_id, stream_sid)
+            connection = TwilioHelper(websocket, history, dynamic_starting_agent, session_id, stream_sid, team_agent_id=default_team_id)
             # Register helper so session manager can control it (e.g. view transcripts)
             session_manager.register_helper(session_id, connection)
             
