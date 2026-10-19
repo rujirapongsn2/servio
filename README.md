@@ -281,8 +281,8 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
 วิธีที่ง่ายที่สุดคือใช้ Docker ไม่ต้องลง Node.js, Python หรือ uv เอง!
 
 1. **สิ่งที่ต้องมี:**
-   - ติดตั้ง [Docker Desktop](https://docs.docker.com/get-docker/)
-   - ตรวจสอบว่า Docker รันอยู่
+   - Linux/Ubuntu ที่ใช้ `apt` สามารถให้ installer ติดตั้ง dependency, Docker และ Docker Compose ให้ได้
+   - ถ้าติดตั้งบน OS อื่น ให้ติดตั้ง [Docker Desktop](https://docs.docker.com/get-docker/) และตรวจสอบว่า Docker รันอยู่ก่อน
 
 2. **Clone Repository:**
 
@@ -298,15 +298,30 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    ```
 
    installer จะ:
-   - ถามค่าที่จำเป็นแบบ step by step เช่น `OPENAI_API_KEY`, `SOFTNIX_API_KEY`, `GEMINI_API_KEY`
+   - ตรวจและติดตั้ง dependency ที่จำเป็นบน apt-based Linux เช่น `curl`, `openssl`, `lsof`, `git`, Docker และ Docker Compose
+   - ถาม `OPENAI_API_KEY` ก่อนและทดสอบกับ OpenAI API ให้ผ่านก่อนจึงไปต่อ
+   - ถาม `SOFTNIX_API_KEY` / `GEMINI_API_KEY` แบบ optional และถ้ากรอกจะทดสอบ key นั้นก่อนเช่นกัน
    - สร้างค่าเริ่มต้นให้เองสำหรับ PostgreSQL, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WEBSOCKET_ENDPOINT`, `JWT_SECRET_KEY`
+   - ตั้งค่า local HTTP origin สำหรับ Cloudflare Tunnel (ค่าเริ่มต้น `http://localhost:8080`)
    - สร้างหรือสำรอง `.env`
-   - build และ start services ให้พร้อมใช้งาน
+   - build, start services, รอ health check และตรวจ `/api/health` ให้พร้อมใช้งาน
 
    ถ้าต้องการเขียน config และ build แต่ยังไม่ start:
 
    ```bash
    ./services.sh install --no-start
+   ```
+
+   ถ้าจำเป็นต้องติดตั้งแบบ offline หรือยังไม่ต้องการตรวจ key ตอน install สามารถข้ามการตรวจได้:
+
+   ```bash
+   ./services.sh install --skip-api-check
+   ```
+
+   ถ้ารันใน environment ที่ไม่มี interactive terminal จริง ให้ส่ง key ผ่าน environment variable ได้:
+
+   ```bash
+   OPENAI_API_KEY=sk-... ./services.sh install
    ```
 
 4. **จัดการ services ภายหลัง:**
@@ -339,11 +354,13 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    - เปลี่ยน permissions เป็น 644 เพื่อให้ Nginx container อ่านได้
    - แสดงผลลัพธ์การดำเนินการ
 
-   **ช่องทางเข้าใช้งาน:**
-   - Frontend: [`https://localhost`](https://localhost)
-   - Admin Console: [`https://localhost/admin`](https://localhost/admin)
-   - Backend API: [`https://localhost/api`](https://localhost/api)
-   - WebSocket: `wss://localhost/ws`
+   **ช่องทางเข้าใช้งานหลังติดตั้ง:**
+   - Public Frontend: `https://servio.softnix.ai` (หรือโดเมนที่ระบุตอน install)
+   - Public Admin Console: `https://servio.softnix.ai/admin`
+   - Public Backend API: `https://servio.softnix.ai/api`
+   - Public WebSocket: `wss://servio.softnix.ai/ws`
+   - Cloudflare Tunnel origin: `http://localhost:8080` (หรือพอร์ต `NGINX_HTTP_PORT` ที่ตั้งไว้)
+   - Local HTTPS direct access: `https://localhost:8443`
 
    **คำสั่ง Docker Direct** (ถ้าคุณถนัดแบบพิมพ์เอง):
    ```bash
@@ -371,8 +388,10 @@ Use case: ให้ผู้ช่วยกฎหมายช่วยดูเ�
    # OPENAI_API_KEY=<your_openai_api_key>
    # JWT_SECRET_KEY=<generate_a_secure_value>
    # Frontend endpoints (ปรับเป็นโดเมนจริงเวลา deploy)
-   # NEXT_PUBLIC_API_URL=https://localhost
-   # NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://localhost/ws
+   # NEXT_PUBLIC_API_URL=https://servio.softnix.ai
+   # NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://servio.softnix.ai/ws
+   # NGINX_HTTP_PORT=8080
+   # NGINX_HTTPS_PORT=8443
    # Optional integrations: SOFTNIX_API_KEY / GEMINI_API_KEY
    ```
 
