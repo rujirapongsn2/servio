@@ -86,13 +86,70 @@ class AnalyticsService:
             tool_calls=json.dumps(tool_calls) if tool_calls else None
         )
 
-    def track_tool_call(self, tool_name: str, arguments: Dict[str, Any]):
+    def track_event(
+        self,
+        role: str,
+        content: str,
+        agent_name: Optional[str] = None,
+        tool_calls: Optional[List[Dict]] = None,
+    ):
+        """Persist a non-chat audit event without counting it as a user/agent message."""
+        if not self.conversation_id:
+            return
+
+        timestamp = datetime.now().isoformat()
+        if agent_name:
+            self.agents_used.add(agent_name)
+
+        database.add_conversation_message(
+            conversation_id=self.conversation_id,
+            role=role,
+            content=content,
+            timestamp=timestamp,
+            agent_name=agent_name,
+            tool_calls=json.dumps(tool_calls) if tool_calls else None
+        )
+
+    def track_handoff(self, from_agent: Optional[str], to_agent: Optional[str]):
+        """Track agent transfers so analytics history can explain routing decisions."""
+        if from_agent:
+            self.agents_used.add(from_agent)
+        if to_agent:
+            self.agents_used.add(to_agent)
+        if not self.conversation_id or not to_agent:
+            return
+
+        route = f"{from_agent or 'Unknown'} -> {to_agent}"
+        self.track_event(
+            role="handoff",
+            content=f"Handoff: {route}",
+            agent_name=to_agent,
+        )
+
+    def track_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        agent_name: Optional[str] = None,
+    ):
         """Track a tool call"""
         self.tools_called.append({
             'tool': tool_name,
             'args': arguments,
             'timestamp': datetime.now().isoformat()
         })
+        if not self.conversation_id:
+            return
+
+        content = f"Tool call: {tool_name}"
+        if arguments:
+            content += f"\nArguments: {json.dumps(arguments, ensure_ascii=False)}"
+        self.track_event(
+            role="tool",
+            content=content,
+            agent_name=agent_name,
+            tool_calls=[{"name": tool_name, "arguments": arguments}],
+        )
 
     async def end_conversation(self, outcome: str = 'completed'):
         """End conversation and save final metadata"""

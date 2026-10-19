@@ -1440,11 +1440,16 @@ def update_api_key(
 
 
 def delete_api_key(key_id: int) -> bool:
-    """Delete an API key"""
+    """Delete an API key while preserving conversation history."""
     with get_db() as db:
         api_key = db.query(ApiKey).filter_by(id=key_id).first()
         if not api_key:
             return False
+
+        db.query(Conversation).filter_by(api_key_id=key_id).update(
+            {Conversation.api_key_id: None},
+            synchronize_session=False,
+        )
         db.delete(api_key)
         return True
 

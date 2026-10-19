@@ -169,8 +169,10 @@ class TestRuntimeAgentResolution:
         team_id = create_team_agent("Empty Team", "empty-team")
         agent = get_runtime_starting_agent(team_agent_id=team_id)
         assert agent is not None
-        # Empty team should have no handoffs
+        # Empty team should have no handoffs, but must still answer directly.
         assert len(agent.handoffs) == 0
+        assert "answer the user directly" in agent.instructions
+        assert "Do not try to transfer" in agent.instructions
 
         # Default team should have handoffs
         agent_default = get_runtime_starting_agent(team_agent_id=1)

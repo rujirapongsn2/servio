@@ -106,8 +106,24 @@ from agents.voice import VoiceStreamEvent, VoiceStreamEventAudio
 from app.utils import WebsocketHelper
 
 class TwilioHelper(WebsocketHelper):
-    def __init__(self, websocket: WebSocket, history: list, initial_agent: Any, session_id: str, stream_sid: str):
-        super().__init__(websocket, history, initial_agent, session_id)
+    def __init__(
+        self,
+        websocket: WebSocket,
+        history: list,
+        initial_agent: Any,
+        session_id: str,
+        stream_sid: str,
+        team_agent_id: Optional[int] = None,
+        channel_type: str = "phone",
+    ):
+        super().__init__(
+            websocket,
+            history,
+            initial_agent,
+            session_id,
+            team_agent_id=team_agent_id,
+            channel_type=channel_type,
+        )
         self.stream_sid = stream_sid
 
     async def show_user_input(self, user_input: str):
@@ -139,14 +155,25 @@ class TwilioHelper(WebsocketHelper):
         pass
 
     async def handle_new_item(self, event):
-        # For phone, we might ignore visual tool call updates
-        # But we still update internal history
-        if hasattr(event, "item"):
+        # For phone, we ignore visual updates but still preserve audit history.
+        if hasattr(event, "new_agent"):
+            previous_agent_name = getattr(self.latest_agent, "name", None)
+            self.latest_agent = event.new_agent
+            self.analytics.track_handoff(previous_agent_name, getattr(self.latest_agent, "name", None))
+        elif hasattr(event, "item"):
             item = event.item.to_input_item()
             self.history.append(item)
             if item.get("type") == "function_call":
-                 # Track analytics
-                 pass
+                tool_name = item.get("name", "unknown")
+                try:
+                    arguments = json.loads(item.get("arguments", "{}"))
+                except Exception:
+                    arguments = {}
+                self.analytics.track_tool_call(
+                    tool_name,
+                    arguments,
+                    agent_name=getattr(self.latest_agent, "name", None),
+                )
 
     async def text_output_complete(self, output, is_done=False):
         if is_done:
@@ -162,11 +189,19 @@ class TwilioHelper(WebsocketHelper):
             last_msg = self.history[-1]
             if last_msg.get("role") == "assistant" and last_msg.get("content"):
                  from app.session_manager import session_manager
-                 await session_manager.update_session(self.session_id, {"content": last_msg["content"]}, is_user=False)
+                 assistant_content = last_msg["content"]
+                 if isinstance(assistant_content, list):
+                     assistant_content = "".join(
+                         part.get("text", "") if isinstance(part, dict) else str(part)
+                         for part in assistant_content
+                     )
+                 await session_manager.update_session(self.session_id, {"content": assistant_content}, is_user=False)
+                 self.analytics.track_message(
+                     role="assistant",
+                     content=str(assistant_content),
+                     agent_name=getattr(self.latest_agent, "name", None),
+                 )
             
-            # Track analytics
-            if self.partial_response:
-                 self.analytics.track_message(role="assistant", content=self.partial_response, agent_name=self.latest_agent.name)
             self.partial_response = ""
 
     async def send_audio_chunk(self, event: VoiceStreamEvent):

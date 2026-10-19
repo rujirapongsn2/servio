@@ -822,6 +822,23 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
                 return all_agents[agent_data["id"]]
         return db_agents[0] if db_agents else starting_agent
 
+    if team_agent_id is not None and not db_agents:
+        team_name = team.get("name") if team else "this team"
+        empty_team_instructions = (
+            f"You are the Coordinator Agent for the '{team_name}' team. "
+            "This team does not have any member agents configured yet, so you must answer the user directly. "
+            "Do not try to transfer or hand off the conversation. "
+            "If the user asks for team-specific knowledge or integrations that are not configured, briefly explain that this team has no agents or tools set up yet, then answer with general helpful information when possible. "
+            "Always respond in the same language as the user. "
+            f"{STYLE_INSTRUCTIONS}"
+        )
+        return Agent(
+            name="Coordinator Agent",
+            model=triage_agent.model,
+            instructions=empty_team_instructions,
+            handoffs=[],
+        )
+
     if db_agents:
         default_member_agent = (
             all_agents.get(starting_agent_id)
