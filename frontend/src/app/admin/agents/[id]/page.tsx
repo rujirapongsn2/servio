@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
@@ -64,6 +64,9 @@ export default function AgentEditorPage() {
   const autoSelectToolId = searchParams.get("auto_select_tool_id")
     ? parseInt(searchParams.get("auto_select_tool_id") as string)
     : null;
+  const autoSelectProviderId = searchParams.get("select_provider_id")
+    ? parseInt(searchParams.get("select_provider_id") as string)
+    : null;
 
   const [formData, setFormData] = useState<Agent>({
     name: "",
@@ -86,14 +89,22 @@ export default function AgentEditorPage() {
   const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(routeDraftId);
   const [draftData, setDraftData] = useState<AgentDraft | null>(null);
-  const [draftReady, setDraftReady] = useState(false);
-  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [loadedDraftKey, setLoadedDraftKey] = useState<string | null>(null);
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null);
+  const appliedProviderSelection = useRef<string | null>(null);
+  const modelRequestId = useRef(0);
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [error, setError] = useState("");
-  const draftStorageKey = isNew && draftId ? `agent-draft:${draftId}` : null;
+  const draftStorageKey = draftId
+    ? isNew
+      ? `agent-draft:${draftId}`
+      : `agent-draft:${effectiveTeamId ?? "global"}:${agentId}:${draftId}`
+    : null;
+  const draftReady = draftStorageKey !== null && loadedDraftKey === draftStorageKey;
+  const draftHydrated = draftStorageKey !== null && hydratedDraftKey === draftStorageKey;
   const capabilitiesQuery = [
     effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
     agentId ? `source_agent_id=${agentId}` : "",
@@ -102,6 +113,19 @@ export default function AgentEditorPage() {
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
+  const providersQuery = [
+    "return_to=agent_edit",
+    `return_agent_id=${params.id}`,
+    effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
+    returnTeamId ? `return_team_id=${returnTeamId}` : "",
+    returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    draftId ? `draft_id=${draftId}` : "",
+  ].filter(Boolean).join("&");
+  const providersHref = `/admin/providers${providersQuery ? `?${providersQuery}` : ""}`;
+  const newProviderHref = `/admin/providers?${[
+    "create=1",
+    providersQuery,
+  ].filter(Boolean).join("&")}`;
   const safeInstructions = typeof formData.instructions === "string" ? formData.instructions : "";
 
   const getCapabilityDisplayName = (tool: Tool): string => {
@@ -135,8 +159,31 @@ export default function AgentEditorPage() {
       .join(" ");
   };
 
+  const fetchModels = useCallback(async (providerId: number) => {
+    const requestId = ++modelRequestId.current;
+    setFetchingModels(true);
+    try {
+      const token = localStorage.getItem("adminToken");
+      const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers/${providerId}/models`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      // Expecting list of objects with 'id' field, or just strings?
+      // provider_service returns model objects. OpenAIChatCompletionsModel expects string ID.
+      // Usually OpenAI models list has 'id' field.
+      const modelIds = data.map((m: any) => m.id || m);
+      if (requestId === modelRequestId.current) setAvailableModels(modelIds);
+    } catch (error) {
+      console.error("Failed to fetch models:", error);
+      // Fallback or keep empty
+      if (requestId === modelRequestId.current) setAvailableModels([]);
+    } finally {
+      if (requestId === modelRequestId.current) setFetchingModels(false);
+    }
+  }, [apiBaseUrl]);
+
   useEffect(() => {
-    if (!isNew || routeDraftId) {
+    if (routeDraftId) {
       setDraftId(routeDraftId);
       return;
     }
@@ -145,11 +192,13 @@ export default function AgentEditorPage() {
     setDraftId(nextDraftId);
     const params = new URLSearchParams(searchParams.toString());
     params.set("draft_id", nextDraftId);
-    router.replace(`/admin/agents/new?${params.toString()}`);
-  }, [isNew, routeDraftId, router, searchParams]);
+    router.replace(`/admin/agents/${isNew ? "new" : agentId}?${params.toString()}`);
+  }, [isNew, agentId, routeDraftId, router, searchParams]);
 
   useEffect(() => {
-    if (!isNew || !draftStorageKey) return;
+    if (!draftStorageKey) return;
+    setLoadedDraftKey(null);
+    setHydratedDraftKey(null);
 
     try {
       const rawDraft = sessionStorage.getItem(draftStorageKey);
@@ -158,9 +207,9 @@ export default function AgentEditorPage() {
       console.error("Failed to restore agent draft:", error);
       setDraftData(null);
     } finally {
-      setDraftReady(true);
+      setLoadedDraftKey(draftStorageKey);
     }
-  }, [isNew, draftStorageKey]);
+  }, [draftStorageKey]);
 
   useEffect(() => {
     if (routeTeamId) {
@@ -175,12 +224,12 @@ export default function AgentEditorPage() {
   }, [effectiveTeamId]);
 
   useEffect(() => {
-    if (!isNew || !draftReady || !toolsLoaded || !agentsLoaded || draftHydrated) {
+    if (loading || !draftReady || !toolsLoaded || !agentsLoaded || draftHydrated) {
       return;
     }
 
     if (!draftData) {
-      setDraftHydrated(true);
+      setHydratedDraftKey(draftStorageKey);
       return;
     }
 
@@ -201,11 +250,11 @@ export default function AgentEditorPage() {
       setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
     }
 
-    setDraftHydrated(true);
-  }, [isNew, draftReady, toolsLoaded, agentsLoaded, draftHydrated, draftData, availableTools, availableAgents]);
+    setHydratedDraftKey(draftStorageKey);
+  }, [loading, draftReady, toolsLoaded, agentsLoaded, draftHydrated, draftStorageKey, draftData, availableTools, availableAgents, fetchModels]);
 
   useEffect(() => {
-    if (!isNew || !draftStorageKey || !draftReady || !draftHydrated) {
+    if (!draftStorageKey || !draftReady || !draftHydrated) {
       return;
     }
 
@@ -220,7 +269,18 @@ export default function AgentEditorPage() {
     };
 
     sessionStorage.setItem(draftStorageKey, JSON.stringify(draftPayload));
-  }, [isNew, draftStorageKey, draftReady, draftHydrated, formData]);
+  }, [draftStorageKey, draftReady, draftHydrated, formData]);
+
+  useEffect(() => {
+    if (loading || !draftHydrated || !autoSelectProviderId) return;
+    const selectionKey = `${draftStorageKey}:${autoSelectProviderId}`;
+    if (appliedProviderSelection.current === selectionKey) return;
+    if (!availableProviders.some((provider) => provider.id === autoSelectProviderId)) return;
+    appliedProviderSelection.current = selectionKey;
+    if (formData.llm_provider_id === autoSelectProviderId) return;
+    setFormData((prev) => ({ ...prev, llm_provider_id: autoSelectProviderId, model: "" }));
+    fetchModels(autoSelectProviderId);
+  }, [loading, draftHydrated, autoSelectProviderId, draftStorageKey, availableProviders, formData.llm_provider_id, fetchModels]);
 
   const fetchProviders = async () => {
     try {
@@ -237,28 +297,6 @@ export default function AgentEditorPage() {
     } catch (error) {
       console.error("Failed to fetch providers:", error);
       setAvailableProviders([]);
-    }
-  };
-
-  const fetchModels = async (providerId: number) => {
-    setFetchingModels(true);
-    try {
-      const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers/${providerId}/models`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      // Expecting list of objects with 'id' field, or just strings?
-      // provider_service returns model objects. OpenAIChatCompletionsModel expects string ID.
-      // Usually OpenAI models list has 'id' field.
-      const modelIds = data.map((m: any) => m.id || m);
-      setAvailableModels(modelIds);
-    } catch (error) {
-      console.error("Failed to fetch models:", error);
-      // Fallback or keep empty
-      setAvailableModels([]);
-    } finally {
-      setFetchingModels(false);
     }
   };
 
@@ -490,6 +528,11 @@ export default function AgentEditorPage() {
 
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
+    if (value === "__new_provider__") {
+      router.push(newProviderHref);
+      return;
+    }
+
     const providerId = (value === "default" || value === "") ? null : parseInt(value);
 
     // Explicitly set undefined if it's the placeholder "Select Provider"
@@ -575,7 +618,7 @@ export default function AgentEditorPage() {
         ]}
         actions={[
           { label: "Agent Capabilities", href: `/admin/tools${capabilitiesQuery ? `?${capabilitiesQuery}` : ""}`, variant: "outline" },
-          { label: "Providers", href: "/admin/providers", variant: "outline" },
+          { label: "Providers", href: providersHref, variant: "outline" },
         ]}
       />
 
@@ -629,6 +672,7 @@ export default function AgentEditorPage() {
                     {p.name}
                   </option>
                 ))}
+                <option value="__new_provider__">+ New Provider...</option>
               </select>
               {formData.llm_provider_id === undefined && (
                 <p className="mt-1 text-xs text-red-500">
@@ -638,9 +682,9 @@ export default function AgentEditorPage() {
               {availableProviders.length === 0 && (
                 <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
                   Tip: You can add more providers in the{" "}
-                  <a href="/admin/llm-providers" className="underline font-medium">
+                  <Link href={newProviderHref} className="underline font-medium">
                     LLM Providers
-                  </a>{" "}
+                  </Link>{" "}
                   settings.
                 </p>
               )}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { Copy, Plus, Trash2, Edit2, Link as LinkIcon, Check, X, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Copy, Plus, Trash2, Edit2, Link as LinkIcon, Check, X, Loader2, Sparkles } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface LLMProvider {
@@ -16,7 +17,32 @@ interface LLMProvider {
 }
 
 export default function LLMProvidersPage() {
+    return (
+        <Suspense fallback={<ProvidersLoading />}>
+            <LLMProvidersContent />
+        </Suspense>
+    );
+}
+
+function ProvidersLoading() {
+    return (
+        <div className="flex justify-center p-8">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+        </div>
+    );
+}
+
+function LLMProvidersContent() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const apiBaseUrl = getApiBaseUrl();
+    const returnToAgentEdit = searchParams.get("return_to") === "agent_edit";
+    const returnAgentId = searchParams.get("return_agent_id") || "new";
+    const returnTeamId = searchParams.get("return_team_id");
+    const returnTeamName = searchParams.get("return_team_name");
+    const teamAgentId = searchParams.get("team_agent_id");
+    const draftId = searchParams.get("draft_id");
+    const shouldCreateProvider = searchParams.get("create") === "1";
     const [providers, setProviders] = useState<LLMProvider[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -24,6 +50,8 @@ export default function LLMProvidersPage() {
     // Edit/Create State
     const [isEditing, setIsEditing] = useState(false);
     const [currentProvider, setCurrentProvider] = useState<Partial<LLMProvider>>({});
+    const [lastSavedProviderId, setLastSavedProviderId] = useState<number | null>(null);
+    const [createPromptOpened, setCreatePromptOpened] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
@@ -31,6 +59,24 @@ export default function LLMProvidersPage() {
     useEffect(() => {
         fetchProviders();
     }, []);
+
+    useEffect(() => {
+        if (!isLoading && shouldCreateProvider && !isEditing && !lastSavedProviderId && !createPromptOpened) {
+            setCreatePromptOpened(true);
+            handleCreate();
+        }
+    }, [isLoading, shouldCreateProvider, isEditing, lastSavedProviderId, createPromptOpened]);
+
+    const buildAgentReturnHref = (providerId?: number | null) => {
+        const params = new URLSearchParams();
+        if (teamAgentId) params.set("team_agent_id", teamAgentId);
+        if (returnTeamId) params.set("return_team_id", returnTeamId);
+        if (returnTeamName) params.set("return_team_name", returnTeamName);
+        if (draftId) params.set("draft_id", draftId);
+        if (providerId) params.set("select_provider_id", String(providerId));
+        const query = params.toString();
+        return `/admin/agents/${returnAgentId}${query ? `?${query}` : ""}`;
+    };
 
     const fetchProviders = async () => {
         setIsLoading(true);
@@ -117,9 +163,18 @@ export default function LLMProvidersPage() {
             });
 
             if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                const createdIdMatch = typeof data.message === "string" ? data.message.match(/ID\s+(\d+)/) : null;
+                const savedProviderId = currentProvider.id || (createdIdMatch ? parseInt(createdIdMatch[1]) : null);
                 setIsEditing(false);
                 fetchProviders();
-                setMessage({ text: "Provider saved successfully", type: "success" });
+                setLastSavedProviderId(savedProviderId);
+                setMessage({
+                    text: returnToAgentEdit && savedProviderId
+                        ? "Provider saved. You can return to the agent and use it now."
+                        : "Provider saved successfully",
+                    type: "success",
+                });
             } else {
                 const data = await res.json();
                 throw new Error(data.detail || "Failed to save");
@@ -172,6 +227,27 @@ export default function LLMProvidersPage() {
 
     return (
         <div className="max-w-5xl mx-auto space-y-6">
+            {returnToAgentEdit && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-100">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div className="font-semibold">Adding a provider for this agent</div>
+                            <div className="mt-1 text-blue-800 dark:text-blue-200">
+                                Save or test the provider here, then return to Edit Agent without losing the setup flow.
+                            </div>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => router.push(buildAgentReturnHref(lastSavedProviderId))}
+                        >
+                            <ArrowLeft className="w-4 h-4 mr-2" />
+                            Back to Edit Agent
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">LLM Providers</h1>

@@ -2,11 +2,9 @@
 
 import { useMemo, useState, MouseEvent } from "react";
 import {
-  Bot,
   BrainCircuit,
-  GitBranch,
-  Network,
   Sparkles,
+  UserRound,
   UserRoundCog,
   Wrench,
   X,
@@ -41,7 +39,7 @@ function truncate(text: string, max = 140) {
 
 function AgentNode({ data, targetPosition = Position.Top, sourcePosition = Position.Bottom }: NodeProps) {
   const isCoordinator = data.variant === "coordinator";
-  const Icon = isCoordinator ? Network : data.hasHandoffs ? GitBranch : data.hasTools ? UserRoundCog : Bot;
+  const Icon = isCoordinator ? UserRoundCog : UserRound;
 
   return (
     <div className="relative flex w-[156px] flex-col items-center text-center">

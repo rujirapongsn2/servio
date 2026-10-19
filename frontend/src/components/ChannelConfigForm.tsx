@@ -42,7 +42,12 @@ const FIELD_PLACEHOLDERS: Record<string, Record<string, string>> = {
     facebook: Object.fromEntries(FACEBOOK_FIELDS.map((f) => [f.key, f.placeholder])),
 };
 
-export default function ChannelConfigForm({ channelType }: { channelType: MessagingChannelType }) {
+interface ChannelConfigFormProps {
+    channelType: MessagingChannelType;
+    onReadyChange?: (ready: boolean) => void;
+}
+
+export default function ChannelConfigForm({ channelType, onReadyChange }: ChannelConfigFormProps) {
     const { selectedTeamId, selectedTeam } = useTeam();
     const [config, setConfig] = useState<ChannelConfig | null>(null);
     const [formValues, setFormValues] = useState<Record<string, string>>({});
@@ -55,6 +60,17 @@ export default function ChannelConfigForm({ channelType }: { channelType: Messag
 
     const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") || "" : "";
     const serverUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+
+    const savedValues = config?.config ?? {};
+    const isSaved = config !== null
+        && name === config.name
+        && isActive === config.is_active
+        && Object.keys(formValues).length === Object.keys(savedValues).length
+        && Object.entries(formValues).every(([key, value]) => savedValues[key] === value);
+
+    useEffect(() => {
+        onReadyChange?.(isSaved && !loading && !saving);
+    }, [onReadyChange, isSaved, loading, saving]);
 
     const loadConfig = useCallback(async () => {
         if (!token) return;

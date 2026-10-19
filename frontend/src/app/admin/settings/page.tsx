@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getApiBaseUrl } from "@/lib/api";
 
 
@@ -385,6 +386,26 @@ export default function SettingsPage() {
       <div className="mt-6">
         {activeTab === "general" ? (
           <div className="space-y-6">
+            {/* LLM Provider Settings */}
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-blue-200 dark:border-blue-900/50 p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-medium text-gray-900 dark:text-white">
+                    LLM Providers
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    Configure OpenAI-compatible providers and model endpoints used by agents.
+                  </p>
+                </div>
+                <Link
+                  href="/admin/providers"
+                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  Manage LLM Providers
+                </Link>
+              </div>
+            </div>
+
             {/* Change Password Section */}
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">

@@ -289,7 +289,7 @@ function AdminLayoutInner({
                 {isSuperAdmin && (
                   <NavLink
                     href="/admin/settings"
-                    active={pathname.startsWith("/admin/settings")}
+                    active={pathname.startsWith("/admin/settings") || pathname.startsWith("/admin/providers")}
                     collapsed={collapsed}
                     icon={Settings}
                   >

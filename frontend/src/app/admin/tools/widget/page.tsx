@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CheckCircle2,
   Code2,
@@ -21,6 +21,7 @@ import { getChannelConfigs, type ChannelConfig } from "@/lib/channelConfigs";
 import { getAllApiKeys, type ApiKey } from "@/lib/apiKeys";
 
 type ChannelType = "web-widget" | "line" | "facebook";
+type StepId = 0 | 1 | 2 | 3;
 
 type ChannelDefinition = {
   id: ChannelType;
@@ -29,7 +30,12 @@ type ChannelDefinition = {
   icon: ReactNode;
 };
 
-const STEPS = ["Choose Team", "Choose Channel Type", "Connect Channel", "Test and Go Live"];
+const STEPS = [
+  "Choose Team",
+  "Choose Channel Type",
+  "Connect Channel",
+  "Test and Go Live",
+];
 
 const CHANNELS: ChannelDefinition[] = [
   {
@@ -74,6 +80,7 @@ function statusClasses(tone: "green" | "amber" | "gray") {
 
 export default function ChannelsPage() {
   const { teams, selectedTeam, selectedTeamId, setSelectedTeamId, loading: teamLoading } = useTeam();
+  const [activeStep, setActiveStep] = useState<StepId>(0);
   const [selectedChannel, setSelectedChannel] = useState<ChannelType>("web-widget");
   const [position, setPosition] = useState("bottom-right");
   const [widgetType, setWidgetType] = useState("voice");
@@ -84,6 +91,14 @@ export default function ChannelsPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [channelConfigs, setChannelConfigs] = useState<ChannelConfig[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [channelReadiness, setChannelReadiness] = useState<{
+    teamId: number | null;
+    channel: ChannelType;
+    ready: boolean;
+  } | null>(null);
+  const handleChannelReadyChange = useCallback((ready: boolean) => {
+    setChannelReadiness({ teamId: selectedTeamId, channel: selectedChannel, ready });
+  }, [selectedTeamId, selectedChannel]);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") || "" : "";
   const serverUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
@@ -111,6 +126,11 @@ export default function ChannelsPage() {
   }, [token, selectedTeamId]);
 
   const selectedChannelMeta = CHANNELS.find((channel) => channel.id === selectedChannel) ?? CHANNELS[0];
+  const canContinueFromConnect = selectedChannel === "web-widget"
+    ? Boolean(selectedApiKey)
+    : Boolean(channelReadiness?.ready
+        && channelReadiness.teamId === selectedTeamId
+        && channelReadiness.channel === selectedChannel);
 
   const embedCode = selectedApiKey
     ? `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}" data-api-key="${selectedApiKey}"></script>`
@@ -119,6 +139,25 @@ export default function ChannelsPage() {
   const shareUrl = selectedSlug
     ? `${serverUrl}/c/${selectedSlug}?type=${widgetType}${allowToggle ? "" : "&allowToggle=false"}`
     : "";
+
+  const stepAccess = useMemo(
+    () => [
+      true,
+      Boolean(selectedTeamId),
+      Boolean(selectedTeamId && selectedChannel),
+      Boolean(selectedTeamId && selectedChannel && canContinueFromConnect),
+    ],
+    [selectedTeamId, selectedChannel, canContinueFromConnect],
+  );
+
+  const canGoNext =
+    activeStep === 0
+      ? Boolean(selectedTeamId)
+      : activeStep === 1
+        ? Boolean(selectedChannel)
+        : activeStep === 2
+          ? canContinueFromConnect
+          : false;
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(embedCode);
@@ -131,6 +170,20 @@ export default function ChannelsPage() {
     navigator.clipboard.writeText(shareUrl);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  const goNext = () => {
+    if (!canGoNext || activeStep >= 3) return;
+    setActiveStep((step) => Math.min(3, step + 1) as StepId);
+  };
+
+  const goPrevious = () => {
+    setActiveStep((step) => Math.max(0, step - 1) as StepId);
+  };
+
+  const openStep = (step: StepId) => {
+    if (!stepAccess[step]) return;
+    setActiveStep(step);
   };
 
   if (teamLoading) {
@@ -162,21 +215,46 @@ export default function ChannelsPage() {
       </div>
 
       <div className="grid gap-2 md:grid-cols-4">
-        {STEPS.map((step, index) => (
-          <div key={step} className="flex items-center gap-2 rounded-md border border-[#E2E8F0] bg-white px-3 py-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2786C2] text-xs font-semibold text-white">
-              {index + 1}
-            </span>
-            <span className="text-sm font-medium text-[#0D1B2A]">{step}</span>
-          </div>
-        ))}
+        {STEPS.map((step, index) => {
+          const stepId = index as StepId;
+          const isActive = activeStep === stepId;
+          const isAvailable = stepAccess[stepId];
+          return (
+            <button
+              key={step}
+              type="button"
+              disabled={!isAvailable}
+              onClick={() => openStep(stepId)}
+              className={[
+                "flex items-center gap-2 rounded-md border px-3 py-2 text-left transition",
+                isActive
+                  ? "border-[#2786C2] bg-[#F8FBFF]"
+                  : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]",
+                !isAvailable ? "cursor-not-allowed opacity-50 hover:border-[#E2E8F0]" : "",
+              ].join(" ")}
+            >
+              <span
+                className={[
+                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                  isActive || isAvailable ? "bg-[#2786C2] text-white" : "bg-slate-100 text-slate-400",
+                ].join(" ")}
+              >
+                {index + 1}
+              </span>
+              <span className="text-sm font-medium text-[#0D1B2A]">{step}</span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <aside className="space-y-6">
-          <section>
-            <h2 className="mb-2 text-sm font-semibold text-[#0D1B2A]">1. Team</h2>
-            <div className="space-y-2">
+      <section className="rounded-lg border border-[#E2E8F0] bg-white">
+        {activeStep === 0 && (
+          <div className="space-y-5 p-5">
+            <div>
+              <h2 className="text-lg font-semibold text-[#0D1B2A]">Choose Team</h2>
+              <p className="mt-1 text-sm text-[#66768D]">Select the Team Agent workspace for this channel.</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
               {teams.map((team) => {
                 const selected = selectedTeamId === team.id;
                 return (
@@ -184,7 +262,7 @@ export default function ChannelsPage() {
                     key={team.id}
                     type="button"
                     onClick={() => setSelectedTeamId(team.id)}
-                    className={`flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition ${
+                    className={`flex min-h-[84px] w-full items-center justify-between rounded-md border px-4 py-3 text-left transition ${
                       selected
                         ? "border-[#2786C2] bg-[#F8FBFF]"
                         : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
@@ -193,19 +271,24 @@ export default function ChannelsPage() {
                     <span>
                       <span className="block text-sm font-semibold text-[#0D1B2A]">{team.name}</span>
                       {team.description && (
-                        <span className="mt-0.5 block line-clamp-1 text-xs text-[#778DA9]">{team.description}</span>
+                        <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[#778DA9]">{team.description}</span>
                       )}
                     </span>
-                    {selected && <CheckCircle2 className="h-4 w-4 text-[#2786C2]" />}
+                    {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2786C2]" />}
                   </button>
                 );
               })}
             </div>
-          </section>
+          </div>
+        )}
 
-          <section>
-            <h2 className="mb-2 text-sm font-semibold text-[#0D1B2A]">2. Channel Type</h2>
-            <div className="space-y-2">
+        {activeStep === 1 && (
+          <div className="space-y-5 p-5">
+            <div>
+              <h2 className="text-lg font-semibold text-[#0D1B2A]">Choose Channel Type</h2>
+              <p className="mt-1 text-sm text-[#66768D]">Pick the customer entry point you want to configure.</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
               {CHANNELS.map((channel) => {
                 const selected = selectedChannel === channel.id;
                 const status = getChannelStatus(channel.id, channelConfigs, apiKeys);
@@ -215,200 +298,229 @@ export default function ChannelsPage() {
                     type="button"
                     disabled={!selectedTeamId}
                     onClick={() => setSelectedChannel(channel.id)}
-                    className={`flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`flex min-h-[120px] flex-col items-start justify-between rounded-md border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       selected
                         ? "border-[#2786C2] bg-[#F8FBFF]"
                         : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
                     }`}
                   >
                     <span className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#EFF6FF] text-[#2786C2]">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#EFF6FF] text-[#2786C2]">
                         {channel.icon}
                       </span>
                       <span>
                         <span className="block text-sm font-semibold text-[#0D1B2A]">{channel.name}</span>
-                        <span className="block text-xs text-[#778DA9]">{status.label}</span>
+                        <span className="mt-0.5 block text-xs text-[#778DA9]">{channel.label}</span>
                       </span>
                     </span>
-                    {selected && <CheckCircle2 className="h-4 w-4 text-[#2786C2]" />}
+                    <span className={`mt-4 rounded-md border px-2 py-1 text-xs font-medium ${statusClasses(status.tone)}`}>
+                      {status.label}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          </section>
-        </aside>
+          </div>
+        )}
 
-        <main className="space-y-6">
-          {!selectedTeamId ? (
-            <div className="rounded-md border border-dashed border-[#CBD5E1] bg-white p-8 text-center text-sm text-[#66768D]">
-              Select a Team Agent to continue.
+        <div hidden={activeStep !== 2}>
+            <div className="border-b border-[#E2E8F0] px-5 py-4">
+              <h2 className="text-lg font-semibold text-[#0D1B2A]">Connect Channel</h2>
+              <p className="mt-1 text-sm text-[#778DA9]">{selectedChannelMeta.name}</p>
             </div>
-          ) : (
-            <>
-            <section className="rounded-md border border-[#E2E8F0] bg-white">
-              <div className="border-b border-[#E2E8F0] px-5 py-4">
-                <h2 className="text-sm font-semibold text-[#0D1B2A]">3. Connect Channel</h2>
-                <p className="mt-1 text-xs text-[#778DA9]">{selectedChannelMeta.name}</p>
+
+            {selectedChannel === "web-widget" ? (
+              <div className="space-y-5 p-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[#2D3F55]">Mode</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setWidgetType("voice")}
+                        className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
+                          widgetType === "voice"
+                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
+                            : "border-[#E2E8F0] text-[#526277]"
+                        }`}
+                      >
+                        <MicIcon className="h-4 w-4" />
+                        Voice
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWidgetType("chat")}
+                        className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
+                          widgetType === "chat"
+                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
+                            : "border-[#E2E8F0] text-[#526277]"
+                        }`}
+                      >
+                        <WriteIcon width={16} height={16} />
+                        Chat
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[#2D3F55]">Position</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPosition("bottom-right")}
+                        className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                          position === "bottom-right"
+                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
+                            : "border-[#E2E8F0] text-[#526277]"
+                        }`}
+                      >
+                        Bottom Right
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPosition("bottom-left")}
+                        className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                          position === "bottom-left"
+                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
+                            : "border-[#E2E8F0] text-[#526277]"
+                        }`}
+                      >
+                        Bottom Left
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <label className="flex items-center justify-between rounded-md border border-[#E2E8F0] px-3 py-2">
+                  <span className="text-sm font-medium text-[#2D3F55]">Allow voice/text toggle</span>
+                  <input
+                    type="checkbox"
+                    checked={allowToggle}
+                    onChange={(event) => setAllowToggle(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#2786C2] focus:ring-[#2786C2]"
+                  />
+                </label>
+
+                <div className="border-t border-[#E2E8F0] pt-5">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
+                    <KeyRound className="h-4 w-4 text-[#2786C2]" />
+                    API Key
+                  </div>
+                  <ApiKeyManager onApiKeySelect={setSelectedApiKey} onSlugSelect={setSelectedSlug} />
+                  {!selectedApiKey && (
+                    <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                      Select or create an active API key to continue to Test and Go Live.
+                    </p>
+                  )}
+                </div>
               </div>
-
-              {selectedChannel === "web-widget" ? (
-                <div className="space-y-5 p-5">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-[#2D3F55]">Mode</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setWidgetType("voice")}
-                          className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
-                            widgetType === "voice"
-                              ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                              : "border-[#E2E8F0] text-[#526277]"
-                          }`}
-                        >
-                          <MicIcon className="h-4 w-4" />
-                          Voice
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setWidgetType("chat")}
-                          className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
-                            widgetType === "chat"
-                              ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                              : "border-[#E2E8F0] text-[#526277]"
-                          }`}
-                        >
-                          <WriteIcon width={16} height={16} />
-                          Chat
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-[#2D3F55]">Position</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setPosition("bottom-right")}
-                          className={`rounded-md border px-3 py-2 text-sm font-medium ${
-                            position === "bottom-right"
-                              ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                              : "border-[#E2E8F0] text-[#526277]"
-                          }`}
-                        >
-                          Bottom Right
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPosition("bottom-left")}
-                          className={`rounded-md border px-3 py-2 text-sm font-medium ${
-                            position === "bottom-left"
-                              ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                              : "border-[#E2E8F0] text-[#526277]"
-                          }`}
-                        >
-                          Bottom Left
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <label className="flex items-center justify-between rounded-md border border-[#E2E8F0] px-3 py-2">
-                    <span className="text-sm font-medium text-[#2D3F55]">Allow voice/text toggle</span>
-                    <input
-                      type="checkbox"
-                      checked={allowToggle}
-                      onChange={(event) => setAllowToggle(event.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-[#2786C2] focus:ring-[#2786C2]"
-                    />
-                  </label>
-
-                  <div className="border-t border-[#E2E8F0] pt-5">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
-                      <KeyRound className="h-4 w-4 text-[#2786C2]" />
-                      API Key
-                    </div>
-                    <ApiKeyManager onApiKeySelect={setSelectedApiKey} onSlugSelect={setSelectedSlug} />
-                  </div>
-                </div>
-              ) : (
-                <div className="p-5">
-                  <ChannelConfigForm channelType={selectedChannel as "line" | "facebook"} />
-                </div>
-              )}
-            </section>
-
-            {selectedChannel === "web-widget" && (
-              <section className="rounded-md border border-[#E2E8F0] bg-white">
-                <div className="border-b border-[#E2E8F0] px-5 py-4">
-                  <h2 className="text-sm font-semibold text-[#0D1B2A]">4. Test and Go Live</h2>
-                </div>
-
-                <div className="grid gap-4 p-5 lg:grid-cols-2">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
-                      <Code2 className="h-4 w-4 text-[#2786C2]" />
-                      Install Code
-                    </div>
-                    <textarea
-                      readOnly
-                      value={embedCode}
-                      className="h-40 w-full resize-y rounded-md border border-[#E2E8F0] bg-[#0F172A] p-3 font-mono text-xs leading-5 text-slate-100 outline-none"
-                    />
-                    <Button onClick={handleCopyCode} size="sm" variant={copied ? "primary" : "outline"} disabled={!selectedApiKey}>
-                      {copied ? "Copied" : "Copy Code"}
-                    </Button>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
-                        <Link2 className="h-4 w-4 text-[#2786C2]" />
-                        Direct Link
-                      </div>
-                      <input
-                        type="text"
-                        readOnly
-                        value={shareUrl}
-                        placeholder="Select an active API key"
-                        className="w-full rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm text-[#526277] outline-none"
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button onClick={handleCopyLink} size="sm" variant={linkCopied ? "primary" : "outline"} disabled={!shareUrl}>
-                        {linkCopied ? "Copied" : "Copy Link"}
-                      </Button>
-                      <a
-                        href={shareUrl || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={!shareUrl ? "pointer-events-none opacity-50" : ""}
-                      >
-                        <Button size="sm" variant="outline" disabled={!shareUrl}>
-                          Open Link
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </a>
-                      <a
-                        href={`/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}&apiKey=${selectedApiKey}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={!selectedApiKey ? "pointer-events-none opacity-50" : ""}
-                      >
-                        <Button size="sm" disabled={!selectedApiKey}>
-                          Test Widget
-                        </Button>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </section>
+            ) : (
+              <div className="p-5">
+                <ChannelConfigForm
+                  key={`${selectedTeamId}:${selectedChannel}`}
+                  channelType={selectedChannel}
+                  onReadyChange={handleChannelReadyChange}
+                />
+                {!canContinueFromConnect && (
+                  <p className="mt-3 text-sm text-amber-700">Save channel settings before continuing to Test and Go Live.</p>
+                )}
+              </div>
             )}
-            </>
+        </div>
+
+        {activeStep === 3 && (
+          <div>
+            <div className="border-b border-[#E2E8F0] px-5 py-4">
+              <h2 className="text-lg font-semibold text-[#0D1B2A]">Test and Go Live</h2>
+              <p className="mt-1 text-sm text-[#778DA9]">{selectedChannelMeta.name}</p>
+            </div>
+
+            {selectedChannel === "web-widget" ? (
+              <div className="grid gap-4 p-5 lg:grid-cols-2">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
+                    <Code2 className="h-4 w-4 text-[#2786C2]" />
+                    Install Code
+                  </div>
+                  <textarea
+                    readOnly
+                    value={embedCode}
+                    className="h-40 w-full resize-y rounded-md border border-[#E2E8F0] bg-[#0F172A] p-3 font-mono text-xs leading-5 text-slate-100 outline-none"
+                  />
+                  <Button onClick={handleCopyCode} size="sm" variant={copied ? "primary" : "outline"} disabled={!selectedApiKey}>
+                    {copied ? "Copied" : "Copy Code"}
+                  </Button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
+                      <Link2 className="h-4 w-4 text-[#2786C2]" />
+                      Direct Link
+                    </div>
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareUrl}
+                      placeholder="Select an active API key"
+                      className="w-full rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm text-[#526277] outline-none"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={handleCopyLink} size="sm" variant={linkCopied ? "primary" : "outline"} disabled={!shareUrl}>
+                      {linkCopied ? "Copied" : "Copy Link"}
+                    </Button>
+                    <a
+                      href={shareUrl || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={!shareUrl ? "pointer-events-none opacity-50" : ""}
+                    >
+                      <Button size="sm" variant="outline" disabled={!shareUrl}>
+                        Open Link
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </a>
+                    <a
+                      href={`/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}&apiKey=${selectedApiKey}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={!selectedApiKey ? "pointer-events-none opacity-50" : ""}
+                    >
+                      <Button size="sm" disabled={!selectedApiKey}>
+                        Test Widget
+                      </Button>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-5 text-sm text-[#526277]">
+                Use the saved {selectedChannelMeta.name} credentials from the previous step, then test delivery from the channel platform.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-[#E2E8F0] px-5 py-4">
+          <Button type="button" variant="outline" onClick={goPrevious} disabled={activeStep === 0}>
+            Previous
+          </Button>
+          <div className="text-xs font-medium text-[#778DA9]">
+            Step {activeStep + 1} of {STEPS.length}
+          </div>
+          {activeStep < 3 ? (
+            <Button type="button" onClick={goNext} disabled={!canGoNext}>
+              Next
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => setActiveStep(0)}>
+              Start Over
+            </Button>
           )}
-        </main>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }
