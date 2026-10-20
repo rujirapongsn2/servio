@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface CreateOKFBundleModalProps {
@@ -14,7 +14,7 @@ interface CreateOKFBundleModalProps {
   onReturnToTeam?: () => void;
 }
 
-type ImportMode = "files" | "paste" | "archive";
+type ImportMode = "files" | "paste" | "urls" | "archive";
 
 interface KnowledgePreview {
   source_count: number;
@@ -53,17 +53,22 @@ const MODE_OPTIONS: Array<{
   {
     id: "files",
     label: "Upload Files",
-    description: "PDF, Word, text, Markdown, CSV, JSON, HTML, or ZIP folders.",
+    description: "Documents and archives.",
   },
   {
     id: "paste",
     label: "Paste Text",
-    description: "Paste policies, FAQs, product notes, or SOP content directly.",
+    description: "Policies, FAQs, or notes.",
+  },
+  {
+    id: "urls",
+    label: "Import URLs",
+    description: "Web pages and documents.",
   },
   {
     id: "archive",
     label: "Advanced OKF",
-    description: "Import a prepared OKF archive for technical users.",
+    description: "Prepared OKF archives.",
   },
 ];
 
@@ -82,6 +87,8 @@ export default function CreateOKFBundleModal({
   const [mode, setMode] = useState<ImportMode>("files");
   const [files, setFiles] = useState<File[]>([]);
   const [pastedText, setPastedText] = useState("");
+  const [urlText, setUrlText] = useState("");
+  const urls = useMemo(() => urlText.split(/\r?\n/).map((url) => url.trim()).filter(Boolean), [urlText]);
   const [importing, setImporting] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -90,9 +97,10 @@ export default function CreateOKFBundleModal({
   const [error, setError] = useState<string | null>(null);
 
   const hasSource = useMemo(() => {
+    if (mode === "urls") return urls.length > 0;
     if (mode === "paste") return pastedText.trim().length > 0;
     return files.length > 0;
-  }, [files.length, mode, pastedText]);
+  }, [files.length, mode, pastedText, urls.length]);
   const importSucceeded = importJob?.status === "succeeded";
   const importFailed = importJob?.status === "failed";
 
@@ -110,6 +118,7 @@ export default function CreateOKFBundleModal({
     setMode(nextMode);
     setFiles([]);
     setPastedText("");
+    setUrlText("");
     setPreview(null);
     setImportJob(null);
     setError(null);
@@ -118,6 +127,7 @@ export default function CreateOKFBundleModal({
   const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 
   const addFiles = (nextFiles: FileList | File[] | null) => {
+    if (importing || previewing) return;
     const selected = Array.from(nextFiles || []);
     if (selected.length === 0) return;
     setImportJob(null);
@@ -158,10 +168,12 @@ export default function CreateOKFBundleModal({
     const formData = new FormData();
     formData.append("display_name", displayName.trim());
     formData.append("visibility", visibility);
-    formData.append("import_mode", mode === "archive" ? "archive" : "knowledge");
+    formData.append("import_mode", mode === "archive" ? "archive" : mode === "urls" ? "urls" : "knowledge");
     formData.append("create_tool", "true");
     if (assignAgentId) formData.append("assign_agent_id", String(assignAgentId));
-    if (mode === "paste") {
+    if (mode === "urls") {
+      urls.forEach((url) => formData.append("urls", url));
+    } else if (mode === "paste") {
       formData.append("pasted_text", pastedText.trim());
     } else {
       files.forEach((file) => formData.append("files", file));
@@ -275,13 +287,14 @@ export default function CreateOKFBundleModal({
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               {teamSetupMode && teamName
                 ? `Add local knowledge for ${teamName}.`
-                : "Upload everyday files and Servio will convert them into local OKF knowledge."}
+                : "Add files, text, or URLs."}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            disabled={importing}
+            aria-label="Close Add Knowledge"
+            disabled={importing || previewing}
             className="text-gray-400 hover:text-gray-500 disabled:opacity-50 dark:hover:text-gray-300"
           >
             <X className="h-5 w-5" />
@@ -289,24 +302,24 @@ export default function CreateOKFBundleModal({
         </div>
 
         <form onSubmit={handleSubmit} className="max-h-[calc(92vh-90px)] overflow-y-auto p-6">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {MODE_OPTIONS.map((option) => {
               const active = option.id === mode;
-              const Icon = option.id === "files" ? FileText : option.id === "paste" ? Clipboard : Archive;
+              const Icon = option.id === "files" ? FileText : option.id === "paste" ? Clipboard : option.id === "urls" ? Globe : Archive;
               return (
                 <button
                   key={option.id}
                   type="button"
                   onClick={() => resetSource(option.id)}
-                  disabled={importing}
+                  disabled={importing || previewing}
                   className={[
-                    "rounded-lg border p-4 text-left transition disabled:opacity-50",
+                    "rounded-lg border p-3 text-left transition disabled:opacity-50",
                     active
                       ? "border-emerald-500 bg-emerald-50 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-900/20 dark:text-emerald-100"
                       : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200",
                   ].join(" ")}
                 >
-                  <Icon className={active ? "mb-3 h-5 w-5 text-emerald-600" : "mb-3 h-5 w-5 text-gray-400"} />
+                  <Icon className={active ? "mb-2 h-5 w-5 text-emerald-600" : "mb-2 h-5 w-5 text-gray-400"} />
                   <div className="text-sm font-semibold">{option.label}</div>
                   <div className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
                     {option.description}
@@ -318,17 +331,18 @@ export default function CreateOKFBundleModal({
 
           <div className="mt-6 space-y-5">
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label htmlFor="knowledge-name" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Knowledge Name
               </label>
               <input
+                id="knowledge-name"
                 type="text"
                 value={displayName}
                 onChange={(event) => {
                   setDisplayName(event.target.value);
                   setPreview(null);
                 }}
-                disabled={importing}
+                disabled={importing || previewing}
                 placeholder="e.g., Sales Playbook, HR Policy, Product FAQ"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 required
@@ -337,16 +351,17 @@ export default function CreateOKFBundleModal({
 
             {teamAgentId && (
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor="knowledge-visibility" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Visibility
                 </label>
                 <select
+                  id="knowledge-visibility"
                 value={visibility}
                   onChange={(event) => {
                     setVisibility(event.target.value);
                     setPreview(null);
                   }}
-                  disabled={importing}
+                  disabled={importing || previewing}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 >
                   <option value="team">Private (this team only)</option>
@@ -355,7 +370,29 @@ export default function CreateOKFBundleModal({
               </div>
             )}
 
-            {mode === "paste" ? (
+            {mode === "urls" ? (
+              <div>
+                <label htmlFor="knowledge-urls" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Source URLs
+                </label>
+                <textarea
+                  id="knowledge-urls"
+                  value={urlText}
+                  onChange={(event) => {
+                    setUrlText(event.target.value);
+                    setPreview(null);
+                    setImportJob(null);
+                    setError(null);
+                  }}
+                  disabled={importing || previewing}
+                  rows={6}
+                  placeholder={"https://example.com/policy\nhttps://example.com/faq"}
+                  aria-describedby="knowledge-urls-hint"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+                <p id="knowledge-urls-hint" className="mt-1 text-xs text-gray-500">One public URL per line, up to 20. Only the listed pages are imported.</p>
+              </div>
+            ) : mode === "paste" ? (
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Knowledge Text
@@ -367,7 +404,7 @@ export default function CreateOKFBundleModal({
                     setPreview(null);
                     setError(null);
                   }}
-                  disabled={importing}
+                  disabled={importing || previewing}
                   rows={10}
                   placeholder="Paste policy, FAQ, product information, SOP, or other knowledge here."
                   className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
@@ -401,7 +438,7 @@ export default function CreateOKFBundleModal({
                     accept={accept}
                     multiple={mode !== "archive"}
                     className="hidden"
-                    disabled={importing}
+                    disabled={importing || previewing}
                     onChange={(event) => {
                       addFiles(event.target.files);
                       event.currentTarget.value = "";
@@ -433,7 +470,7 @@ export default function CreateOKFBundleModal({
                       <button
                         type="button"
                         onClick={clearFiles}
-                        disabled={importing}
+                        disabled={importing || previewing}
                         className="inline-flex items-center gap-1 rounded px-2 py-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-100"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -449,7 +486,7 @@ export default function CreateOKFBundleModal({
                             <button
                               type="button"
                               onClick={() => removeFile(file)}
-                              disabled={importing}
+                              disabled={importing || previewing}
                               className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
                               aria-label={`Remove ${file.name}`}
                             >
@@ -466,7 +503,7 @@ export default function CreateOKFBundleModal({
                           accept={accept}
                           multiple
                           className="hidden"
-                          disabled={importing}
+                          disabled={importing || previewing}
                           onChange={(event) => {
                             addFiles(event.target.files);
                             event.currentTarget.value = "";
@@ -576,16 +613,6 @@ export default function CreateOKFBundleModal({
               </div>
             )}
 
-            {mode !== "archive" && (
-              <div className="flex gap-3 rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-100">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>
-                  {teamSetupMode
-                    ? "You do not need to prepare OKF files. Servio will create local knowledge, build an agent capability, and keep you in this Team Agent setup flow."
-                    : "You do not need to prepare OKF files. Servio will extract readable text, generate Markdown with YAML metadata, store it locally, and index it for agents."}
-                </p>
-              </div>
-            )}
 
             {error && (
               <div className="rounded-md bg-red-50 p-4 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
@@ -598,7 +625,7 @@ export default function CreateOKFBundleModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={importing}
+              disabled={importing || previewing}
               className="rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
             >
               Cancel

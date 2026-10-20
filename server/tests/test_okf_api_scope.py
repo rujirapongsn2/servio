@@ -19,7 +19,8 @@ READS = [("GET", "", None), ("GET", "/10", None),
          ("POST", "/10/test", {"query": "policy"})]
 WRITES = [("PATCH", "/10/concepts/policy", {"body": "updated"}),
           ("POST", "/10/reindex", None), ("POST", "/10/reindex-vectors", None),
-          ("DELETE", "/10", None)]
+          ("DELETE", "/10", None),
+          ("POST", "/10/reindex-source", {"concept_id":"policy"})]
 
 
 @pytest.fixture
@@ -48,6 +49,9 @@ def client(monkeypatch):
             return {"response": "private-team-secret" if self.get_bundle(bundle_id, team_agent_id) else "No results"}
 
         def update_concept(self, **kwargs):
+            return CONCEPT
+
+        def reindex_source(self, bundle_id, concept_id, team_agent_id, **kwargs):
             return CONCEPT
 
         def reindex_bundle(self, bundle_id, team_agent_id):
@@ -220,3 +224,20 @@ def test_legacy_import_job_status_resolves_default_team(client, monkeypatch, sto
 def test_legacy_no_memberships_install_remains_usable(client, monkeypatch):
     monkeypatch.setattr(routes.database, "get_team_access_role", lambda user, team: "owner")
     assert request(client, READS[1], "legacy_admin").status_code == 200
+
+
+@pytest.mark.parametrize("bundle_id", [20, 30])
+def test_other_team_cannot_refresh_shared_or_global_source(client, bundle_id):
+    assert request(client, ("POST", f"/{bundle_id}/reindex-source", {"concept_id":"policy", "url":"https://example.com/"}), "other", 2).status_code == 403
+
+
+@pytest.mark.parametrize("data", [
+    {"import_mode":"urls", "display_name":"Test"},
+    {"import_mode":"urls", "display_name":"Test", "urls":"file:///etc/passwd"},
+    {"import_mode":"urls", "display_name":"Test", "urls":"https://example.com/", "pasted_text":"mixed"},
+    {"import_mode":"knowledge", "display_name":"Test", "urls":"https://example.com/"},
+])
+@pytest.mark.parametrize("suffix", ["/preview", "/import-jobs", ""])
+def test_invalid_url_mode_rejected_before_fetch(client, suffix, data):
+    response = client.post("/api/admin/okf-bundles" + suffix, data=data, headers={"Authorization":"Bearer " + create_access_token({"sub":"owner"})})
+    assert response.status_code == 400

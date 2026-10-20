@@ -137,6 +137,8 @@ export default function OKFBundleDetailDrawer({
   const [editDescription, setEditDescription] = useState("");
   const [editTags, setEditTags] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [refreshingSource, setRefreshingSource] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -152,6 +154,7 @@ export default function OKFBundleDetailDrawer({
         concept.file_path,
         concept.type,
         concept.description,
+        concept.resource,
         ...(concept.tags || []),
       ]
         .filter(Boolean)
@@ -211,6 +214,7 @@ export default function OKFBundleDetailDrawer({
       if (!response.ok) throw new Error("Failed to load concept detail");
       const concept: OKFConcept = await response.json();
       setSelectedConcept(concept);
+      setSourceUrl(typeof concept.frontmatter?.source_url === "string" ? concept.frontmatter.source_url : "");
       setEditTitle(concept.title || "");
       setEditDescription(concept.description || "");
       setEditTags((concept.tags || []).join(", "));
@@ -236,6 +240,7 @@ export default function OKFBundleDetailDrawer({
 
   const handleReindex = async () => {
     if (!bundleId) return;
+    if (concepts.some((concept) => /^https?:\/\//i.test(concept.resource || "")) && !window.confirm("Re-fetch all URL sources? This replaces their content, including manual edits.")) return;
     setReindexing(true);
     setError(null);
     try {
@@ -246,14 +251,51 @@ export default function OKFBundleDetailDrawer({
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        if (response.status === 503) {
+          await loadBundle();
+          await loadConcept(selectedConceptId);
+        }
         throw new Error(data.detail || "Failed to re-index local knowledge");
       }
       await loadBundle();
+      await loadConcept(selectedConceptId);
       onReindexed?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to re-index local knowledge");
     } finally {
       setReindexing(false);
+    }
+  };
+
+  const handleRefreshSource = async () => {
+    if (!bundleId || !selectedConcept || !sourceUrl.trim()) return;
+    if (!window.confirm("Fetch this URL again? Its content, including manual edits, will be replaced.")) return;
+    setRefreshingSource(true);
+    setSaveMessage(null);
+    setSaveError(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/admin/okf-bundles/${bundleId}/reindex-source${params}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("adminToken")}` },
+        body: JSON.stringify({ concept_id: selectedConcept.concept_id, url: sourceUrl.trim(), expected_updated_at: selectedConcept.updated_at }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 503) {
+          await loadBundle();
+          await loadConcept(selectedConcept.concept_id);
+        }
+        throw new Error(data.detail || "Failed to refresh URL");
+      }
+      await loadBundle();
+      await loadConcept(selectedConcept.concept_id);
+      setIsEditingConcept(false);
+      setSaveMessage("URL content replaced and re-indexed.");
+      onReindexed?.();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to refresh URL");
+    } finally {
+      setRefreshingSource(false);
     }
   };
 
@@ -386,7 +428,7 @@ export default function OKFBundleDetailDrawer({
             <button
               type="button"
               onClick={handleReindex}
-              disabled={reindexing || !bundleId}
+              disabled={reindexing || refreshingSource || savingConcept || !bundleId}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               {reindexing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -496,6 +538,7 @@ export default function OKFBundleDetailDrawer({
                           key={concept.concept_id}
                           type="button"
                           onClick={() => setSelectedConceptId(concept.concept_id)}
+                          disabled={refreshingSource || reindexing || savingConcept}
                           className={[
                             "block w-full border-b border-gray-100 p-3 text-left last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800",
                             selectedConceptId === concept.concept_id ? "bg-emerald-50 dark:bg-emerald-900/20" : "",
@@ -536,7 +579,7 @@ export default function OKFBundleDetailDrawer({
                             </h3>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                            <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                            <span className="max-w-full break-all rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">
                               {selectedConcept.resource || selectedConcept.file_path}
                             </span>
                             {(selectedConcept.tags || []).slice(0, 3).map((tag) => (
@@ -552,10 +595,27 @@ export default function OKFBundleDetailDrawer({
                           </div>
                         </div>
 
+                        {typeof selectedConcept.frontmatter?.source_url === "string" && (
+                          <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                            <label htmlFor="document-source-url" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Source URL</label>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <input id="document-source-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} disabled={refreshingSource || reindexing || savingConcept} className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                              <button type="button" onClick={handleRefreshSource} disabled={refreshingSource || reindexing || savingConcept || !sourceUrl.trim()} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">
+                                {refreshingSource ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Re-index URL
+                              </button>
+                            </div>
+                            {typeof selectedConcept.frontmatter.fetched_at === "string" && <p className="mt-2 text-xs text-gray-500">Last fetched {formatDate(selectedConcept.frontmatter.fetched_at)}</p>}
+                          </div>
+                        )}
+
                         {selectedConcept.description && (
                           <div className="rounded-md bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-200">
                             {selectedConcept.description}
                           </div>
+                        )}
+
+                        {saveError && (
+                          <div role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">{saveError}</div>
                         )}
 
                         <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
@@ -584,7 +644,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleCancelEdit}
-                                    disabled={savingConcept}
+                                    disabled={savingConcept || refreshingSource || reindexing}
                                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                   >
                                     <X className="h-4 w-4" />
@@ -593,7 +653,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleSaveConcept}
-                                    disabled={savingConcept || !editBody.trim() || !editTitle.trim()}
+                                    disabled={savingConcept || refreshingSource || reindexing || !editBody.trim() || !editTitle.trim()}
                                     className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                                   >
                                     {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -604,6 +664,7 @@ export default function OKFBundleDetailDrawer({
                                 <button
                                   type="button"
                                   onClick={handleEditConcept}
+                                  disabled={refreshingSource || reindexing}
                                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 >
                                   <Edit3 className="h-4 w-4" />
@@ -614,11 +675,6 @@ export default function OKFBundleDetailDrawer({
                           </div>
                           {isEditingConcept ? (
                             <div className="space-y-4 p-4">
-                              {saveError && (
-                                <div className="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
-                                  {saveError}
-                                </div>
-                              )}
                               <div className="grid gap-3 md:grid-cols-2">
                                 <label className="block text-sm font-semibold text-gray-900 dark:text-white">
                                   Title

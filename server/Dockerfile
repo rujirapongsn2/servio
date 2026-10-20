@@ -1,6 +1,11 @@
 # Multi-stage build for Python backend
 FROM python:3.11-slim as base
 
+# Install local Thai and English PDF OCR tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-tha && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install uv package manager
 RUN pip install uv
 

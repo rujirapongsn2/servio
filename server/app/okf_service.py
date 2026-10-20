@@ -123,6 +123,9 @@ class ExtractedKnowledge:
     text: str
     content_hash: str
     warnings: List[str]
+    source_url: Optional[str] = None
+    final_url: Optional[str] = None
+    fetched_at: Optional[str] = None
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -310,11 +313,20 @@ def _extract_html_text(path: Path) -> str:
 def _extract_docx_text(path: Path) -> str:
     try:
         with zipfile.ZipFile(path) as docx:
-            xml = docx.read("word/document.xml")
+            from app.local_documents import MAX_XML_BYTES
+            if docx.getinfo("word/document.xml").file_size > MAX_XML_BYTES:
+                raise OKFValidationError("Word XML part exceeds the 16MB limit")
+            with docx.open("word/document.xml") as document:
+                xml = document.read(MAX_XML_BYTES + 1)
+            if len(xml) > MAX_XML_BYTES:
+                raise OKFValidationError("Word XML part exceeds the 16MB limit")
     except (KeyError, zipfile.BadZipFile) as exc:
         raise OKFValidationError(f"{path.name} is not a readable Word document") from exc
 
-    root = ET.fromstring(xml)
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise OKFValidationError(f"{path.name} is not a readable Word document") from exc
     namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     paragraphs: List[str] = []
     for paragraph in root.findall(".//w:p", namespace):
@@ -326,23 +338,11 @@ def _extract_docx_text(path: Path) -> str:
 
 
 def _extract_pdf_text(path: Path) -> tuple[str, List[str]]:
-    warnings: List[str] = []
+    from app.local_pdf import PDFExtractionError, extract_pdf
     try:
-        from pypdf import PdfReader  # type: ignore
-    except ImportError:
-        return "", [
-            f"{path.name} is a PDF, but PDF text extraction is not installed in this runtime.",
-        ]
-
-    try:
-        reader = PdfReader(str(path))
-        pages = [page.extract_text() or "" for page in reader.pages]
-        text = "\n\n".join(f"### Page {number}\n{page.strip()}" for number, page in enumerate(pages, 1) if page.strip())
-        if not text.strip():
-            warnings.append(f"{path.name} appears to be scanned or image-only. OCR is required before import.")
-        return text, warnings
-    except Exception as exc:
-        return "", [f"Could not read text from {path.name}: {exc}"]
+        return extract_pdf(path)
+    except PDFExtractionError as exc:
+        raise OKFValidationError(str(exc)) from exc
 
 
 def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None) -> ExtractedKnowledge:
@@ -435,6 +435,8 @@ def _write_generated_okf_bundle(
             "tags": ["imported", source.document_type],
             "timestamp": generated_at,
         }
+        if source.source_url:
+            frontmatter.update(source_url=source.source_url, final_url=source.final_url, fetched_at=source.fetched_at)
         body = f"# {source.title}\n\n{source.text}\n"
         (destination / filename).write_text(
             "---\n"
@@ -443,6 +445,43 @@ def _write_generated_okf_bundle(
             + body,
             encoding="utf-8",
         )
+
+
+def _collect_url_sources(urls: List[str]) -> tuple[List[ExtractedKnowledge], List[str]]:
+    from app.knowledge_urls import MAX_BATCH_BYTES, URLImportError, download_url, validate_urls
+    from urllib.parse import unquote, urlsplit
+    import time
+
+    try:
+        urls = validate_urls(urls)
+        sources = []
+        warnings = []
+        total = 0
+        deadline = time.monotonic() + 120
+        with tempfile.TemporaryDirectory(prefix="okf_urls_") as temporary:
+            for index, url in enumerate(urls):
+                downloaded = download_url(url, deadline=deadline)
+                total += len(downloaded.data)
+                if total > MAX_BATCH_BYTES:
+                    raise URLImportError("URL batch exceeds the 50MB download limit")
+                path = Path(temporary) / f"source_{index}{downloaded.suffix}"
+                path.write_bytes(downloaded.data)
+                source = _extract_knowledge_file(path)
+                if "\x00" in source.text:
+                    raise URLImportError("URL returned binary content instead of readable text")
+                if len(source.text) > 2_000_000:
+                    raise URLImportError("URL extracted text exceeds 2 million characters")
+                parts = urlsplit(url)
+                source.title = re.sub(r"[\x00-\x1f\x7f]", "", unquote(Path(parts.path).stem))[:200] or parts.hostname
+                source.source_file = url
+                source.source_url = url
+                source.final_url = downloaded.final_url
+                source.fetched_at = datetime.utcnow().isoformat() + "Z"
+                sources.append(source)
+                warnings.extend(source.warnings)
+        return sources, warnings
+    except URLImportError as exc:
+        raise OKFValidationError(str(exc)) from exc
 
 
 def _collect_knowledge_sources(source_paths: List[Path]) -> tuple[List[ExtractedKnowledge], List[str]]:
@@ -704,11 +743,12 @@ class OKFService:
         team_agent_id: Optional[int],
         visibility: str,
         created_by_username: Optional[str],
+        urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="okf_generate_") as tmp_name:
             tmp_dir = Path(tmp_name)
             generated_dir = tmp_dir / "generated_okf"
-            sources, warnings = _collect_knowledge_sources(source_paths)
+            sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths)
             duplicate_warnings = self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
                 team_agent_id=team_agent_id,
@@ -772,8 +812,9 @@ class OKFService:
         self,
         source_paths: List[Path],
         team_agent_id: Optional[int],
+        urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        sources, warnings = _collect_knowledge_sources(source_paths)
+        sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths)
         warnings.extend(
             self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
@@ -800,25 +841,90 @@ class OKFService:
             "documents": documents,
         }
 
-    def reindex_bundle(self, bundle_id: int, team_agent_id: Optional[int] = None) -> Dict[str, Any]:
+    def _source_snapshot(self, bundle_id: int, team_agent_id: Optional[int]):
         with get_db() as db:
-            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).with_for_update().first()
             if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
                 raise KeyError("OKF bundle not found")
+            concepts, _ = parse_okf_directory(Path(bundle.storage_path))
+            versions = {
+                item.concept_id: item.updated_at.isoformat() if item.updated_at else None
+                for item in db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all()
+            }
+            return bundle.updated_at, Path(bundle.storage_path), concepts, versions
+
+    def _apply_source_updates(self, bundle_id, team_agent_id, snapshot, source, replacements):
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).with_for_update().first()
+            if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                raise KeyError("OKF bundle not found")
+            if bundle.updated_at != snapshot or Path(bundle.storage_path) != source:
+                raise OKFValidationError("This knowledge changed. Reload it before saving or reindexing.")
+            originals = {}
             try:
-                bundle.status = "indexing"
-                concepts, metadata = parse_okf_directory(Path(bundle.storage_path))
+                for relative, markdown in replacements.items():
+                    path = source / relative
+                    _ensure_within(source, path)
+                    originals[path] = path.read_text(encoding="utf-8")
+                    path.write_text(markdown, encoding="utf-8")
+                concepts, metadata = parse_okf_directory(source)
                 bundle.okf_version = metadata.get("okf_version")
                 bundle.validation_summary = {"warnings": metadata.get("warnings", []), "reindexed_at": datetime.utcnow().isoformat() + "Z"}
                 self._replace_index(db, bundle, concepts)
                 bundle.status = "ready"
                 bundle.updated_at = datetime.utcnow()
-                return _bundle_to_dict(bundle)
-            except Exception as exc:
-                bundle.status = "failed"
-                bundle.validation_summary = {"warnings": [], "error": str(exc), "reindexed_at": datetime.utcnow().isoformat() + "Z"}
-                bundle.updated_at = datetime.utcnow()
+                db.flush()
+                result = _bundle_to_dict(bundle)
+                db.commit()
+            except Exception:
+                for path, original in originals.items():
+                    path.write_text(original, encoding="utf-8")
                 raise
+            return result
+
+    def reindex_bundle(self, bundle_id: int, team_agent_id: Optional[int] = None) -> Dict[str, Any]:
+        snapshot, source, concepts, _ = self._source_snapshot(bundle_id, team_agent_id)
+        remote = [concept for concept in concepts if concept.frontmatter.get("source_url")]
+        replacements = {}
+        if remote:
+            fetched, _ = _collect_url_sources([str(concept.frontmatter["source_url"]) for concept in remote])
+            for concept, document in zip(remote, fetched):
+                frontmatter = dict(concept.frontmatter)
+                frontmatter.update(source_url=document.source_url, resource=document.source_url, source_file=document.source_url,
+                                   final_url=document.final_url, fetched_at=document.fetched_at, document_type=document.document_type)
+                replacements[concept.file_path] = self._source_markdown(frontmatter, document.text)
+        return self._apply_source_updates(bundle_id, team_agent_id, snapshot, source, replacements)
+
+    @staticmethod
+    def _source_markdown(frontmatter, body):
+        return "---\n" + yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False) + "---\n\n" + body.strip() + "\n"
+
+    def reindex_source(self, bundle_id: int, concept_id: str, team_agent_id: Optional[int],
+                       url: Optional[str] = None, expected_updated_at: Optional[str] = None) -> Dict[str, Any]:
+        snapshot, source, concepts, versions = self._source_snapshot(bundle_id, team_agent_id)
+        concept = next((item for item in concepts if item.concept_id == concept_id), None)
+        if not concept:
+            raise KeyError("OKF concept not found")
+        if expected_updated_at and versions.get(concept_id) != expected_updated_at:
+            raise OKFValidationError("This document changed. Reload it before reindexing.")
+        if not concept.frontmatter.get("source_url"):
+            raise OKFValidationError("This document has no URL source")
+        target = url if url is not None else str(concept.frontmatter["source_url"])
+        from app.knowledge_urls import normalize_url, URLImportError
+        try:
+            target = normalize_url(target.strip())
+        except URLImportError as exc:
+            raise OKFValidationError(str(exc)) from exc
+        if any(item.concept_id != concept_id and item.frontmatter.get("source_url") == target for item in concepts):
+            raise OKFValidationError("This URL already exists in this knowledge")
+        fetched, _ = _collect_url_sources([target])
+        document = fetched[0]
+        frontmatter = dict(concept.frontmatter)
+        frontmatter.update(source_url=document.source_url, resource=document.source_url, source_file=document.source_url,
+                           final_url=document.final_url, fetched_at=document.fetched_at, document_type=document.document_type)
+        self._apply_source_updates(bundle_id, team_agent_id, snapshot, source,
+                                   {concept.file_path: self._source_markdown(frontmatter, document.text)})
+        return self.get_concept(bundle_id, concept_id, team_agent_id)
 
     def _replace_index(self, db, bundle: OKFBundle, concepts: List[ParsedConcept]) -> None:
         db.query(OKFLinkIndex).filter_by(bundle_id=bundle.id).delete()
@@ -974,93 +1080,30 @@ class OKFService:
             return data
 
     def update_concept(
-        self,
-        bundle_id: int,
-        concept_id: str,
-        team_agent_id: Optional[int],
-        title: Optional[str],
-        description: Optional[str],
-        tags: Optional[List[str]],
-        body: str,
+        self, bundle_id: int, concept_id: str, team_agent_id: Optional[int],
+        title: Optional[str], description: Optional[str], tags: Optional[List[str]], body: str,
         expected_updated_at: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not body or not body.strip():
             raise OKFValidationError("Content cannot be empty")
-
-        with get_db() as db:
-            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
-            if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
-                raise KeyError("OKF bundle not found")
-
-            concept = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id, concept_id=concept_id).first()
-            if not concept:
-                raise KeyError("OKF concept not found")
-
-            current_updated_at = concept.updated_at.isoformat() if concept.updated_at else None
-            if expected_updated_at and current_updated_at and expected_updated_at != current_updated_at:
-                raise OKFValidationError("This document changed since it was opened. Reload it before saving.")
-
-            source = Path(bundle.storage_path)
-            path = source / concept.file_path
-            _ensure_within(source, path)
-
-            markdown = path.read_text(encoding="utf-8")
-            frontmatter, _ = _parse_frontmatter(markdown, concept.file_path)
-            original_markdown = markdown
-            if title is not None:
-                cleaned_title = title.strip()
-                if not cleaned_title:
-                    raise OKFValidationError("Title cannot be empty")
-                frontmatter["title"] = cleaned_title
-            if description is not None:
-                frontmatter["description"] = description.strip()
-            if tags is not None:
-                frontmatter["tags"] = _normalize_tags(tags)
-
-            next_markdown = (
-                "---\n"
-                + yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False)
-                + "---\n\n"
-                + body.strip()
-                + "\n"
-            )
-            _parse_frontmatter(next_markdown, concept.file_path)
-            path.write_text(next_markdown, encoding="utf-8")
-
-            try:
-                bundle.status = "indexing"
-                concepts, metadata = parse_okf_directory(source)
-                bundle.okf_version = metadata.get("okf_version")
-                bundle.validation_summary = {
-                    "warnings": metadata.get("warnings", []),
-                    "edited_at": datetime.utcnow().isoformat() + "Z",
-                }
-                self._replace_index(db, bundle, concepts)
-                bundle.status = "ready"
-                bundle.updated_at = datetime.utcnow()
-                db.flush()
-            except Exception as exc:
-                path.write_text(original_markdown, encoding="utf-8")
-                bundle.status = "failed"
-                bundle.validation_summary = {
-                    "warnings": [],
-                    "error": str(exc),
-                    "edited_at": datetime.utcnow().isoformat() + "Z",
-                }
-                bundle.updated_at = datetime.utcnow()
-                raise
-
-            updated = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id, concept_id=concept_id).first()
-            if not updated:
-                raise OKFValidationError("Updated document could not be found after re-indexing")
-            data = self._concept_to_dict(updated)
-            updated_markdown = self._read_concept_markdown(bundle, updated)
-            updated_frontmatter, updated_body = _parse_frontmatter(updated_markdown, updated.file_path)
-            data["markdown"] = updated_markdown
-            data["frontmatter"] = updated_frontmatter
-            data["body"] = updated_body
-            data["links"] = self._links_for_concept(db, bundle_id, concept_id)
-            return data
+        snapshot, source, concepts, versions = self._source_snapshot(bundle_id, team_agent_id)
+        concept = next((item for item in concepts if item.concept_id == concept_id), None)
+        if not concept:
+            raise KeyError("OKF concept not found")
+        if expected_updated_at and versions.get(concept_id) != expected_updated_at:
+            raise OKFValidationError("This document changed since it was opened. Reload it before saving.")
+        frontmatter = dict(concept.frontmatter)
+        if title is not None:
+            if not title.strip():
+                raise OKFValidationError("Title cannot be empty")
+            frontmatter["title"] = title.strip()
+        if description is not None:
+            frontmatter["description"] = description.strip()
+        if tags is not None:
+            frontmatter["tags"] = _normalize_tags(tags)
+        self._apply_source_updates(bundle_id, team_agent_id, snapshot, source,
+                                   {concept.file_path: self._source_markdown(frontmatter, body)})
+        return self.get_concept(bundle_id, concept_id, team_agent_id)
 
     def delete_bundle(self, bundle_id: int, team_agent_id: Optional[int]) -> bool:
         with get_db() as db:

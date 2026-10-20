@@ -1,3 +1,4 @@
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request, UploadFile, File, Response, Form
 import json
 import os
@@ -40,6 +41,7 @@ from app.models import (
     OKFImportJobResponse,
     OKFConceptResponse,
     UpdateOKFConceptRequest,
+    ReindexOKFSourceRequest,
     TestOKFBundleRequest,
     TestOKFBundleResponse,
     VoIPProviderResponse,
@@ -1388,6 +1390,22 @@ def _create_okf_tool_for_bundle(
     return tool_id
 
 
+def _validate_okf_url_mode(import_mode, urls, file, files, pasted_text):
+    if import_mode not in {"knowledge", "archive", "urls"}:
+        raise HTTPException(status_code=400, detail="Import mode must be knowledge, archive, or urls")
+    if import_mode == "urls":
+        if file or files or pasted_text:
+            raise HTTPException(status_code=400, detail="URL imports cannot include files or pasted text")
+        from app.knowledge_urls import URLImportError, validate_urls
+        try:
+            return validate_urls(urls or [])
+        except URLImportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if urls:
+        raise HTTPException(status_code=400, detail="Select URL import mode to import URLs")
+    return None
+
+
 def _run_okf_import_job(
     job_id: str,
     source_paths: List[str],
@@ -1399,6 +1417,7 @@ def _run_okf_import_job(
     create_tool: bool,
     assign_agent_id: Optional[int],
     cleanup_dir: str,
+    urls: Optional[List[str]] = None,
 ) -> None:
     try:
         _update_okf_job(job_id, status="processing", message="Reading files and preparing local knowledge")
@@ -1417,6 +1436,7 @@ def _run_okf_import_job(
         else:
             bundle = service.import_knowledge_files(
                 source_paths=paths,
+                urls=urls,
                 display_name=display_name.strip(),
                 team_agent_id=team_agent_id,
                 visibility=visibility,
@@ -1486,25 +1506,30 @@ async def get_okf_bundles(
 async def preview_okf_knowledge(
     team_agent_id: Optional[int] = None,
     display_name: str = Form("Knowledge Preview"),
+    import_mode: str = Form("knowledge"),
     pasted_text: Optional[str] = Form(None),
+    urls: Optional[List[str]] = Form(None),
     file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     current_user: str = Depends(get_current_user),
 ):
     """Preview friendly knowledge uploads before creating a local OKF bundle."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
+    urls = _validate_okf_url_mode(import_mode, urls, file, files, pasted_text)
     temp_dir = None
     try:
         temp_dir = tempfile.TemporaryDirectory(prefix="okf_preview_")
-        source_paths = await _save_okf_upload_sources(
+        source_paths = [] if urls is not None else await _save_okf_upload_sources(
             upload_dir=Path(temp_dir.name),
             display_name=display_name,
             files=files,
             file=file,
             pasted_text=pasted_text,
         )
-        return OKFService().preview_knowledge_files(
+        return await run_in_threadpool(
+            OKFService().preview_knowledge_files,
             source_paths=source_paths,
+            urls=urls,
             team_agent_id=team_agent_id,
         )
     except OKFValidationError as e:
@@ -1527,6 +1552,7 @@ async def start_okf_import_job(
     visibility: str = Form("team"),
     import_mode: str = Form("knowledge"),
     pasted_text: Optional[str] = Form(None),
+    urls: Optional[List[str]] = Form(None),
     create_tool: bool = Form(True),
     assign_agent_id: Optional[int] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -1535,15 +1561,11 @@ async def start_okf_import_job(
 ):
     """Start a background import job for local OKF knowledge."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
+    urls = _validate_okf_url_mode(import_mode, urls, file, files, pasted_text)
     if visibility not in ("team", "global"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Visibility must be 'team' or 'global'",
-        )
-    if import_mode not in ("knowledge", "archive"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Import mode must be 'knowledge' or 'archive'",
         )
     if not display_name.strip():
         raise HTTPException(
@@ -1558,7 +1580,7 @@ async def start_okf_import_job(
 
     upload_dir = Path(tempfile.mkdtemp(prefix="okf_import_job_"))
     try:
-        source_paths = await _save_okf_upload_sources(
+        source_paths = [] if urls is not None else await _save_okf_upload_sources(
             upload_dir=upload_dir,
             display_name=display_name,
             files=files,
@@ -1618,6 +1640,7 @@ async def start_okf_import_job(
         create_tool,
         assign_agent_id,
         str(upload_dir),
+        urls,
     )
     return _okf_job_response(OKF_IMPORT_JOBS[job_id])
 
@@ -1650,6 +1673,7 @@ async def import_okf_bundle(
     visibility: str = Form("team"),
     import_mode: str = Form("knowledge"),
     pasted_text: Optional[str] = Form(None),
+    urls: Optional[List[str]] = Form(None),
     create_tool: bool = Form(True),
     assign_agent_id: Optional[int] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -1658,15 +1682,11 @@ async def import_okf_bundle(
 ):
     """Import OKF knowledge from friendly uploads, pasted text, or advanced OKF archives."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
+    urls = _validate_okf_url_mode(import_mode, urls, file, files, pasted_text)
     if visibility not in ("team", "global"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Visibility must be 'team' or 'global'",
-        )
-    if import_mode not in ("knowledge", "archive"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Import mode must be 'knowledge' or 'archive'",
         )
     if not display_name.strip():
         raise HTTPException(
@@ -1682,7 +1702,7 @@ async def import_okf_bundle(
     temp_dir = None
     try:
         temp_dir = tempfile.TemporaryDirectory(prefix="okf_upload_")
-        source_paths = await _save_okf_upload_sources(
+        source_paths = [] if urls is not None else await _save_okf_upload_sources(
             upload_dir=Path(temp_dir.name),
             display_name=display_name,
             files=files,
@@ -1697,7 +1717,8 @@ async def import_okf_bundle(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Advanced OKF archive import accepts one archive file",
                 )
-            bundle = service.import_archive(
+            bundle = await run_in_threadpool(
+                service.import_archive,
                 archive_path=source_paths[0],
                 display_name=display_name.strip(),
                 team_agent_id=team_agent_id,
@@ -1705,8 +1726,10 @@ async def import_okf_bundle(
                 created_by_username=current_user,
             )
         else:
-            bundle = service.import_knowledge_files(
+            bundle = await run_in_threadpool(
+                service.import_knowledge_files,
                 source_paths=source_paths,
+                urls=urls,
                 display_name=display_name.strip(),
                 team_agent_id=team_agent_id,
                 visibility=visibility,
@@ -1727,7 +1750,6 @@ async def import_okf_bundle(
         # Failure must not roll back the already-committed local OKF documents.
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
-            from fastapi.concurrency import run_in_threadpool
             try:
                 await run_in_threadpool(index_bundle, bundle["id"])
             except Exception:
@@ -1826,7 +1848,8 @@ async def update_okf_concept(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can edit this OKF bundle")
     try:
-        updated = OKFService().update_concept(
+        updated = await run_in_threadpool(
+            OKFService().update_concept,
             bundle_id=bundle_id,
             concept_id=concept_id,
             team_agent_id=team_agent_id,
@@ -1840,7 +1863,6 @@ async def update_okf_concept(
         # even if shared GPU indexing fails; legacy lexical retrieval stays ready.
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
-            from fastapi.concurrency import run_in_threadpool
             try:
                 await run_in_threadpool(index_bundle, bundle_id)
             except Exception:
@@ -1905,6 +1927,39 @@ async def reindex_okf_vectors(
         raise HTTPException(status_code=503, detail="Local vector indexing failed; check database and embedding service health") from exc
 
 
+@router.post("/okf-bundles/{bundle_id}/reindex-source", response_model=OKFConceptResponse)
+async def reindex_okf_source(
+    bundle_id: int,
+    request: ReindexOKFSourceRequest,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
+    service = OKFService()
+    bundle = service.get_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not bundle:
+        raise HTTPException(status_code=404, detail="OKF bundle not found")
+    admin = database.get_admin_by_username(current_user)
+    if bundle.get("owner_team_agent_id") is not None and bundle["owner_team_agent_id"] != team_agent_id and not (admin and admin.get("is_super_admin")):
+        raise HTTPException(status_code=403, detail="Only the owning team can refresh this knowledge")
+    try:
+        result = await run_in_threadpool(service.reindex_source, bundle_id, request.concept_id, team_agent_id,
+                                         url=request.url, expected_updated_at=request.expected_updated_at)
+        from app.local_rag import enabled, index_bundle
+        if enabled():
+            try:
+                await run_in_threadpool(index_bundle, bundle_id)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).exception("URL source saved but vector indexing failed")
+                raise HTTPException(status_code=503, detail="URL content was replaced, but vector indexing failed. Retry reindex-vectors.") from exc
+        return result
+    except KeyError:
+        raise HTTPException(status_code=404, detail="OKF source not found")
+    except OKFValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/okf-bundles/{bundle_id}/reindex", response_model=OKFBundleResponse)
 async def reindex_okf_bundle(
     bundle_id: int,
@@ -1924,10 +1979,9 @@ async def reindex_okf_bundle(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can re-index this OKF bundle")
     try:
-        result = OKFService().reindex_bundle(bundle_id, team_agent_id=team_agent_id)
+        result = await run_in_threadpool(OKFService().reindex_bundle, bundle_id, team_agent_id=team_agent_id)
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
-            from fastapi.concurrency import run_in_threadpool
             try:
                 await run_in_threadpool(index_bundle, bundle_id)
             except Exception:

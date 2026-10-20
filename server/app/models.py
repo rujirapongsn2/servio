@@ -259,6 +259,12 @@ class UpdateOKFConceptRequest(BaseModel):
     expected_updated_at: Optional[str] = None
 
 
+class ReindexOKFSourceRequest(BaseModel):
+    concept_id: str
+    url: Optional[str] = None
+    expected_updated_at: Optional[str] = None
+
+
 class TestOKFBundleRequest(BaseModel):
     query: str
 
