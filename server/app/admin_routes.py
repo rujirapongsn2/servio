@@ -1790,7 +1790,7 @@ async def update_okf_concept(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can edit this OKF bundle")
     try:
-        return OKFService().update_concept(
+        updated = OKFService().update_concept(
             bundle_id=bundle_id,
             concept_id=concept_id,
             team_agent_id=team_agent_id,
@@ -1800,6 +1800,21 @@ async def update_okf_concept(
             body=request.body,
             expected_updated_at=request.expected_updated_at,
         )
+        # Keep vector retrieval current after an edit. Preserve the saved edit
+        # even if shared GPU indexing fails; legacy lexical retrieval stays ready.
+        from app.local_rag import enabled as hybrid_enabled, index_bundle
+        if hybrid_enabled():
+            from fastapi.concurrency import run_in_threadpool
+            try:
+                await run_in_threadpool(index_bundle, bundle_id)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Could not reindex edited OKF knowledge")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Document was saved but local vector reindex failed; retry reindex-vectors",
+                )
+        return updated
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
     except OKFValidationError as e:
