@@ -1810,6 +1810,32 @@ async def test_okf_bundle(
     )
 
 
+@router.post("/okf-bundles/{bundle_id}/reindex-vectors")
+async def reindex_okf_vectors(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Re-embed a local knowledge bundle; never changes the embedding server."""
+    require_team_access(current_user, team_agent_id, "admin")
+    bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not bundle:
+        raise HTTPException(status_code=404, detail="OKF bundle not found")
+    admin = database.get_admin_by_username(current_user)
+    if bundle.get("owner_team_agent_id") is not None and bundle.get("owner_team_agent_id") != team_agent_id and not (admin and admin.get("is_super_admin")):
+        raise HTTPException(status_code=403, detail="Only owning team may reindex")
+    from app.local_rag import enabled
+    if not enabled():
+        raise HTTPException(status_code=409, detail="Enable LOCAL_KNOWLEDGE_HYBRID_ENABLED first")
+    from fastapi.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(OKFService().reindex_hybrid, bundle_id, team_agent_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Local vector indexing failed")
+        raise HTTPException(status_code=503, detail="Local vector indexing failed; check database and embedding service health") from exc
+
+
 @router.post("/okf-bundles/{bundle_id}/reindex", response_model=OKFBundleResponse)
 async def reindex_okf_bundle(
     bundle_id: int,
