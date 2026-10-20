@@ -24,6 +24,7 @@ from app.orm_models import OKFBundle, OKFConceptIndex
 
 logger = logging.getLogger(__name__)
 _schema_lock = threading.Lock()
+_ingest_lock = threading.Lock()  # serialize GPU-heavy ingests across request threads
 _schema_ready = False
 
 DEFAULT_MODEL = "google/embeddinggemma-2"
@@ -187,6 +188,7 @@ def ensure_schema() -> None:
                     resource TEXT,
                     content TEXT NOT NULL,
                     content_hash VARCHAR(64) NOT NULL,
+                    source_hash VARCHAR(64),
                     embedding_model VARCHAR(255) NOT NULL,
                     embedding_dimensions INTEGER NOT NULL,
                     document_prefix_hash VARCHAR(64) NOT NULL,
@@ -194,6 +196,7 @@ def ensure_schema() -> None:
                     UNIQUE(bundle_id, concept_id, chunk_index)
                 )
             """))
+            conn.execute(sql_text("ALTER TABLE okf_rag_chunks ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64)"))
             conn.execute(sql_text("""
                 CREATE INDEX IF NOT EXISTS ix_okf_rag_bundle_model
                 ON okf_rag_chunks (bundle_id, embedding_model, document_prefix_hash)
@@ -215,7 +218,7 @@ def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(format(v, ".9g") for v in vector) + "]"
 
 
-def index_bundle(bundle_id: int) -> dict[str, Any]:
+def _index_bundle_unlocked(bundle_id: int) -> dict[str, Any]:
     """Rebuild vector index atomically; keeps previous chunks on any failure.
 
     Intended for a background ingest/reindex worker. No parallel fan-out:
@@ -233,8 +236,10 @@ def index_bundle(bundle_id: int) -> dict[str, Any]:
             raise KeyError("OKF bundle not found")
         concepts = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all()
         root = Path(bundle.storage_path)
-        records: list[tuple[str, int, str, str, str]] = []
+        records: list[tuple[str, int, str, str, str, str]] = []
+        source_hashes: dict[str, str] = {}
         for concept in concepts:
+            source_hashes[concept.concept_id] = concept.content_hash
             path = root / concept.file_path
             _ensure_within(root, path)
             markdown = path.read_text(encoding="utf-8")
@@ -246,7 +251,7 @@ def index_bundle(bundle_id: int) -> dict[str, Any]:
             )):
                 records.append((
                     concept.concept_id, i, concept.title or concept.concept_id,
-                    concept.resource or concept.file_path, chunk,
+                    concept.resource or concept.file_path, chunk, concept.content_hash,
                 ))
 
     client = LocalEmbeddingClient()
@@ -256,27 +261,41 @@ def index_bundle(bundle_id: int) -> dict[str, Any]:
     # lengthy network calls to a shared GPU service.
     vectors = client.documents([record[4] for record in records])
     with engine.begin() as conn:
+        # A source edit during a long embedding job must not overwrite new
+        # knowledge with an old vector snapshot.
+        current_hashes = dict(conn.execute(sql_text(
+            "SELECT concept_id, content_hash FROM okf_concept_index WHERE bundle_id = :bundle"
+        ), {"bundle": bundle_id}).all())
+        if current_hashes != source_hashes:
+            raise EmbeddingError("Knowledge changed while embeddings were being generated; reindex again")
         conn.execute(sql_text("DELETE FROM okf_rag_chunks WHERE bundle_id = :bundle"),
                      {"bundle": bundle_id})
         for offset in range(0, len(records), client.batch_size):
             batch = records[offset:offset + client.batch_size]
             batch_vectors = vectors[offset:offset + client.batch_size]
-            for (concept_id, idx, title, resource, chunk), vector in zip(batch, batch_vectors):
+            for (concept_id, idx, title, resource, chunk, source_hash), vector in zip(batch, batch_vectors):
                 conn.execute(sql_text("""
                     INSERT INTO okf_rag_chunks
                     (bundle_id, concept_id, chunk_index, title, resource, content,
-                     content_hash, embedding_model, embedding_dimensions,
+                     content_hash, source_hash, embedding_model, embedding_dimensions,
                      document_prefix_hash, embedding)
                     VALUES (:bundle, :concept, :idx, :title, :resource, :content,
-                            :hash, :model, :dims, :prefix, CAST(:embedding AS vector))
+                            :hash, :source_hash, :model, :dims, :prefix, CAST(:embedding AS vector))
                 """), {
                     "bundle": bundle_id, "concept": concept_id, "idx": idx,
                     "title": title, "resource": resource, "content": chunk,
                     "hash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+                    "source_hash": source_hash,
                     "model": client.model, "dims": DIMENSIONS,
                     "prefix": prefix_fingerprint(), "embedding": _vector_literal(vector),
                 })
     return {"status": "ready", "chunks": len(records), "model": client.model, "dimensions": DIMENSIONS}
+
+
+def index_bundle(bundle_id: int) -> dict[str, Any]:
+    """Use a single ingestion lane, protecting the shared GPU from upload storms."""
+    with _ingest_lock:
+        return _index_bundle_unlocked(bundle_id)
 
 
 def _merge_ranked(*rankings: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
@@ -300,13 +319,18 @@ def query_bundle(bundle_id: int, query: str, *, limit: int = 5) -> dict[str, Any
     fingerprint = prefix_fingerprint()
     params = {"bundle": bundle_id, "model": client.model, "dims": DIMENSIONS, "prefix": fingerprint}
     # Both ranking paths apply the same model/version and bundle filters.
-    scope = """bundle_id = :bundle AND embedding_model = :model
-               AND embedding_dimensions = :dims AND document_prefix_hash = :prefix"""
-    cols = "id, concept_id, chunk_index, title, resource, content"
+    scope = """c.bundle_id = :bundle AND c.embedding_model = :model
+               AND c.embedding_dimensions = :dims AND c.document_prefix_hash = :prefix"""
+    # Check source hashes at query time. Old vectors from a failed edit/reindex
+    # or an earlier schema version can never be returned as current evidence.
+    scoped_table = """okf_rag_chunks c JOIN okf_concept_index k
+                    ON k.bundle_id = c.bundle_id
+                    AND k.concept_id = c.concept_id AND k.content_hash = c.source_hash"""
+    cols = "c.id, c.concept_id, c.chunk_index, c.title, c.resource, c.content"
     with engine.connect() as conn:
         sem = conn.execute(sql_text(f"""
-            SELECT {cols} FROM okf_rag_chunks WHERE {scope}
-            ORDER BY embedding <=> CAST(:vector AS vector) LIMIT 30
+            SELECT {cols} FROM {scoped_table} WHERE {scope}
+            ORDER BY c.embedding <=> CAST(:vector AS vector) LIMIT 30
         """), {**params, "vector": v}).mappings().all()
 
         # Phrase + a few longer terms: Thai is supported even without whitespace.
@@ -319,10 +343,10 @@ def query_bundle(bundle_id: int, query: str, *, limit: int = 5) -> dict[str, Any
         score = []
         for i, term in enumerate(terms):
             params[f"like{i}"] = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-            clauses.append(f"content ILIKE :like{i} ESCAPE '\\'")
-            score.append(f"CASE WHEN content ILIKE :like{i} ESCAPE '\\' THEN {5 if i == 0 else 1} ELSE 0 END")
+            clauses.append(f"c.content ILIKE :like{i} ESCAPE '\\'")
+            score.append(f"CASE WHEN c.content ILIKE :like{i} ESCAPE '\\' THEN {5 if i == 0 else 1} ELSE 0 END")
         lex = conn.execute(sql_text(f"""
-            SELECT {cols} FROM okf_rag_chunks WHERE {scope}
+            SELECT {cols} FROM {scoped_table} WHERE {scope}
             AND ({' OR '.join(clauses)})
             ORDER BY ({' + '.join(score)}) DESC, id ASC LIMIT 30
         """), params).mappings().all()
@@ -356,8 +380,11 @@ def indexed_count(bundle_id: int) -> int:
     ensure_schema()
     with engine.connect() as conn:
         return int(conn.execute(sql_text(
-            """SELECT count(*) FROM okf_rag_chunks
-               WHERE bundle_id = :bundle AND embedding_model = :model
-               AND embedding_dimensions = :dims AND document_prefix_hash = :prefix"""
+            """SELECT count(*) FROM okf_rag_chunks c
+               JOIN okf_concept_index k
+                 ON k.bundle_id = c.bundle_id AND k.concept_id = c.concept_id
+                AND k.content_hash = c.source_hash
+               WHERE c.bundle_id = :bundle AND c.embedding_model = :model
+               AND c.embedding_dimensions = :dims AND c.document_prefix_hash = :prefix"""
         ), {"bundle": bundle_id, "model": model_name(), "dims": DIMENSIONS,
             "prefix": prefix_fingerprint()}).scalar() or 0)
