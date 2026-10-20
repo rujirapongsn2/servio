@@ -1700,6 +1700,19 @@ async def import_okf_bundle(
                 assign_agent_id=assign_agent_id,
             )
 
+        # The legacy synchronous import endpoint also needs a fresh vector index.
+        # Failure must not roll back the already-committed local OKF documents.
+        from app.local_rag import enabled as hybrid_enabled, index_bundle
+        if hybrid_enabled():
+            from fastapi.concurrency import run_in_threadpool
+            try:
+                await run_in_threadpool(index_bundle, bundle["id"])
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Could not index newly imported OKF bundle")
+                bundle["vector_index_status"] = "failed"
+            else:
+                bundle["vector_index_status"] = "ready"
         return bundle
     except OKFValidationError as e:
         raise HTTPException(
@@ -1815,6 +1828,8 @@ async def update_okf_concept(
                     detail="Document was saved but local vector reindex failed; retry reindex-vectors",
                 )
         return updated
+    except HTTPException:
+        raise
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
     except OKFValidationError as e:
@@ -1886,7 +1901,19 @@ async def reindex_okf_bundle(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can re-index this OKF bundle")
     try:
-        return OKFService().reindex_bundle(bundle_id, team_agent_id=team_agent_id)
+        result = OKFService().reindex_bundle(bundle_id, team_agent_id=team_agent_id)
+        from app.local_rag import enabled as hybrid_enabled, index_bundle
+        if hybrid_enabled():
+            from fastapi.concurrency import run_in_threadpool
+            try:
+                await run_in_threadpool(index_bundle, bundle_id)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("OKF source reindexed but vector reindex failed")
+                raise HTTPException(status_code=503, detail="OKF source saved; vector reindex failed. Retry reindex-vectors.")
+        return result
+    except HTTPException:
+        raise
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
     except OKFValidationError as e:
