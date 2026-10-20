@@ -76,3 +76,21 @@ parsing, page-level citations, true tokenizer-based chunk caps, and vector
 reindexing after editing an existing concept should be completed before
 retiring Gemini File Search. The current feature is an opt-in foundation,
 not a claim of feature parity.
+
+
+## Additional safety hardening (PR follow-up)
+
+- Each vector chunk now carries a source concept content hash. Retrieval joins
+  with the latest OKF concept index and excludes stale/legacy vectors.
+  **Reindex existing bundles** to populate source hashes, even if vector rows
+  already exist; otherwise lexical retrieval is used until rebuilding.
+- Ingest indexing is serialized per backend process so concurrent uploads do
+  not fan out GPU-heavy embedding requests. Multiple backend replicas need a
+  distributed queue/advisory-lock strategy before production scale-out.
+- If knowledge changes while embeddings are being calculated, indexing aborts
+  instead of replacing the index with an outdated snapshot.
+- There is still no host-side deployment or integration-test confirmation from
+  the GitHub-only environment. Compare the deployed checkout and DB migration
+  state before enabling the feature flag.
+- Do not retire or delete any Gemini File Search objects until all existing
+  source files and agent tool assignments have been inventoried and validated.
