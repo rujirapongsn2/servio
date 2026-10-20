@@ -1912,6 +1912,8 @@ async def reindex_okf_bundle(
                 logging.getLogger(__name__).exception("OKF source reindexed but vector reindex failed")
                 raise HTTPException(status_code=503, detail="OKF source saved; vector reindex failed. Retry reindex-vectors.")
         return result
+    except HTTPException:
+        raise
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
     except OKFValidationError as e:
