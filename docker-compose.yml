@@ -20,7 +20,7 @@ services:
       - ALL
 
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: voice-agent-postgres
     restart: unless-stopped
     environment:
@@ -54,6 +54,13 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SOFTNIX_API_KEY=${SOFTNIX_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LOCAL_KNOWLEDGE_HYBRID_ENABLED=${LOCAL_KNOWLEDGE_HYBRID_ENABLED:-false}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:8090/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-google/embeddinggemma-2}
+      - EMBEDDING_QUERY_PREFIX=${EMBEDDING_QUERY_PREFIX:-task: search result | query: }
+      - EMBEDDING_DOCUMENT_PREFIX=${EMBEDDING_DOCUMENT_PREFIX:-title: none | text: }
+      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-8}
+      - EMBEDDING_TIMEOUT_SECONDS=${EMBEDDING_TIMEOUT_SECONDS:-60}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-voice_agents}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - UV_CACHE_DIR=/tmp/uv_cache

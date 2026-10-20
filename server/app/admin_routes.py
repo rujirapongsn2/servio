@@ -1400,6 +1400,22 @@ def _run_okf_import_job(
                 created_by_username=current_user,
             )
 
+        # Queue processing already runs off the API request. Build vectors after
+        # the OKF import transaction commits; failed embedding must not remove
+        # the successfully imported source or its lexical search capability.
+        from app.local_rag import enabled as hybrid_enabled, index_bundle
+        if hybrid_enabled():
+            try:
+                _update_okf_job(job_id, message="Building local pgvector index")
+                index_bundle(bundle["id"])
+            except Exception as vector_exc:
+                import logging
+                logging.getLogger(__name__).exception("Local vector index failed")
+                _update_okf_job(job_id, message="Local vectors unavailable, lexical search remains ready")
+                vector_warning = f"Local vector index failed: {type(vector_exc).__name__}"
+                existing_warnings = list((bundle.get("validation_summary") or {}).get("warnings") or [])
+                bundle["validation_summary"] = {**(bundle.get("validation_summary") or {}), "warnings": [*existing_warnings, vector_warning]}
+
         if create_tool:
             _update_okf_job(job_id, message="Creating agent capability")
             _create_okf_tool_for_bundle(
@@ -1774,7 +1790,7 @@ async def update_okf_concept(
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can edit this OKF bundle")
     try:
-        return OKFService().update_concept(
+        updated = OKFService().update_concept(
             bundle_id=bundle_id,
             concept_id=concept_id,
             team_agent_id=team_agent_id,
@@ -1784,6 +1800,21 @@ async def update_okf_concept(
             body=request.body,
             expected_updated_at=request.expected_updated_at,
         )
+        # Keep vector retrieval current after an edit. Preserve the saved edit
+        # even if shared GPU indexing fails; legacy lexical retrieval stays ready.
+        from app.local_rag import enabled as hybrid_enabled, index_bundle
+        if hybrid_enabled():
+            from fastapi.concurrency import run_in_threadpool
+            try:
+                await run_in_threadpool(index_bundle, bundle_id)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Could not reindex edited OKF knowledge")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Document was saved but local vector reindex failed; retry reindex-vectors",
+                )
+        return updated
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
     except OKFValidationError as e:
@@ -1808,6 +1839,32 @@ async def test_okf_bundle(
         concepts=result.get("concepts", []),
         response_time=time.time() - start_time,
     )
+
+
+@router.post("/okf-bundles/{bundle_id}/reindex-vectors")
+async def reindex_okf_vectors(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    """Re-embed a local knowledge bundle; never changes the embedding server."""
+    require_team_access(current_user, team_agent_id, "admin")
+    bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
+    if not bundle:
+        raise HTTPException(status_code=404, detail="OKF bundle not found")
+    admin = database.get_admin_by_username(current_user)
+    if bundle.get("owner_team_agent_id") is not None and bundle.get("owner_team_agent_id") != team_agent_id and not (admin and admin.get("is_super_admin")):
+        raise HTTPException(status_code=403, detail="Only owning team may reindex")
+    from app.local_rag import enabled
+    if not enabled():
+        raise HTTPException(status_code=409, detail="Enable LOCAL_KNOWLEDGE_HYBRID_ENABLED first")
+    from fastapi.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(OKFService().reindex_hybrid, bundle_id, team_agent_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Local vector indexing failed")
+        raise HTTPException(status_code=503, detail="Local vector indexing failed; check database and embedding service health") from exc
 
 
 @router.post("/okf-bundles/{bundle_id}/reindex", response_model=OKFBundleResponse)

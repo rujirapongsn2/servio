@@ -1079,6 +1079,14 @@ class OKFService:
             shutil.rmtree(bundle_dir)
         return True
 
+    def reindex_hybrid(self, bundle_id: int, team_agent_id: Optional[int] = None) -> Dict[str, Any]:
+        """Explicitly rebuild the local vector index after checking team access."""
+        bundle = self.get_bundle(bundle_id, team_agent_id)
+        if bundle is None:
+            raise KeyError("OKF bundle not found")
+        from app.local_rag import index_bundle
+        return index_bundle(bundle_id)
+
     def query_bundle(
         self,
         bundle_id: int,
@@ -1087,6 +1095,21 @@ class OKFService:
         limit: int = 5,
         expand_links: bool = True,
     ) -> Dict[str, Any]:
+        from app.local_rag import enabled as hybrid_enabled, indexed_count, query_bundle as hybrid_query
+        if hybrid_enabled():
+            # Verify access before invoking any embedding or vector operation.
+            if self.get_bundle(bundle_id, team_agent_id) is None:
+                return {"response": "OKF bundle not found or not available.", "concepts": []}
+            try:
+                if indexed_count(bundle_id):
+                    result = hybrid_query(bundle_id, query, limit=limit)
+                    if result["concepts"]:
+                        return result
+            except Exception:
+                # Preserve existing lexical retrieval when shared embedding service
+                # is unavailable; never restart or reconfigure that service.
+                import logging
+                logging.getLogger(__name__).exception("Local hybrid retrieval unavailable, using legacy search")
         terms = _query_terms(query)
         excerpt_terms = _excerpt_terms(terms)
         with get_db() as db:
