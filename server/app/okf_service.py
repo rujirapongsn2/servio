@@ -337,7 +337,7 @@ def _extract_pdf_text(path: Path) -> tuple[str, List[str]]:
     try:
         reader = PdfReader(str(path))
         pages = [page.extract_text() or "" for page in reader.pages]
-        text = "\n\n".join(f"### Page {number}\\n{page.strip()}".replace("\\\\n", "\\n") for number, page in enumerate(pages, 1) if page.strip())
+        text = "\n\n".join(f"### Page {number}\n{page.strip()}" for number, page in enumerate(pages, 1) if page.strip())
         if not text.strip():
             warnings.append(f"{path.name} appears to be scanned or image-only. OCR is required before import.")
         return text, warnings
