@@ -53,3 +53,36 @@ def test_rank_fusion_deduplicates_chunks():
     combined = _merge_ranked(sem, lex, limit=3)
     assert len(combined) == 3
     assert combined[0]["id"] == 2
+
+
+def test_no_remote_calls_during_import(monkeypatch):
+    from app import local_rag
+    called = []
+    monkeypatch.setattr(local_rag.httpx, "post", lambda *a, **kw: called.append((a, kw)))
+    monkeypatch.delenv("LOCAL_KNOWLEDGE_HYBRID_ENABLED", raising=False)
+    assert local_rag.index_bundle(999) == {"status": "disabled", "chunks": 0}
+    assert called == []
+
+
+def test_embedding_inputs_have_correct_prefixes(monkeypatch):
+    from app import local_rag
+    captured = []
+    def fake_post(url, json, timeout):
+        captured.append(json["input"])
+        class Reply:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"data": [
+                    {"index": i, "embedding": [0.01] * local_rag.DIMENSIONS}
+                    for i in range(len(captured[-1]))
+                ]}
+        return Reply()
+    monkeypatch.setattr(local_rag.httpx, "post", fake_post)
+    monkeypatch.delenv("EMBEDDING_QUERY_PREFIX", raising=False)
+    monkeypatch.delenv("EMBEDDING_DOCUMENT_PREFIX", raising=False)
+    client = local_rag.LocalEmbeddingClient()
+    client.query("refund")
+    client.documents(["first", "second"])
+    assert captured[0] == ["task: search result | query: refund"]
+    assert captured[1] == ["title: none | text: first", "title: none | text: second"]
