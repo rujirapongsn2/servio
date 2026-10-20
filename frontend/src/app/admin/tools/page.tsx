@@ -95,6 +95,9 @@ const getDocumentLibraryDisplayName = (tool: Tool, config: Record<string, unknow
   return normalizeDisplayName(tool.name || "");
 };
 
+// Legacy Document Search remains available only when explicitly enabled at build time.
+const showLegacyDocumentSearch = process.env.NEXT_PUBLIC_ENABLE_GEMINI_DOCUMENT_SEARCH === "true";
+
 function ToolsPageInner() {
   const router = useRouter();
   const apiBaseUrl = getApiBaseUrl();
@@ -428,7 +431,8 @@ function ToolsPageInner() {
         </div>
       </div>
 
-      {/* File Store Tools */}
+      {/* Gemini Document Search is hidden by default; no data or tools are deleted. */}
+      {showLegacyDocumentSearch && (
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -527,6 +531,8 @@ function ToolsPageInner() {
           )}
         </div>
       </div>
+
+      )}
 
       {/* Local Knowledge */}
       <div>
@@ -753,7 +759,7 @@ function ToolsPageInner() {
       </div>
 
       {/* File Store Modals */}
-      {showFileStoreModal && (
+      {showLegacyDocumentSearch && showFileStoreModal && (
         <CreateFileStoreModal
           teamAgentId={effectiveTeamId}
           assignAgentId={sourceAgentId}
@@ -807,7 +813,7 @@ function ToolsPageInner() {
         />
       )}
 
-      {showDetailModal && selectedFileStore && (
+      {showLegacyDocumentSearch && showDetailModal && selectedFileStore && (
         <FileStoreDetailModal
           store={selectedFileStore}
           onClose={() => {
@@ -817,7 +823,7 @@ function ToolsPageInner() {
         />
       )}
 
-      {showTestModal && selectedFileStore && (
+      {showLegacyDocumentSearch && showTestModal && selectedFileStore && (
         <TestFileStoreModal
           store={selectedFileStore}
           onClose={() => {
