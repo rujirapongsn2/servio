@@ -73,6 +73,19 @@ from app.orm_models import OKFImportJob
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 MAX_FILE_STORE_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
+
+def _gemini_creation_enabled() -> bool:
+    """Legacy cloud file-search writes are opt-in. Reads still work for old agents."""
+    return os.getenv("GEMINI_DOCUMENT_SEARCH_CREATE_ENABLED", "false").lower() in ("1", "true", "yes")
+
+
+def _require_gemini_creation_enabled() -> None:
+    if not _gemini_creation_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Gemini Document Search creation/upload is disabled; use Local Knowledge.",
+        )
 FILE_UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
 OKF_IMPORT_JOBS: Dict[str, Dict[str, Any]] = {}
 
@@ -1951,9 +1964,10 @@ async def create_file_store(
     team_agent_id: Optional[int] = None,
     current_user: str = Depends(get_current_user)
 ):
-    """Create a new file search store"""
+    """Create a new file search store (legacy opt-in only)."""
     require_team_admin_scope_access(current_user)
     require_team_access(current_user, team_agent_id, "admin")
+    _require_gemini_creation_enabled()
     try:
         from app.gemini_service import GeminiFileSearchService
 
@@ -2090,8 +2104,9 @@ async def upload_file(
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user)
 ):
-    """Upload a file to a file store and process it asynchronously."""
+    """Upload a file to a Gemini file store (legacy opt-in only)."""
     require_team_admin_scope_access(current_user)
+    _require_gemini_creation_enabled()
     store = database.get_file_store_by_id(store_id)
 
     if not store:
