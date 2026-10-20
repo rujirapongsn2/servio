@@ -348,7 +348,7 @@ def query_bundle(bundle_id: int, query: str, *, limit: int = 5) -> dict[str, Any
         lex = conn.execute(sql_text(f"""
             SELECT {cols} FROM {scoped_table} WHERE {scope}
             AND ({' OR '.join(clauses)})
-            ORDER BY ({' + '.join(score)}) DESC, id ASC LIMIT 30
+            ORDER BY ({' + '.join(score)}) DESC, c.id ASC LIMIT 30
         """), params).mappings().all()
 
     selected = _merge_ranked([dict(x) for x in sem], [dict(x) for x in lex],

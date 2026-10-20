@@ -50,6 +50,8 @@ SUPPORTED_KNOWLEDGE_EXTENSIONS = {
     ".htm",
     ".docx",
     ".pdf",
+    ".xlsx",
+    ".pptx",
 }
 SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".tar", ".tgz", ".gz"}
 
@@ -335,7 +337,7 @@ def _extract_pdf_text(path: Path) -> tuple[str, List[str]]:
     try:
         reader = PdfReader(str(path))
         pages = [page.extract_text() or "" for page in reader.pages]
-        text = "\n\n".join(page.strip() for page in pages if page.strip())
+        text = "\n\n".join(f"### Page {number}\n{page.strip()}" for number, page in enumerate(pages, 1) if page.strip())
         if not text.strip():
             warnings.append(f"{path.name} appears to be scanned or image-only. OCR is required before import.")
         return text, warnings
@@ -366,6 +368,12 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None) -> Extr
         text = _extract_docx_text(path)
     elif suffix == ".pdf":
         text, warnings = _extract_pdf_text(path)
+    elif suffix in {".xlsx", ".pptx"}:
+        from app.local_documents import OfficeExtractionError, extract_xlsx, extract_pptx
+        try:
+            text = (extract_xlsx if suffix == ".xlsx" else extract_pptx)(path)
+        except OfficeExtractionError as exc:
+            raise OKFValidationError(str(exc)) from exc
     else:
         raise OKFValidationError(f"{path.name} is not a supported knowledge file")
 
