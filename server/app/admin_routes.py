@@ -1400,6 +1400,22 @@ def _run_okf_import_job(
                 created_by_username=current_user,
             )
 
+        # Queue processing already runs off the API request. Build vectors after
+        # the OKF import transaction commits; failed embedding must not remove
+        # the successfully imported source or its lexical search capability.
+        from app.local_rag import enabled as hybrid_enabled, index_bundle
+        if hybrid_enabled():
+            try:
+                _update_okf_job(job_id, message="Building local pgvector index")
+                index_bundle(bundle["id"])
+            except Exception as vector_exc:
+                import logging
+                logging.getLogger(__name__).exception("Local vector index failed")
+                _update_okf_job(job_id, message="Local vectors unavailable, lexical search remains ready")
+                vector_warning = f"Local vector index failed: {type(vector_exc).__name__}"
+                existing_warnings = list((bundle.get("validation_summary") or {}).get("warnings") or [])
+                bundle["validation_summary"] = {**(bundle.get("validation_summary") or {}), "warnings": [*existing_warnings, vector_warning]}
+
         if create_tool:
             _update_okf_job(job_id, message="Creating agent capability")
             _create_okf_tool_for_bundle(
