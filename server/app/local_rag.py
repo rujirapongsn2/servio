@@ -252,13 +252,16 @@ def index_bundle(bundle_id: int) -> dict[str, Any]:
     client = LocalEmbeddingClient()
     # Keep the entire replacement in one transaction. A network/DB error rolls
     # back DELETE and INSERT, preserving the last fully built index.
+    # Embed before opening the DB write transaction: never hold locks during
+    # lengthy network calls to a shared GPU service.
+    vectors = client.documents([record[4] for record in records])
     with engine.begin() as conn:
         conn.execute(sql_text("DELETE FROM okf_rag_chunks WHERE bundle_id = :bundle"),
                      {"bundle": bundle_id})
         for offset in range(0, len(records), client.batch_size):
             batch = records[offset:offset + client.batch_size]
-            vectors = client.documents([record[4] for record in batch])
-            for (concept_id, idx, title, resource, chunk), vector in zip(batch, vectors):
+            batch_vectors = vectors[offset:offset + client.batch_size]
+            for (concept_id, idx, title, resource, chunk), vector in zip(batch, batch_vectors):
                 conn.execute(sql_text("""
                     INSERT INTO okf_rag_chunks
                     (bundle_id, concept_id, chunk_index, title, resource, content,
