@@ -98,6 +98,16 @@ def require_team_access(current_user: str, team_agent_id: Optional[int], min_rol
         )
 
 
+def _require_resolved_team_access(current_user: str, team_agent_id: Optional[int], min_role: str = "viewer") -> int:
+    """Authorize an explicit team or the legacy default before reading its data."""
+    if team_agent_id is None:
+        team_agent_id = database.get_default_team_id()
+    if team_agent_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No default Team Agent is configured")
+    require_team_access(current_user, team_agent_id, min_role)
+    return team_agent_id
+
+
 def require_super_admin(current_user: str) -> None:
     admin = database.get_admin_by_username(current_user)
     if not admin or not admin.get("is_super_admin"):
@@ -833,7 +843,7 @@ async def test_agent(
     )
     from app.utils import is_text_output
 
-    require_team_access(current_user, team_agent_id, "viewer")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     if not database.user_can_access_agent(current_user, agent_id, "viewer", team_agent_id=team_agent_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -850,7 +860,7 @@ async def test_agent(
 
     try:
         # Build agent from database configuration
-        agent = build_agent_from_db(agent_data)
+        agent = build_agent_from_db(agent_data, runtime_team_agent_id=team_agent_id)
 
         # If force_tool provided, limit tools and prime instructions/message
         user_message = request.message
@@ -870,7 +880,7 @@ async def test_agent(
                 for t in agent_data.get("tools", []):
                     if t.get("name") == forced_name:
                         tconfig = json.loads(t.get("config")) if t.get("config") else {}
-                        forced_tool = get_tool_by_name(forced_name, tconfig)
+                        forced_tool = get_tool_by_name(forced_name, tconfig, runtime_team_agent_id=team_agent_id)
                         break
 
             if forced_tool is not None:
@@ -1468,7 +1478,7 @@ async def get_okf_bundles(
     current_user: str = Depends(get_current_user),
 ):
     """Get OKF bundles available to the selected Team Agent."""
-    require_team_access(current_user, team_agent_id, "viewer")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     return OKFService().list_bundles(team_agent_id=team_agent_id)
 
 
@@ -1482,7 +1492,7 @@ async def preview_okf_knowledge(
     current_user: str = Depends(get_current_user),
 ):
     """Preview friendly knowledge uploads before creating a local OKF bundle."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     temp_dir = None
     try:
         temp_dir = tempfile.TemporaryDirectory(prefix="okf_preview_")
@@ -1524,7 +1534,7 @@ async def start_okf_import_job(
     current_user: str = Depends(get_current_user),
 ):
     """Start a background import job for local OKF knowledge."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     if visibility not in ("team", "global"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1622,14 +1632,14 @@ async def get_okf_import_job(
         job = db.query(OKFImportJob).filter_by(id=job_id).first()
         if job:
             if job.created_by_username != current_user:
-                require_team_access(current_user, job.team_agent_id, "admin")
+                _require_resolved_team_access(current_user, job.team_agent_id, "admin")
             return _okf_job_response(job)
 
     job = OKF_IMPORT_JOBS.get(job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Import job not found")
     if job.get("created_by") != current_user:
-        require_team_access(current_user, job.get("team_agent_id"), "admin")
+        _require_resolved_team_access(current_user, job.get("team_agent_id"), "admin")
     return _okf_job_response(job)
 
 
@@ -1647,7 +1657,7 @@ async def import_okf_bundle(
     current_user: str = Depends(get_current_user),
 ):
     """Import OKF knowledge from friendly uploads, pasted text, or advanced OKF archives."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     if visibility not in ("team", "global"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1751,7 +1761,7 @@ async def get_okf_bundle(
     current_user: str = Depends(get_current_user),
 ):
     """Get OKF bundle metadata."""
-    require_team_access(current_user, team_agent_id, "viewer")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
     if not bundle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
@@ -1768,7 +1778,7 @@ async def get_okf_concepts(
     current_user: str = Depends(get_current_user),
 ):
     """List concepts in an OKF bundle."""
-    require_team_access(current_user, team_agent_id, "viewer")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     if not OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
     return OKFService().list_concepts(
@@ -1788,7 +1798,7 @@ async def get_okf_concept(
     current_user: str = Depends(get_current_user),
 ):
     """Read one OKF concept directly from the local bundle files."""
-    require_team_access(current_user, team_agent_id, "viewer")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     concept = OKFService().get_concept(bundle_id, concept_id, team_agent_id=team_agent_id)
     if not concept:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
@@ -1804,7 +1814,7 @@ async def update_okf_concept(
     current_user: str = Depends(get_current_user),
 ):
     """Edit one OKF concept source file and rebuild the local search index."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
     if not bundle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
@@ -1859,7 +1869,7 @@ async def test_okf_bundle(
     current_user: str = Depends(get_current_user),
 ):
     """Test local OKF retrieval without calling external file search services."""
-    require_team_access(current_user, team_agent_id, "viewer")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     start_time = time.time()
     result = OKFService().query_bundle(bundle_id, request.query, team_agent_id=team_agent_id)
     return TestOKFBundleResponse(
@@ -1876,7 +1886,7 @@ async def reindex_okf_vectors(
     current_user: str = Depends(get_current_user),
 ):
     """Re-embed a local knowledge bundle; never changes the embedding server."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
     if not bundle:
         raise HTTPException(status_code=404, detail="OKF bundle not found")
@@ -1902,7 +1912,7 @@ async def reindex_okf_bundle(
     current_user: str = Depends(get_current_user),
 ):
     """Rebuild an OKF bundle index from its local source files."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     bundle = OKFService().get_bundle(bundle_id, team_agent_id=team_agent_id)
     if not bundle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
@@ -1942,7 +1952,7 @@ async def delete_okf_bundle(
     current_user: str = Depends(get_current_user),
 ):
     """Delete an owned OKF bundle, its local files, index rows, and tools."""
-    require_team_access(current_user, team_agent_id, "admin")
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     success = OKFService().delete_bundle(bundle_id, team_agent_id=team_agent_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")

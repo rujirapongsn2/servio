@@ -327,7 +327,18 @@ def query_bundle(bundle_id: int, query: str, *, limit: int = 5) -> dict[str, Any
                     ON k.bundle_id = c.bundle_id
                     AND k.concept_id = c.concept_id AND k.content_hash = c.source_hash"""
     cols = "c.id, c.concept_id, c.chunk_index, c.title, c.resource, c.content"
-    with engine.connect() as conn:
+    with engine.connect().execution_options(isolation_level="REPEATABLE READ") as conn:
+        incomplete = conn.execute(sql_text(f"""
+            SELECT EXISTS (
+                SELECT 1 FROM okf_concept_index k WHERE k.bundle_id = :bundle
+                AND NOT EXISTS (
+                    SELECT 1 FROM okf_rag_chunks c WHERE {scope}
+                    AND c.concept_id = k.concept_id AND c.source_hash = k.content_hash
+                )
+            )
+        """), params).scalar()
+        if incomplete:
+            return {"response": "", "concepts": []}
         sem = conn.execute(sql_text(f"""
             SELECT {cols} FROM {scoped_table} WHERE {scope}
             ORDER BY c.embedding <=> CAST(:vector AS vector) LIMIT 30

@@ -82,7 +82,12 @@ starting_agent = triage_agent
 
 
 # Dynamic agent loading from database
-def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
+def get_tool_by_name(
+    tool_name: str,
+    tool_config: Dict[str, Any] = None,
+    *,
+    runtime_team_agent_id: Optional[int] = None,
+):
     """Get a tool instance by name"""
     if tool_name == "DateTimeTool":
         return create_datetime_tool(tool_name, tool_config or {})
@@ -100,7 +105,9 @@ def get_tool_by_name(tool_name: str, tool_config: Dict[str, Any] = None):
         return create_gemini_file_search_tool(tool_name, tool_config)
     elif tool_config and tool_config.get("type") == "okf_knowledge_graph":
         # Create a local file-backed OKF knowledge retrieval tool
-        return create_okf_knowledge_graph_tool(tool_name, tool_config)
+        return create_okf_knowledge_graph_tool(
+            tool_name, tool_config, runtime_team_agent_id=runtime_team_agent_id
+        )
     elif tool_config and tool_config.get("type") == "mcp_streamable_http":
         # Respect safe-mode: allow disabling MCP for offline/dev environments
         if os.getenv("DISABLE_MCP", "").lower() in {"1", "true", "yes"} or os.getenv(
@@ -300,7 +307,12 @@ def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
     return function_tool(dynamic_gemini_tool)
 
 
-def create_okf_knowledge_graph_tool(tool_name: str, config: Dict[str, Any]):
+def create_okf_knowledge_graph_tool(
+    tool_name: str,
+    config: Dict[str, Any],
+    *,
+    runtime_team_agent_id: Optional[int] = None,
+):
     """Create a local OKF knowledge graph search tool from configuration."""
     from app.okf_service import OKFService
 
@@ -309,7 +321,6 @@ def create_okf_knowledge_graph_tool(tool_name: str, config: Dict[str, Any]):
     retrieval = config.get("retrieval", {}) if isinstance(config.get("retrieval"), dict) else {}
     limit = int(retrieval.get("limit", 5) or 5)
     expand_links = bool(retrieval.get("expand_links", True))
-    team_agent_id = config.get("team_agent_id")
 
     def dynamic_okf_tool(query: str):
         """Search a local Open Knowledge Format bundle."""
@@ -317,10 +328,12 @@ def create_okf_knowledge_graph_tool(tool_name: str, config: Dict[str, Any]):
             log_tool_call(tool_name, {"query": query, "okf_bundle_id": bundle_id})
             if not bundle_id:
                 return "OKF bundle is not configured for this capability."
+            if runtime_team_agent_id is None:
+                return "Knowledge is unavailable without a runtime team."
             result = OKFService().query_bundle(
                 bundle_id=bundle_id,
                 query=query,
-                team_agent_id=team_agent_id,
+                team_agent_id=runtime_team_agent_id,
                 limit=limit,
                 expand_links=expand_links,
             )
@@ -617,13 +630,24 @@ def _build_mcp_arguments(query: str, tool: Dict[str, Any]) -> Dict[str, Any]:
     return {"query": query}
 
 
-def build_agent_from_db(agent_data: Dict[str, Any], all_agents: Dict[int, Agent] = None) -> Agent:
+def build_agent_from_db(
+    agent_data: Dict[str, Any],
+    all_agents: Dict[int, Agent] = None,
+    *,
+    runtime_team_agent_id: Optional[int] = None,
+) -> Agent:
     """Build an Agent instance from database configuration"""
+    if runtime_team_agent_id is None:
+        from app import database
+
+        runtime_team_agent_id = database.get_default_team_id()
     # Get tools
     tools = []
     for tool_data in agent_data.get("tools", []):
         tool_config = json.loads(tool_data["config"]) if tool_data.get("config") else {}
-        tool = get_tool_by_name(tool_data["name"], tool_config)
+        tool = get_tool_by_name(
+            tool_data["name"], tool_config, runtime_team_agent_id=runtime_team_agent_id
+        )
         if tool:
             tools.append(tool)
     # DateTimeTool is always available by default for every runtime agent.
@@ -749,13 +773,14 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
     from app import database
 
     starting_agent_id: Optional[int] = None
+    runtime_team_agent_id = team_agent_id
 
     # Load team-scoped agents when team_agent_id is provided
     if team_agent_id is not None:
         team = database.get_team_agent_by_id(team_agent_id)
         if not team:
-            print(f"[TeamAgent] Team id={team_agent_id} not found, falling back to all agents")
-            db_agents_data = database.get_all_agents()
+            print(f"[TeamAgent] Team id={team_agent_id} not found, no agents available")
+            db_agents_data = []
         else:
             # Get only this team's member agents
             member_ids = [m["agent_id"] for m in team.get("members", [])]
@@ -768,13 +793,16 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
                 print(f"[TeamAgent] Team '{team['name']}' starting agent: {starting_member['agent_name']}")
     else:
         db_agents_data = database.get_all_agents()
+        runtime_team_agent_id = database.get_default_team_id()
 
     # Build DB agents (if any) using two-pass approach to resolve sub-agent handoffs
     # First pass: create all agents without handoffs
     all_agents: dict[int, Agent] = {}
     for a in db_agents_data:
         try:
-            agent = build_agent_from_db(a, all_agents=None)
+            agent = build_agent_from_db(
+                a, all_agents=None, runtime_team_agent_id=runtime_team_agent_id
+            )
             all_agents[a["id"]] = agent
         except Exception as e:
             # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
