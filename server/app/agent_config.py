@@ -2,9 +2,10 @@ import json
 import requests
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from contextvars import ContextVar
+from functools import partial
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from openai import AsyncOpenAI
@@ -15,8 +16,8 @@ from app.softnix_api import query_softnix_genai, SoftnixAPIError
 # MCP SDK imports
 try:
     import httpx
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
@@ -231,6 +232,11 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
             response.raise_for_status()
             data = response.json()
 
+            from app.product_presentations import parse_product_carousel
+            carousel = parse_product_carousel(data)
+            if carousel is not None:
+                return carousel.model_dump_json(exclude_none=True)
+
             # Extract answer from response (handle Tavily-style responses)
             if "answer" in data and "results" in data:
                 # Tavily-style response with answer and results
@@ -387,7 +393,6 @@ def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
 
     mcp_endpoint = config.get("endpoint", "")
     auth_token = config.get("auth_token", "")
-    transport = config.get("transport", "streamable_http")
     # Remote MCP auth support (bearer|query|header)
     auth_mode = config.get("auth_mode", "bearer")
     auth_param_name = config.get("auth_param_name", "apikey")
@@ -396,13 +401,11 @@ def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
     mcp_tool_names = config.get("tools", [])  # Specific MCP tools to call
     timeout_s = int(config.get("timeout_seconds", int(os.getenv("TOOL_TIMEOUT_SECONDS", "60"))))
 
-    @function_tool
-    def mcp_tool_call(query: str):
+    async def mcp_tool_call(query: str):
         """Dynamic MCP tool - calls MCP server via Streamable HTTP"""
         try:
             log_tool_call(tool_name, {"query": query})
-            # Run async MCP call in sync context
-            return asyncio.run(_call_mcp_server(
+            return await _call_mcp_server(
                 endpoint=mcp_endpoint,
                 auth_token=auth_token,
                 auth_mode=auth_mode,
@@ -411,7 +414,7 @@ def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
                 timeout_s=timeout_s,
                 query=query,
                 tool_names=mcp_tool_names
-            ))
+            )
         except Exception as e:
             return f"Error calling MCP tool {tool_name}: {str(e)}"
 
@@ -419,7 +422,7 @@ def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
     mcp_tool_call.__name__ = tool_name
     mcp_tool_call.__doc__ = description
 
-    return mcp_tool_call
+    return function_tool(mcp_tool_call)
 
 
 async def _call_mcp_server(
@@ -464,112 +467,50 @@ async def _call_mcp_server(
                 # If URL parsing fails, fall back to header
                 headers["Authorization"] = f"Bearer {auth_token}"
 
-    async with httpx.AsyncClient(timeout=timeout_s) as client:
-        # For Streamable HTTP transport, the endpoint is typically /mcp
-        # Send a tools/list request to discover available tools
-        try:
-            # Initialize session by calling the MCP endpoint
-            response = await client.post(
+    try:
+        async with asyncio.timeout(timeout_s):
+            async with streamablehttp_client(
                 request_endpoint,
                 headers=headers,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/list",
-                    "params": {}
-                }
-            )
-            response.raise_for_status()
-            tools_response = response.json()
-
-            # If server requires initialization, try initialize then retry list
-            if isinstance(tools_response, dict) and tools_response.get("error"):
-                try:
-                    await client.post(
-                        request_endpoint,
-                        headers=headers,
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 0,
-                            "method": "initialize",
-                            "params": {
-                                "protocolVersion": "2024-11-05",
-                                "capabilities": {}
-                            }
-                        }
+                timeout=timeout_s,
+                sse_read_timeout=timeout_s,
+                httpx_client_factory=partial(httpx.AsyncClient, follow_redirects=False),
+            ) as (read_stream, write_stream, _):
+                async with ClientSession(
+                    read_stream,
+                    write_stream,
+                    read_timeout_seconds=timedelta(seconds=timeout_s),
+                ) as session:
+                    await session.initialize()
+                    available_tools = (await session.list_tools()).tools
+                    if not available_tools:
+                        return "No tools available from MCP server"
+                    target_tool = next(
+                        (tool for tool in available_tools if tool.name in tool_names),
+                        None,
+                    ) if tool_names else available_tools[0]
+                    if target_tool is None:
+                        return f"Requested tools not found. Available: {[tool.name for tool in available_tools]}"
+                    arguments = _build_mcp_arguments(
+                        query, target_tool.model_dump(by_alias=True)
                     )
-                    # retry tools/list
-                    response = await client.post(
-                        request_endpoint,
-                        headers=headers,
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "tools/list",
-                            "params": {}
-                        }
+                    result = await session.call_tool(target_tool.name, arguments)
+                    text = "\n".join(
+                        item.text for item in result.content if item.type == "text"
                     )
-                    response.raise_for_status()
-                    tools_response = response.json()
-                except Exception:
-                    # Keep original error handling below
-                    pass
-
-            # If specific tool names are provided, use them; otherwise use first available
-            available_tools = tools_response.get("result", {}).get("tools", [])
-
-            if not available_tools:
-                return "No tools available from MCP server"
-
-            # Find the first matching tool or use the first available tool
-            target_tool = None
-            if tool_names:
-                for tool in available_tools:
-                    if tool["name"] in tool_names:
-                        target_tool = tool
-                        break
-            if not target_tool and available_tools:
-                target_tool = available_tools[0]
-
-            if not target_tool:
-                return f"Requested tools not found. Available: {[t['name'] for t in available_tools]}"
-
-            # Build arguments according to tool's inputSchema when available
-            arguments: Dict[str, Any] = _build_mcp_arguments(query, target_tool)
-
-            # Call the tool
-            tool_response = await client.post(
-                request_endpoint,
-                headers=headers,
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 2,
-                    "method": "tools/call",
-                    "params": {
-                        "name": target_tool["name"],
-                        "arguments": arguments
-                    }
-                }
-            )
-            tool_response.raise_for_status()
-            result = tool_response.json()
-
-            # Extract result from MCP response
-            if "result" in result:
-                content = result["result"].get("content", [])
-                if content and isinstance(content, list):
-                    # Combine text from all content items
-                    return "\n".join([item.get("text", "") for item in content if item.get("type") == "text"])
-                return json.dumps(result["result"], ensure_ascii=False)
-            elif "error" in result:
-                return f"MCP Error: {result['error'].get('message', 'Unknown error')}"
-            else:
-                return json.dumps(result, ensure_ascii=False)
-
-        except httpx.HTTPError as e:
-            return f"HTTP Error calling MCP server: {str(e)}"
-        except Exception as e:
-            return f"Error calling MCP server: {str(e)}"
+                    if result.isError:
+                        return f"MCP Error: {text or 'Tool execution failed'}"
+                    from app.product_presentations import parse_product_carousel
+                    carousel = parse_product_carousel(result.structuredContent)
+                    if carousel is not None:
+                        return carousel.model_dump_json(exclude_none=True)
+                    if isinstance(result.structuredContent, dict) and result.structuredContent.get("type") == "product_carousel":
+                        return "MCP Error: Invalid product carousel structuredContent"
+                    return text or result.model_dump_json(by_alias=True, exclude_none=True)
+    except httpx.HTTPError as exc:
+        return f"HTTP Error calling MCP server: {exc}"
+    except Exception as exc:
+        return f"Error calling MCP server: {exc}"
 
 
 def _build_mcp_arguments(query: str, tool: Dict[str, Any]) -> Dict[str, Any]:

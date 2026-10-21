@@ -14,6 +14,7 @@ from fastapi import WebSocket
 from openai.types.responses import ResponseTextDeltaEvent
 
 from app.analytics_service import AnalyticsService
+from app.product_presentations import parse_product_carousel, product_inquiry
 
 
 def transform_data_to_events(audio_np: np.ndarray) -> dict:
@@ -95,6 +96,7 @@ class WebsocketHelper:
         self.history = history or []
         self.latest_agent = initial_agent
         self.partial_response = ""
+        self.presentations = {}
         self.session_id = session_id
         self.voice_response_enabled = voice_response_enabled
 
@@ -107,6 +109,22 @@ class WebsocketHelper:
             channel_user_id=channel_user_id,
             api_key_id=api_key_id,
         )
+
+    def reset_presentations(self):
+        self.presentations.clear()
+
+    def resolve_product_inquiry(self, message: dict) -> str | None:
+        call_id = message.get("call_id")
+        product_id = message.get("product_id")
+        if not isinstance(call_id, str) or not isinstance(product_id, str):
+            return None
+        carousel = parse_product_carousel(self.presentations.get(call_id))
+        if carousel is None:
+            return None
+        for product in carousel.products:
+            if product.id == product_id:
+                return product_inquiry(product)
+        return None
 
     async def show_user_input(self, user_input: str):
         self.history.append(
@@ -128,6 +146,7 @@ class WebsocketHelper:
             json.dumps(
                 {
                     "type": "history.updated",
+                    "presentations": self.presentations,
                     "reason": "user.input",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
@@ -145,6 +164,7 @@ class WebsocketHelper:
             json.dumps(
                 {
                     "type": "history.updated",
+                    "presentations": self.presentations,
                     "reason": "response.text.delta",
                     "inputs": self.history
                     + [
@@ -171,6 +191,7 @@ class WebsocketHelper:
                 json.dumps(
                     {
                         "type": "history.updated",
+                        "presentations": self.presentations,
                         "reason": "agent.updated",
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
@@ -180,6 +201,12 @@ class WebsocketHelper:
         elif is_new_output_item(event):
             item = event.item.to_input_item()  # type: ignore
             self.history.append(item)
+            if item.get("type") == "function_call_output":
+                carousel = parse_product_carousel(item.get("output"))
+                call_id = item.get("call_id")
+                if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
+                    if len(self.presentations) < 50:
+                        self.presentations[call_id] = carousel.model_dump(exclude_none=True)
 
             # Track tool calls in analytics
             if item.get("type") == "function_call":
@@ -195,6 +222,7 @@ class WebsocketHelper:
                 json.dumps(
                     {
                         "type": "history.updated",
+                        "presentations": self.presentations,
                         "reason": "response.input_item",
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
@@ -210,6 +238,7 @@ class WebsocketHelper:
                 json.dumps(
                     {
                         "type": "history.updated",
+                        "presentations": self.presentations,
                         "inputs": self.history,
                         "sync": True,
                         "agent_name": self.latest_agent.name,
@@ -232,6 +261,7 @@ class WebsocketHelper:
                 json.dumps(
                     {
                         "type": "history.updated",
+                        "presentations": self.presentations,
                         "inputs": self.history,
                         "reason": "response.done",
                         "agent_name": self.latest_agent.name,
@@ -258,6 +288,7 @@ class WebsocketHelper:
             json.dumps(
                 {
                     "type": "history.updated",
+                    "presentations": self.presentations,
                     "reason": "assistant.message",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
@@ -285,6 +316,7 @@ class WebsocketHelper:
             json.dumps(
                 {
                     "type": "history.updated",
+                    "presentations": self.presentations,
                     "reason": "admin.message",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,

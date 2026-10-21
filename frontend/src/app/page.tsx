@@ -25,6 +25,9 @@ export default function Home() {
     sendAudioMessage,
     history: messages,
     resetHistory,
+    presentations,
+    sendProductInquiry,
+    productActionError,
     isLoading,
     agentName,
   } = useWebsocket({
@@ -47,9 +50,9 @@ export default function Home() {
         collapsed={collapsed}
         onToggleCollapsed={toggle}
       />
-      <div className="flex-1 w-full max-w-5xl mx-auto px-4 py-6">
+      <div className="flex-1 min-h-0 min-w-0 w-full max-w-5xl mx-auto px-4 py-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 h-full flex flex-col overflow-hidden">
-          <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} />
+          <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} productActionsDisabled={!websocketReady} productActionError={productActionError} />
         </div>
       </div>
       <div className="w-full max-w-5xl mx-auto px-4 pb-6">

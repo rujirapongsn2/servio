@@ -64,6 +64,9 @@ export default function WidgetContent({ overrideApiKey, overrideType, overrideAl
         sendTextMessage,
         history: messages,
         resetHistory,
+        presentations,
+        sendProductInquiry,
+        productActionError,
         isLoading,
         agentName,
         voiceResponseEnabled,
@@ -138,8 +141,8 @@ export default function WidgetContent({ overrideApiKey, overrideType, overrideAl
             </div>
 
             {/* Chat Area */}
-            <div className="flex-1 overflow-hidden relative flex flex-col bg-white dark:bg-gray-800">
-                <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} />
+            <div className="flex-1 min-w-0 min-h-0 overflow-hidden relative flex flex-col bg-white dark:bg-gray-800">
+                <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} productActionsDisabled={!websocketReady} productActionError={productActionError} />
             </div>
 
             {/* Controls Area */}

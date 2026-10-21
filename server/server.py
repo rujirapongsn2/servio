@@ -280,8 +280,20 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
                     break
 
                 # Handle text based messages
-                if is_sync_message(message):
+                if message.get("type") == "product.inquire":
+                    user_input = connection.resolve_product_inquiry(message)
+                    if user_input is None:
+                        await websocket.send_json({
+                            "type": "product.action.error",
+                            "message": "รายการสินค้านี้ใช้ไม่ได้แล้ว กรุณาค้นหาใหม่",
+                        })
+                        continue
+                    async for new_output_tokens in workflow.run(user_input):
+                        await connection.stream_response(new_output_tokens, is_text=True)
+                elif is_sync_message(message):
                     connection.history = message["inputs"]
+                    if not message["inputs"] or message.get("reset_agent", False):
+                        connection.reset_presentations()
                     if message.get("reset_agent", False):
                         # Recompose to pick up latest DB changes on reset
                         connection.latest_agent = get_runtime_starting_agent(team_agent_id)
