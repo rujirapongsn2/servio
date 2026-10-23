@@ -6,10 +6,11 @@
     "dev:next": "next dev --turbo",
     "dev:server": "cd ../server && uv run server.py",
     "dev": "concurrently \"npm run dev:next\" \"npm run dev:server\"",
-    "build": "next build",
+    "build": "next build && node scripts/check-workflow-release.mjs",
     "start": "next start",
     "lint": "next lint",
-    "test:regression": "node --test tests/*.test.mjs"
+    "test:regression": "node --test tests/*.test.mjs",
+    "check:workflow-release": "node scripts/check-workflow-release.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
