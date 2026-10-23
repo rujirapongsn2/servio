@@ -4,7 +4,9 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from dataclasses import dataclass
 from functools import lru_cache
+from typing import Literal
 
 from openai import OpenAI
 
@@ -53,19 +55,31 @@ def _cached_ocr(catalog_id: int, model_id: str, base_url: str, data: bytes) -> s
     return _complete(config, 'Extract all visible text from this image.', [data], ocr=True)
 
 
-def extract_text(data: bytes) -> tuple[str, list[str]]:
+@dataclass(frozen=True)
+class OCRResult:
+    text: str
+    warnings: list[str]
+    status: Literal['ready', 'empty', 'unavailable', 'not_requested']
+
+
+def extract_text_with_status(data: bytes) -> OCRResult:
     if not enabled('image_ocr'):
-        return '', []
+        return OCRResult('', [], 'not_requested')
     from app.provider_models import get_task_model
     config = get_task_model('image_ocr')
     if not config:
-        return '', ['Image OCR model is not configured; image imported without OCR.']
+        return OCRResult('', ['Image OCR model is not configured; image imported without OCR.'], 'unavailable')
     try:
         text = _cached_ocr(config['catalog_id'], config['model_id'], config['base_url'], data)
-        return text, [] if text else ['No readable text found in image.']
+        return OCRResult(text, [] if text else ['No readable text found in image.'], 'ready' if text else 'empty')
     except Exception:
         logger.warning('Image OCR unavailable for catalog model %s', config['catalog_id'])
-        return '', ['Image OCR failed; original image retained. Retry Re-index after checking its model.']
+        return OCRResult('', ['Image OCR failed; original image retained. Retry Re-index after checking its model.'], 'unavailable')
+
+
+def extract_text(data: bytes) -> tuple[str, list[str]]:
+    result = extract_text_with_status(data)
+    return result.text, result.warnings
 
 
 def answer_images(query: str, references: list[dict], team_agent_id: int | None) -> str | None:

@@ -1,8 +1,36 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, ImageIcon, Music2, Loader2, Trash2, Upload, X } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
+import { FILE_EXTENSIONS, fileIssue, fileMediaKind, formatDuration, formatFileSize, parseCapabilities, type CapabilitiesState, type FileMediaKind } from "@/lib/knowledge-import";
+
+function FilePreview({ file, disabled, issue, onRemove }: { file: File; disabled: boolean; issue: string | null; onRemove: () => void }) {
+  const kind = fileMediaKind(file.name);
+  const [url, setUrl] = useState<string | null>(null);
+  const [duration, setDuration] = useState<number | null>(null);
+  useEffect(() => {
+    if (kind !== "image" && kind !== "audio") return;
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file, kind]);
+  return (
+    <div className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
+      <div className="flex items-start gap-3">
+        {kind === "image" && url ? <img src={url} alt="" className="h-12 w-12 shrink-0 rounded object-cover" /> : kind === "audio" ? <Music2 className="mt-1 h-5 w-5 shrink-0 text-gray-400" /> : <FileText className="mt-1 h-5 w-5 shrink-0 text-gray-400" />}
+        <div className="min-w-0 flex-1">
+          <div title={file.name} className="break-all text-sm font-medium text-gray-900 dark:text-white">{file.name}</div>
+          <div className="mt-0.5 text-xs text-gray-500">{formatFileSize(file.size)}{duration !== null ? ` · ${formatDuration(duration)}` : ""}</div>
+          {issue && <p className="mt-1 text-xs text-red-700 dark:text-red-300">{issue}</p>}
+        </div>
+        <button type="button" title={`Remove ${file.name}`} aria-label={`Remove ${file.name}`} onClick={onRemove} disabled={disabled} className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><X className="h-4 w-4" /></button>
+      </div>
+      {kind === "audio" && url && <audio controls preload="metadata" src={url} className="mt-2 h-9 w-full min-w-0" aria-label={`Preview ${file.name}`} onLoadedMetadata={(event) => { const seconds = event.currentTarget.duration; if (Number.isFinite(seconds) && seconds > 0) setDuration(seconds * 1000); }} />}
+    </div>
+  );
+}
 
 interface CreateOKFBundleModalProps {
   teamAgentId?: number | null;
@@ -26,6 +54,11 @@ interface KnowledgePreview {
     document_type: string;
     character_count: number;
     excerpt: string;
+    media_kind: "document" | "image" | "audio";
+    duration_ms: number | null;
+    text_status: "ready" | "not_requested" | "unavailable" | "empty";
+    text: string;
+    text_truncated: boolean;
   }>;
 }
 
@@ -45,32 +78,11 @@ interface ImportJob {
   warnings: string[];
 }
 
-const MODE_OPTIONS: Array<{
-  id: ImportMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: "files",
-    label: "Upload Files",
-    description: "Documents and archives.",
-  },
-  {
-    id: "paste",
-    label: "Paste Text",
-    description: "Policies, FAQs, or notes.",
-  },
-  {
-    id: "urls",
-    label: "Import URLs",
-    description: "Web pages and documents.",
-  },
-  {
-    id: "archive",
-    label: "Advanced OKF",
-    description: "Prepared OKF archives.",
-  },
-];
+const MODE_OPTIONS = [
+  { id: "files", label: "Files", Icon: FileText },
+  { id: "paste", label: "Paste Text", Icon: Clipboard },
+  { id: "urls", label: "URLs", Icon: Globe },
+] satisfies Array<{ id: ImportMode; label: string; Icon: typeof FileText }>;
 
 export default function CreateOKFBundleModal({
   teamAgentId,
@@ -81,11 +93,37 @@ export default function CreateOKFBundleModal({
   onSuccess,
   onReturnToTeam,
 }: CreateOKFBundleModalProps) {
+  const headingId = useId();
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    setPortalHost(body);
+    return () => { body.style.overflow = previousOverflow; };
+  }, []);
   const apiBaseUrl = getApiBaseUrl();
   const [displayName, setDisplayName] = useState("");
   const [visibility, setVisibility] = useState("team");
   const [mode, setMode] = useState<ImportMode>("files");
-  const [files, setFiles] = useState<File[]>([]);
+  const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
+  const [archiveFiles, setArchiveFiles] = useState<File[]>([]);
+  const files = mode === "archive" ? archiveFiles : knowledgeFiles;
+  const setFiles = mode === "archive" ? setArchiveFiles : setKnowledgeFiles;
+  const [capabilities, setCapabilities] = useState<CapabilitiesState>({ status: "loading" });
+  const [readinessRevision, setReadinessRevision] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setCapabilities({ status: "loading" });
+    const token = localStorage.getItem("adminToken");
+    const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
+    fetch(`${apiBaseUrl}/api/admin/okf-bundles/import-capabilities${params}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error("Readiness unavailable"); return parseCapabilities(await response.json()); })
+      .then((value) => { if (!controller.signal.aborted) setCapabilities({ status: "loaded", value }); })
+      .catch(() => { if (!controller.signal.aborted) setCapabilities({ status: "unknown" }); });
+    return () => controller.abort();
+  }, [apiBaseUrl, teamAgentId, readinessRevision]);
+  useEffect(() => { if (knowledgeFiles.some((file) => ["image", "audio"].includes(fileMediaKind(file.name) || ""))) setPreview(null); }, [capabilities, knowledgeFiles]);
   const [pastedText, setPastedText] = useState("");
   const [urlText, setUrlText] = useState("");
   const urls = useMemo(() => urlText.split(/\r?\n/).map((url) => url.trim()).filter(Boolean), [urlText]);
@@ -104,21 +142,13 @@ export default function CreateOKFBundleModal({
   const importSucceeded = importJob?.status === "succeeded";
   const importFailed = importJob?.status === "failed";
 
-  const fileHint =
-    mode === "archive"
-      ? "ZIP, TAR, TAR.GZ, or TGZ containing OKF Markdown files"
-      : "JPG/PNG up to 10MB; PDF, Office, text and archives up to 50MB";
-
-  const accept =
-    mode === "archive"
-      ? ".zip,.tar,.gz,.tgz"
-      : ".jpg,.jpeg,.png,.pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.zip,.tar,.gz,.tgz";
+  const accept = mode === "archive" ? FILE_EXTENSIONS.archive : [FILE_EXTENSIONS.document, FILE_EXTENSIONS.archive,
+    capabilities.status === "loaded" && capabilities.value.images.status === "ready" ? FILE_EXTENSIONS.image : "",
+    capabilities.status === "loaded" && capabilities.value.audio.status === "ready" ? FILE_EXTENSIONS.audio : ""].filter(Boolean).join(",");
+  const selectedIssues = mode === "files" || mode === "archive" ? files.map((file) => fileIssue(file, capabilities, mode === "archive")).filter(Boolean) : [];
 
   const resetSource = (nextMode: ImportMode) => {
     setMode(nextMode);
-    setFiles([]);
-    setPastedText("");
-    setUrlText("");
     setPreview(null);
     setImportJob(null);
     setError(null);
@@ -128,7 +158,10 @@ export default function CreateOKFBundleModal({
 
   const addFiles = (nextFiles: FileList | File[] | null) => {
     if (importing || previewing) return;
-    const selected = Array.from(nextFiles || []);
+    const incoming = Array.from(nextFiles || []);
+    const rejected = incoming.filter((file) => fileIssue(file, capabilities, mode === "archive"));
+    const selected = incoming.filter((file) => !fileIssue(file, capabilities, mode === "archive"));
+    setError(rejected.length ? rejected.map((file) => `${file.name}: ${fileIssue(file, capabilities, mode === "archive")}`).join("; ") : null);
     if (selected.length === 0) return;
     setImportJob(null);
     setFiles((current) => {
@@ -140,10 +173,9 @@ export default function CreateOKFBundleModal({
           existing.add(fileKey(file));
         }
       }
-      return mode === "archive" ? merged.slice(-1) : merged;
+      return mode === "archive" ? selected.slice(-1) : merged;
     });
     setPreview(null);
-    setError(null);
     if (!displayName.trim()) {
       const firstName = selected[0].name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
       setDisplayName(firstName);
@@ -182,7 +214,7 @@ export default function CreateOKFBundleModal({
   };
 
   const handlePreview = async () => {
-    if (!displayName.trim() || !hasSource || mode === "archive") return;
+    if (!displayName.trim() || !hasSource || mode === "archive" || selectedIssues.length) return;
 
     try {
       setPreviewing(true);
@@ -210,7 +242,7 @@ export default function CreateOKFBundleModal({
   };
 
   const handleImport = async () => {
-    if (!displayName.trim() || !hasSource) return;
+    if (!displayName.trim() || !hasSource || selectedIssues.length) return;
 
     try {
       setImporting(true);
@@ -268,7 +300,7 @@ export default function CreateOKFBundleModal({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!displayName.trim() || !hasSource) return;
+    if (!displayName.trim() || !hasSource || selectedIssues.length) return;
     if (mode !== "archive" && !preview) {
       await handlePreview();
       return;
@@ -276,12 +308,14 @@ export default function CreateOKFBundleModal({
     await handleImport();
   };
 
-  return (
+  if (!portalHost) return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
-        <div className="flex items-center justify-between border-b border-gray-200 p-6 dark:border-gray-700">
+      <div role="dialog" aria-modal={true} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
+        <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <h2 id={headingId} className="text-xl font-semibold text-gray-900 dark:text-white">
               Add Knowledge
             </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -301,35 +335,16 @@ export default function CreateOKFBundleModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="max-h-[calc(92vh-90px)] overflow-y-auto p-6">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {MODE_OPTIONS.map((option) => {
-              const active = option.id === mode;
-              const Icon = option.id === "files" ? FileText : option.id === "paste" ? Clipboard : option.id === "urls" ? Globe : Archive;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => resetSource(option.id)}
-                  disabled={importing || previewing}
-                  className={[
-                    "rounded-lg border p-3 text-left transition disabled:opacity-50",
-                    active
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-900/20 dark:text-emerald-100"
-                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200",
-                  ].join(" ")}
-                >
-                  <Icon className={active ? "mb-2 h-5 w-5 text-emerald-600" : "mb-2 h-5 w-5 text-gray-400"} />
-                  <div className="text-sm font-semibold">{option.label}</div>
-                  <div className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    {option.description}
-                  </div>
-                </button>
-              );
-            })}
+        <form onSubmit={handleSubmit} className="max-h-[calc(92vh-90px)] overflow-y-auto p-4 sm:p-6">
+          <div className="flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-900" role="group" aria-label="Knowledge source">
+            {MODE_OPTIONS.map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={mode === id} onClick={() => resetSource(id)} disabled={importing || previewing} className={`flex flex-1 items-center justify-center gap-2 rounded-md px-2 py-2 text-sm font-medium ${mode === id ? "bg-white text-emerald-800 shadow-sm dark:bg-gray-700 dark:text-emerald-200" : "text-gray-600 dark:text-gray-300"}`}><Icon className="h-4 w-4" />{label}</button>)}
           </div>
+          <details className="mt-3 text-xs text-gray-500" open={mode === "archive" ? true : undefined}>
+            <summary className="cursor-pointer">Advanced</summary>
+            <button type="button" onClick={() => resetSource("archive")} disabled={importing || previewing} className={`mt-2 inline-flex items-center gap-2 rounded border px-3 py-2 ${mode === "archive" ? "border-emerald-500 text-emerald-700" : "border-gray-200"}`}><Archive className="h-4 w-4" />Prepared OKF archive</button>
+          </details>
 
-          <div className="mt-6 space-y-5">
+          <div className="mt-4 space-y-4">
             <div>
               <label htmlFor="knowledge-name" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Knowledge Name
@@ -394,10 +409,11 @@ export default function CreateOKFBundleModal({
               </div>
             ) : mode === "paste" ? (
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label htmlFor="knowledge-text" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Knowledge Text
                 </label>
                 <textarea
+                  id="knowledge-text"
                   value={pastedText}
                   onChange={(event) => {
                     setPastedText(event.target.value);
@@ -412,109 +428,35 @@ export default function CreateOKFBundleModal({
               </div>
             ) : (
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {mode === "archive" ? "OKF Archive" : "Knowledge Files"}
+                {mode === "files" && <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {(["document", "image", "audio"] satisfies FileMediaKind[]).map((kind) => {
+                    const capability = kind === "document" ? { status: "ready" } : capabilities.status === "loaded" ? (kind === "image" ? capabilities.value.images : capabilities.value.audio) : null;
+                    const ready = capability?.status === "ready";
+                    const Icon = kind === "image" ? ImageIcon : kind === "audio" ? Music2 : FileText;
+                    const label = kind === "image" ? "Images" : kind === "audio" ? "Audio" : "Documents";
+                    const status = ready ? "Ready" : capability?.status === "disabled" ? "Disabled" : capabilities.status === "loading" ? "Checking…" : "Unavailable";
+                    return <label key={kind} className={`rounded-md border border-gray-200 p-3 dark:border-gray-600 ${ready && !importing && !previewing ? "cursor-pointer hover:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2" : "opacity-60"}`}>
+                      <span className="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100"><Icon className="h-4 w-4" />{label}</span>
+                      <span className="mt-1 block text-xs text-gray-500">{kind === "image" ? "JPG, PNG · 10 MB" : kind === "audio" ? "WAV, MP3 · 50 MB · 10 min" : "PDF, Office, text, archives · 50 MB"}</span>
+                      <span className={`mt-1 block text-xs ${ready ? "text-emerald-700 dark:text-emerald-300" : "text-gray-500"}`}>{status}</span>
+                      <input type="file" aria-label={`Add ${label.toLowerCase()}`} accept={kind === "document" ? `${FILE_EXTENSIONS.document},${FILE_EXTENSIONS.archive}` : FILE_EXTENSIONS[kind]} multiple disabled={!ready || importing || previewing} className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
+                    </label>;
+                  })}
+                </div>}
+                {mode === "files" && <div className="mb-3 text-xs text-gray-500" aria-live="polite">
+                  {capabilities.status === "unknown" ? "Media readiness unavailable. Documents are ready." : capabilities.status === "loaded" ? [capabilities.value.images, capabilities.value.audio].filter((item) => item.status === "unavailable").map((item) => item.status === "unavailable" ? item.reason : "").join(" · ") : ""}
+                  {(capabilities.status === "unknown" || (capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio].some((item) => item.status === "unavailable" && item.retryable))) && <button type="button" className="ml-2 text-emerald-700 underline" onClick={() => { setError(null); setReadinessRevision((value) => value + 1); }} disabled={importing || previewing}>Retry</button>}
+                  {capabilities.status === "loaded" && capabilities.value.images.status === "ready" && <span className="block mt-1">{capabilities.value.image_ocr.status === "configured" ? "OCR configured" : "Optional OCR not configured"}</span>}
+                </div>}
+                <label className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 text-sm text-gray-600 dark:text-gray-300 ${importing || previewing ? "opacity-60" : "cursor-pointer focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2"} ${draggingFiles ? "border-emerald-500 bg-emerald-50" : "border-gray-300 dark:border-gray-600"}`}
+                  onDragOver={(event) => { event.preventDefault(); if (!importing && !previewing) setDraggingFiles(true); }} onDragLeave={() => setDraggingFiles(false)} onDrop={(event) => { event.preventDefault(); setDraggingFiles(false); addFiles(event.dataTransfer.files); }}>
+                  <input type="file" aria-label={mode === "archive" ? "Add prepared OKF archive" : "Add knowledge files"} accept={accept} multiple={mode !== "archive"} className="sr-only" disabled={importing || previewing} onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
+                  <Upload className="h-5 w-5 shrink-0" />{mode === "archive" ? "Choose OKF archive · ZIP, TAR, TGZ" : "Drop files here or browse"}
                 </label>
-                <label
-                  className={[
-                    "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 transition",
-                    draggingFiles
-                      ? "border-emerald-500 bg-emerald-50 dark:border-emerald-400 dark:bg-emerald-900/20"
-                      : "border-gray-300 hover:bg-emerald-50 dark:border-gray-600 dark:hover:bg-emerald-900/10",
-                  ].join(" ")}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    if (!importing) setDraggingFiles(true);
-                  }}
-                  onDragLeave={() => setDraggingFiles(false)}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setDraggingFiles(false);
-                    if (!importing) addFiles(event.dataTransfer.files);
-                  }}
-                >
-                  <input
-                    type="file"
-                    accept={accept}
-                    multiple={mode !== "archive"}
-                    className="hidden"
-                    disabled={importing || previewing}
-                    onChange={(event) => {
-                      addFiles(event.target.files);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                  <Upload className={files.length > 0 ? "h-10 w-10 text-emerald-600" : "h-10 w-10 text-gray-400"} />
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {files.length > 0
-                        ? `${files.length} file${files.length > 1 ? "s" : ""} selected`
-                        : mode === "archive"
-                          ? "Click to upload a prepared OKF archive"
-                          : "Click to upload knowledge files"}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{fileHint}</p>
-                    {mode !== "archive" && (
-                      <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                        Select multiple files at once, or click again to add more into the same Knowledge.
-                      </p>
-                    )}
-                  </div>
-                </label>
-                {files.length > 0 && (
-                  <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                    <div className="mb-2 flex items-center justify-between gap-3 px-1">
-                      <span className="font-medium text-gray-700 dark:text-gray-200">
-                        {files.length} file{files.length > 1 ? "s" : ""} in this Knowledge
-                      </span>
-                      <button
-                        type="button"
-                        onClick={clearFiles}
-                        disabled={importing || previewing}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Clear all
-                      </button>
-                    </div>
-                    <div className="max-h-36 overflow-y-auto">
-                      {files.map((file) => (
-                        <div key={fileKey(file)} className="flex items-center justify-between gap-3 rounded px-2 py-1.5 hover:bg-white dark:hover:bg-gray-800">
-                          <span className="truncate">{file.name}</span>
-                          <div className="flex shrink-0 items-center gap-3">
-                            <span className="text-gray-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>
-                            <button
-                              type="button"
-                              onClick={() => removeFile(file)}
-                              disabled={importing || previewing}
-                              className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-300"
-                              aria-label={`Remove ${file.name}`}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {mode !== "archive" && (
-                      <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
-                        <input
-                          type="file"
-                          accept={accept}
-                          multiple
-                          className="hidden"
-                          disabled={importing || previewing}
-                          onChange={(event) => {
-                            addFiles(event.target.files);
-                            event.currentTarget.value = "";
-                          }}
-                        />
-                        <Plus className="h-3.5 w-3.5" />
-                        Add more files
-                      </label>
-                    )}
-                  </div>
-                )}
+                {files.length > 0 && <div className="mt-3">
+                  <div className="mb-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{files.length} file{files.length === 1 ? "" : "s"}</span><button type="button" onClick={clearFiles} disabled={importing || previewing} className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"><Trash2 className="h-3.5 w-3.5" />Clear all</button></div>
+                  <div className="max-h-72 space-y-2 overflow-y-auto">{files.map((file) => <FilePreview key={fileKey(file)} file={file} issue={fileIssue(file, capabilities, mode === "archive")} disabled={importing || previewing} onRemove={() => removeFile(file)} />)}</div>
+                </div>}
               </div>
             )}
 
@@ -527,35 +469,36 @@ export default function CreateOKFBundleModal({
                       Ready to create local knowledge
                     </h3>
                     <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                      {preview.source_count} readable document{preview.source_count === 1 ? "" : "s"} will become {preview.concept_count} OKF concept{preview.concept_count === 1 ? "" : "s"}.
+                      {preview.source_count} source{preview.source_count === 1 ? "" : "s"} · {preview.concept_count} concept{preview.concept_count === 1 ? "" : "s"}
                     </p>
                   </div>
                 </div>
                 {preview.warnings.length > 0 && (
-                  <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100">
-                    <div className="font-semibold">Review notes</div>
+                  <details className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100">
+                    <summary className="cursor-pointer font-semibold">Review notes ({preview.warnings.length})</summary>
                     <ul className="mt-2 list-disc space-y-1 pl-5">
-                      {preview.warnings.slice(0, 5).map((warning, index) => (
+                      {preview.warnings.map((warning, index) => (
                         <li key={`${warning}-${index}`}>{warning}</li>
                       ))}
                     </ul>
-                  </div>
+                  </details>
                 )}
-                <div className="mt-4 max-h-52 space-y-2 overflow-y-auto">
-                  {preview.documents.slice(0, 8).map((document) => (
+                <div className="mt-4 space-y-2">
+                  {preview.documents.map((document) => (
                     <div key={`${document.source_file}-${document.character_count}`} className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{document.title}</div>
-                          <div className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{document.source_file}</div>
+                          <div title={document.title} className="break-words text-sm font-medium text-gray-900 dark:text-white">{document.title}</div>
+                          <div title={document.source_file} className="mt-0.5 break-all text-xs text-gray-500 dark:text-gray-400">{document.source_file}</div>
                         </div>
                         <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-[11px] font-medium uppercase text-gray-600 dark:bg-gray-700 dark:text-gray-200">
                           {document.document_type}
                         </span>
                       </div>
-                      {document.excerpt && (
-                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{document.excerpt}</p>
-                      )}
+                      {document.duration_ms != null && <p className="mt-1 text-xs text-gray-500">{formatDuration(document.duration_ms)}</p>}
+                      {document.text_status === "ready" && document.text && <details className="mt-2 text-xs text-gray-600 dark:text-gray-300"><summary className="cursor-pointer font-medium">{document.media_kind === "image" ? "Extracted image text" : "Extracted text"} · {document.character_count.toLocaleString()} characters</summary><pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 font-sans text-sm leading-6 dark:bg-gray-800">{document.text}</pre>{document.text_truncated && <p className="mt-1 text-gray-500">Preview limited to 12,000 characters.</p>}</details>}
+                      {document.text_status !== "ready" && <p className="mt-2 text-xs text-gray-500">{document.media_kind === "audio" && document.text_status === "not_requested" ? "Transcript generated during import" : document.text_status === "unavailable" ? "Text extraction unavailable; original retained" : document.text_status === "not_requested" ? "OCR not requested; original retained" : "No readable text found"}</p>}
+
                     </div>
                   ))}
                 </div>
@@ -621,7 +564,7 @@ export default function CreateOKFBundleModal({
             )}
           </div>
 
-          <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+          <div className="sticky bottom-0 mt-6 flex flex-wrap items-center justify-end gap-3 bg-white dark:bg-gray-800 border-t border-gray-200 pt-4 dark:border-gray-700">
             <button
               type="button"
               onClick={onClose}
@@ -657,7 +600,7 @@ export default function CreateOKFBundleModal({
             ) : (
               <button
                 type="submit"
-                disabled={importing || previewing || !displayName.trim() || !hasSource}
+                disabled={importing || previewing || !displayName.trim() || !hasSource || selectedIssues.length > 0}
                 className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {(importing || previewing) && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -667,6 +610,7 @@ export default function CreateOKFBundleModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    portalHost
   );
 }

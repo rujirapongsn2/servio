@@ -49,7 +49,9 @@ def test_ocr_uses_registered_model_and_normalized_image(monkeypatch):
 
 
 def test_imported_ocr_is_searchable_and_original_is_identical(store, tmp_path, monkeypatch):
-    monkeypatch.setattr(vision, 'extract_text', lambda data: ('SKU-427 รับประกัน 77 วัน', []))
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED', 'true')
+    monkeypatch.setattr(provider_models, 'get_task_model', lambda purpose: CONFIG)
+    monkeypatch.setattr(vision, '_complete', lambda *args, **kwargs: 'SKU-427 รับประกัน 77 วัน')
     bundle, claims, original, _ = imported(store, tmp_path)
     api, _ = store
     result = api._query_text_bundle(bundle['id'], 'SKU-427', 1)

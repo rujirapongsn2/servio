@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import ChatLoadingDots from "@/components/ChatLoadingDots";
 import { MessageBubble } from "@/components/MessageBubble";
+import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
 import { ProductPresentations } from "@/lib/product-presentations";
@@ -16,11 +17,12 @@ interface ChatDialogProps {
   collapsed?: boolean;
   presentations?: ProductPresentations;
   onProductInquiry?: (callId: string, productId: string) => void;
+  onKnowledgeInquiry?: (messageId: string, cardId: string) => void;
   productActionsDisabled?: boolean;
   productActionError?: string | null;
 }
 
-export function ChatHistory({ messages, isLoading, collapsed = false, presentations = {}, onProductInquiry, productActionsDisabled = false, productActionError }: ChatDialogProps) {
+export function ChatHistory({ messages, isLoading, collapsed = false, presentations = {}, onProductInquiry, onKnowledgeInquiry, productActionsDisabled = false, productActionError }: ChatDialogProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,9 +63,18 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
       <div className="flex min-w-0 flex-col gap-3 relative py-6 px-6 pb-12">
         {displayMessages.map((message, index) => {
           if (message.type === "message" && message.role === "user") productResponse = false;
+          if (message.type === "message" && message.role === "assistant" && "id" in message && typeof message.id === "string") {
+            const presentation = presentations[message.id];
+            if (presentation?.type === "knowledge_product_carousel") {
+              const messageId = message.id;
+              return <ProductCarousel key={messageId} presentation={presentation} disabled={productActionsDisabled || isLoading || !onKnowledgeInquiry} onInquire={(cardId) => onKnowledgeInquiry?.(messageId, cardId)} />;
+            }
+          }
           if (message.type === "function_call_output" && presentations[message.call_id]) {
             const presentation = presentations[message.call_id];
+            if (presentation.type === "knowledge_media") return <div key={`media-${message.call_id}`} className="min-w-0 space-y-3"><KnowledgeImages images={presentation.images} /><KnowledgeAudio audio={presentation.audio} /></div>;
             if (presentation.type === "knowledge_images") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
+            if (presentation.type === "knowledge_product_carousel") return null;
             productResponse = true;
             return <ProductCarousel key={`products-${message.call_id}`} presentation={presentation} disabled={productActionsDisabled || isLoading || !onProductInquiry} onInquire={(productId) => onProductInquiry?.(message.call_id, productId)} />;
           }

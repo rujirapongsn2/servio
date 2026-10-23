@@ -15,7 +15,7 @@ def corpus(monkeypatch):
     with database.begin() as connection:
         connection.execute(text("""
             CREATE TABLE okf_concept_index (
-                bundle_id INTEGER, concept_id TEXT, content_hash TEXT
+                bundle_id INTEGER, concept_id TEXT, content_hash TEXT, tags TEXT DEFAULT '[]'
             )
         """))
         connection.execute(text("""
@@ -27,7 +27,7 @@ def corpus(monkeypatch):
         """))
         connection.execute(text("""
             INSERT INTO okf_concept_index VALUES
-            (1, 'policy', 'policy-current'), (1, 'hours', 'hours-current')
+            (1, 'policy', 'policy-current', '[]'), (1, 'hours', 'hours-current', '[]')
         """))
         for concept in ("policy", "hours"):
             connection.execute(text("""
@@ -63,7 +63,7 @@ def corpus(monkeypatch):
     "UPDATE okf_rag_chunks SET embedding_dimensions = 512 WHERE concept_id = 'policy'",
     "UPDATE okf_rag_chunks SET document_prefix_hash = 'old-prefix' WHERE concept_id = 'policy'",
     "DELETE FROM okf_rag_chunks WHERE concept_id = 'policy'",
-    "INSERT INTO okf_concept_index VALUES (1, 'empty-source', 'empty-hash')",
+    "INSERT INTO okf_concept_index VALUES (1, 'empty-source', 'empty-hash', '[]')",
 ])
 def test_partial_coverage_yields_to_current_source_search(corpus, change):
     with corpus.begin() as connection:

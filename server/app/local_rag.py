@@ -218,6 +218,49 @@ def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(format(v, ".9g") for v in vector) + "]"
 
 
+def prepare_records(root, concepts):
+    from app.okf_service import _parse_frontmatter, _ensure_within
+    records = []
+    for concept in concepts:
+        path = root / concept.file_path
+        _ensure_within(root, path)
+        markdown = path.read_text(encoding='utf-8')
+        if hashlib.sha256(markdown.encode()).hexdigest() != concept.content_hash:
+            raise EmbeddingError('Knowledge source changed while preparing vectors')
+        fm, body = _parse_frontmatter(markdown, concept.file_path)
+        if isinstance(fm.get('audio'), dict) and fm['audio'].get('transcript_status') == 'empty':
+            continue
+        for i, chunk in enumerate(split_chunks(body, size=_positive_int('EMBEDDING_CHUNK_CHARS',1800,2400), overlap=_positive_int('EMBEDDING_CHUNK_OVERLAP_CHARS',200,600))):
+            records.append((concept.concept_id,i,str(fm.get('title') or concept.concept_id),str(fm.get('resource') or concept.file_path),chunk,concept.content_hash))
+    client = LocalEmbeddingClient()
+    vectors = client.documents([record[4] for record in records])
+    return records,client,vectors
+
+
+def replace_records(conn, bundle_id, records, client, vectors):
+    conn.execute(sql_text("DELETE FROM okf_rag_chunks WHERE bundle_id = :bundle"),
+                 {"bundle": bundle_id})
+    for offset in range(0, len(records), client.batch_size):
+        batch = records[offset:offset + client.batch_size]
+        batch_vectors = vectors[offset:offset + client.batch_size]
+        for (concept_id, idx, title, resource, chunk, source_hash), vector in zip(batch, batch_vectors):
+            conn.execute(sql_text("""
+                INSERT INTO okf_rag_chunks
+                (bundle_id, concept_id, chunk_index, title, resource, content,
+                 content_hash, source_hash, embedding_model, embedding_dimensions,
+                 document_prefix_hash, embedding)
+                VALUES (:bundle, :concept, :idx, :title, :resource, :content,
+                        :hash, :source_hash, :model, :dims, :prefix, CAST(:embedding AS vector))
+            """), {
+                "bundle": bundle_id, "concept": concept_id, "idx": idx,
+                "title": title, "resource": resource, "content": chunk,
+                "hash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+                "source_hash": source_hash,
+                "model": client.model, "dims": DIMENSIONS,
+                "prefix": prefix_fingerprint(), "embedding": _vector_literal(vector),
+            })
+
+
 def _index_bundle_unlocked(bundle_id: int) -> dict[str, Any]:
     """Rebuild vector index atomically; keeps previous chunks on any failure.
 
@@ -236,30 +279,8 @@ def _index_bundle_unlocked(bundle_id: int) -> dict[str, Any]:
             raise KeyError("OKF bundle not found")
         concepts = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all()
         root = Path(bundle.storage_path)
-        records: list[tuple[str, int, str, str, str, str]] = []
-        source_hashes: dict[str, str] = {}
-        for concept in concepts:
-            source_hashes[concept.concept_id] = concept.content_hash
-            path = root / concept.file_path
-            _ensure_within(root, path)
-            markdown = path.read_text(encoding="utf-8")
-            _, body = _parse_frontmatter(markdown, concept.file_path)
-            for i, chunk in enumerate(split_chunks(
-                body,
-                size=_positive_int("EMBEDDING_CHUNK_CHARS", 1800, 2400),
-                overlap=_positive_int("EMBEDDING_CHUNK_OVERLAP_CHARS", 200, 600),
-            )):
-                records.append((
-                    concept.concept_id, i, concept.title or concept.concept_id,
-                    concept.resource or concept.file_path, chunk, concept.content_hash,
-                ))
-
-    client = LocalEmbeddingClient()
-    # Keep the entire replacement in one transaction. A network/DB error rolls
-    # back DELETE and INSERT, preserving the last fully built index.
-    # Embed before opening the DB write transaction: never hold locks during
-    # lengthy network calls to a shared GPU service.
-    vectors = client.documents([record[4] for record in records])
+        source_hashes = {concept.concept_id: concept.content_hash for concept in concepts}
+        records, client, vectors = prepare_records(root, concepts)
     with engine.begin() as conn:
         # A source edit during a long embedding job must not overwrite new
         # knowledge with an old vector snapshot.
@@ -268,27 +289,7 @@ def _index_bundle_unlocked(bundle_id: int) -> dict[str, Any]:
         ), {"bundle": bundle_id}).all())
         if current_hashes != source_hashes:
             raise EmbeddingError("Knowledge changed while embeddings were being generated; reindex again")
-        conn.execute(sql_text("DELETE FROM okf_rag_chunks WHERE bundle_id = :bundle"),
-                     {"bundle": bundle_id})
-        for offset in range(0, len(records), client.batch_size):
-            batch = records[offset:offset + client.batch_size]
-            batch_vectors = vectors[offset:offset + client.batch_size]
-            for (concept_id, idx, title, resource, chunk, source_hash), vector in zip(batch, batch_vectors):
-                conn.execute(sql_text("""
-                    INSERT INTO okf_rag_chunks
-                    (bundle_id, concept_id, chunk_index, title, resource, content,
-                     content_hash, source_hash, embedding_model, embedding_dimensions,
-                     document_prefix_hash, embedding)
-                    VALUES (:bundle, :concept, :idx, :title, :resource, :content,
-                            :hash, :source_hash, :model, :dims, :prefix, CAST(:embedding AS vector))
-                """), {
-                    "bundle": bundle_id, "concept": concept_id, "idx": idx,
-                    "title": title, "resource": resource, "content": chunk,
-                    "hash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
-                    "source_hash": source_hash,
-                    "model": client.model, "dims": DIMENSIONS,
-                    "prefix": prefix_fingerprint(), "embedding": _vector_literal(vector),
-                })
+        replace_records(conn, bundle_id, records, client, vectors)
     return {"status": "ready", "chunks": len(records), "model": client.model, "dimensions": DIMENSIONS}
 
 
@@ -331,6 +332,7 @@ def query_bundle(bundle_id: int, query: str, *, limit: int = 5) -> dict[str, Any
         incomplete = conn.execute(sql_text(f"""
             SELECT EXISTS (
                 SELECT 1 FROM okf_concept_index k WHERE k.bundle_id = :bundle
+                AND COALESCE(CAST(k.tags AS TEXT), '[]') NOT LIKE '%"audio-native-only"%'
                 AND NOT EXISTS (
                     SELECT 1 FROM okf_rag_chunks c WHERE {scope}
                     AND c.concept_id = k.concept_id AND c.source_hash = k.content_hash

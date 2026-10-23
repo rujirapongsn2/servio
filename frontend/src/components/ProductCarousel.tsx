@@ -1,24 +1,27 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Product, ProductCarouselPresentation } from "@/lib/product-presentations";
+import { buildApiUrl } from "@/lib/api";
+import { Product, ProductCarouselPresentation, KnowledgeProduct, KnowledgeProductCarouselPresentation } from "@/lib/product-presentations";
 
-function ProductImage({ product }: { product: Product }) {
+type CarouselProduct = Product | KnowledgeProduct;
+
+function ProductImage({ product }: { product: CarouselProduct }) {
   const [failed, setFailed] = useState(false);
   return <div className="aspect-[4/3] shrink-0 bg-gray-50 dark:bg-gray-900 flex items-center justify-center overflow-hidden rounded-t-xl">
-    {product.image_url && !failed ? <img src={product.image_url} alt={product.title} referrerPolicy="no-referrer" loading="lazy" onError={() => setFailed(true)} className="w-full h-full object-contain p-3" /> : <span className="text-sm text-gray-500 px-4">ไม่มีรูปสินค้า</span>}
+    {product.image_url && !failed ? <img src={"asset_id" in product && product.image_url ? buildApiUrl(product.image_url) : product.image_url} alt={product.title} referrerPolicy="no-referrer" loading="lazy" onError={() => setFailed(true)} className="w-full h-full object-contain p-3" /> : <span className="text-sm text-gray-500 px-4">{"asset_id" in product ? "ภาพหมดอายุ กรุณาค้นหาใหม่" : "ไม่มีรูปสินค้า"}</span>}
   </div>;
 }
 
 export function ProductCarousel({ presentation, onInquire, disabled }: {
-  presentation: ProductCarouselPresentation;
+  presentation: ProductCarouselPresentation | KnowledgeProductCarouselPresentation;
   onInquire: (productId: string) => void;
   disabled: boolean;
 }) {
   const rail = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const [selected, setSelected] = useState<Product | null>(null);
+  const [selected, setSelected] = useState<CarouselProduct | null>(null);
   const titleId = useId();
   const railId = useId();
   useEffect(() => {
@@ -57,6 +60,7 @@ export function ProductCarousel({ presentation, onInquire, disabled }: {
         <ProductImage product={product} />
         <div className="p-3 flex flex-col gap-2 flex-1 min-w-0">
           <h3 className="text-sm font-semibold break-words line-clamp-2">{product.title}</h3>
+          {"source_label" in product && <div className="text-xs text-gray-500 break-words line-clamp-2">{product.source_label}</div>}
           {product.part_number && <div className="font-mono text-sm break-all">{product.part_number}</div>}
           {product.brand && <div className="text-xs text-gray-500 break-words">{product.brand}</div>}
           {product.price_text && <div className="text-sm font-semibold break-words">{product.price_text}</div>}
@@ -67,10 +71,11 @@ export function ProductCarousel({ presentation, onInquire, disabled }: {
         </div>
       </article>)}
     </div>
-    <dialog ref={dialog} aria-labelledby={titleId} onKeyDown={trapFocus} onCancel={(event) => { event.preventDefault(); closeDetails(); }} onClose={() => { setSelected(null); returnFocus.current?.focus(); }} className="m-auto w-[calc(100%-2rem)] max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl p-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 backdrop:bg-black/40">
+    <dialog ref={dialog} aria-labelledby={titleId} onKeyDown={trapFocus} onCancel={(event) => { event.preventDefault(); closeDetails(); }} onClose={() => { setSelected(null); returnFocus.current?.focus(); }} className="m-auto w-[calc(100%_-_2rem)] max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl p-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 backdrop:bg-black/40">
       {selected && <div className="p-5">
         <div className="flex items-start gap-4 justify-between mb-4"><h2 id={titleId} className="font-semibold break-words min-w-0">{selected.title}</h2><button type="button" autoFocus aria-label="ปิดรายละเอียดสินค้า" className="shrink-0 rounded-lg border px-3 py-1" onClick={closeDetails}>ปิด</button></div>
         <ProductImage key={selected.id} product={selected} />
+        {"source_label" in selected && <p className="mt-4 text-xs text-gray-500 break-words">{selected.source_label}</p>}
         <dl className="mt-4 text-sm space-y-2">{selected.part_number && <div><dt className="text-gray-500">รหัสสินค้า</dt><dd className="break-all">{selected.part_number}</dd></div>}{selected.brand && <div><dt className="text-gray-500">ยี่ห้อ</dt><dd>{selected.brand}</dd></div>}{selected.price_text && <div><dt className="text-gray-500">ราคา</dt><dd>{selected.price_text}</dd></div>}</dl>
         {selected.description && <p className="mt-4 text-sm whitespace-pre-wrap break-words">{selected.description}</p>}
         {selected.detail_url && <a href={selected.detail_url} target="_blank" rel="noopener noreferrer" className="block mt-4 text-blue-600 underline text-sm">เปิดหน้าสินค้า</a>}

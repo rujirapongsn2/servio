@@ -356,6 +356,8 @@ def create_okf_knowledge_graph_tool(
                 expand_links=expand_links,
                 image_links=False,
             )
+            if result.get('type') == 'knowledge_media_refs':
+                return json.dumps({key: result[key] for key in ('type','version','response','audio','images') if key in result}, ensure_ascii=False)
             if result.get("type") == "knowledge_image_refs":
                 return json.dumps({key: result[key] for key in ("type", "version", "response", "images")}, ensure_ascii=False)
             return result.get("response", "No matching OKF concepts found.")

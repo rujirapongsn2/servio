@@ -270,6 +270,7 @@ class TestOKFBundleRequest(BaseModel):
 
 
 class TestOKFBundleResponse(BaseModel):
+    audio: List[Dict[str, Any]] = []
     images: List[Dict[str, Any]] = []
     response: str
     concepts: List[Dict[str, Any]] = []

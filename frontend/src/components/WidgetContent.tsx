@@ -7,10 +7,9 @@ import { useAudio } from "@/hooks/useAudio";
 import { useWebsocket } from "@/hooks/useWebsocket";
 import { useState } from "react";
 import Image from "next/image";
-import { Button } from "@/components/ui/Button";
+import { ImageSearchComposer } from "@/components/ImageSearchComposer";
 import WriteIcon from "@/components/icons/WriteIcon";
 import MicIcon from "@/components/icons/MicIcon";
-import ArrowUpIcon from "@/components/icons/ArrowUpIcon";
 import { useSearchParams } from "next/navigation";
 
 interface WidgetContentProps {
@@ -66,6 +65,11 @@ export default function WidgetContent({ overrideApiKey, overrideType, overrideAl
         resetHistory,
         presentations,
         sendProductInquiry,
+        sendKnowledgeInquiry,
+        imageSearchAvailable,
+        imageSearchState,
+        imageComposerEpoch,
+        sendImageSearch,
         productActionError,
         isLoading,
         agentName,
@@ -142,7 +146,7 @@ export default function WidgetContent({ overrideApiKey, overrideType, overrideAl
 
             {/* Chat Area */}
             <div className="flex-1 min-w-0 min-h-0 overflow-hidden relative flex flex-col bg-white dark:bg-gray-800">
-                <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} productActionsDisabled={!websocketReady} productActionError={productActionError} />
+                <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} onKnowledgeInquiry={sendKnowledgeInquiry} productActionsDisabled={!websocketReady} productActionError={productActionError} />
             </div>
 
             {/* Controls Area */}
@@ -150,29 +154,7 @@ export default function WidgetContent({ overrideApiKey, overrideType, overrideAl
                 <Composer
                     audioChat={
                         currentMode === "chat" ? (
-                            <form
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    const form = e.target as HTMLFormElement;
-                                    const input = form.elements.namedItem("message") as HTMLInputElement;
-                                    if (input.value.trim()) {
-                                        sendTextMessage(input.value);
-                                        input.value = "";
-                                    }
-                                }}
-                                className="flex items-center gap-2 w-full"
-                            >
-                                <input
-                                    name="message"
-                                    type="text"
-                                    placeholder="Type a message..."
-                                    className="flex-1 p-3 rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    autoComplete="off"
-                                />
-                                <Button type="submit" size="icon" className="rounded-full w-10 h-10 shrink-0 bg-blue-600 hover:bg-blue-700">
-                                    <ArrowUpIcon className="w-5 h-5" />
-                                </Button>
-                            </form>
+                            <ImageSearchComposer key={imageComposerEpoch} available={imageSearchAvailable} disabled={!websocketReady || isLoading} searchState={imageSearchState} onImageSearch={sendImageSearch} onTextMessage={sendTextMessage} />
                         ) : (
                             <AudioChat
                                 frequencies={frequencies}

@@ -15,8 +15,9 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
-import { parseKnowledgeImages, type KnowledgeImage } from "@/lib/product-presentations";
+import { parseKnowledgeAudio, parseKnowledgeImages, type KnowledgeAudioClip, type KnowledgeImage } from "@/lib/product-presentations";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface Tool {
@@ -76,6 +77,7 @@ interface OKFConcept {
 
 interface TestResult {
   images?: KnowledgeImage[];
+  audio?: KnowledgeAudioClip[];
   response: string;
   response_time: number;
   concepts: Array<{
@@ -360,7 +362,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const handleSaveConcept = async () => {
-    if (!bundleId || !selectedConcept || !editBody.trim()) return;
+    if (!bundleId || !selectedConcept || (!selectedConcept.frontmatter?.audio && !editBody.trim())) return;
     setSavingConcept(true);
     setSaveMessage(null);
     setSaveError(null);
@@ -656,7 +658,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleSaveConcept}
-                                    disabled={savingConcept || refreshingSource || reindexing || !editBody.trim() || !editTitle.trim()}
+                                    disabled={savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
                                     className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                                   >
                                     {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -705,8 +707,9 @@ export default function OKFBundleDetailDrawer({
                                 />
                               </label>
                               <label className="block text-sm font-semibold text-gray-900 dark:text-white">
-                                Content
+                                {selectedConcept.frontmatter?.audio ? "Generated transcript (Re-index to refresh)" : "Content"}
                                 <textarea
+                                  readOnly={Boolean(selectedConcept.frontmatter?.audio)}
                                   value={editBody}
                                   onChange={(event) => setEditBody(event.target.value)}
                                   rows={18}
@@ -791,6 +794,7 @@ export default function OKFBundleDetailDrawer({
                         </div>
                       </div>
                       {testResult.images && <KnowledgeImages images={parseKnowledgeImages({ type: "knowledge_images", version: 1, response: testResult.response, images: testResult.images })?.images || []} />}
+                      <KnowledgeAudio audio={parseKnowledgeAudio(testResult.audio)} />
                       <div className="space-y-2">
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           Sources Used ({testResult.concepts.length})

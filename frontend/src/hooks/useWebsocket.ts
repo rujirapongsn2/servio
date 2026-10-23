@@ -5,6 +5,12 @@ import { Message } from "@/lib/types";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "@/lib/utils";
 import { getWebsocketBaseUrl } from "@/lib/api";
 
+export type ImageSearchState =
+  | { kind: "idle" }
+  | { kind: "pending"; requestId: string }
+  | { kind: "error"; message: string; retryable: boolean }
+  | { kind: "complete"; status: "matched" | "no_match" };
+
 export function useWebsocket({
   url,
   apiKey,
@@ -26,6 +32,10 @@ export function useWebsocket({
   }
 
   url = wsUrl;
+  const [imageSearchAvailable, setImageSearchAvailable] = useState(false);
+  const [imageSearchState, setImageSearchState] = useState<ImageSearchState>({ kind: "idle" });
+  const [imageComposerEpoch, setImageComposerEpoch] = useState(0);
+  const imageRequest = useRef<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [history, setHistory] = useState<Message[]>([]);
   const [presentations, setPresentations] = useState<ProductPresentations>({});
@@ -36,6 +46,10 @@ export function useWebsocket({
   const [voiceResponseEnabled, setVoiceResponseEnabled] = useState(true);
 
   useEffect(() => {
+    imageRequest.current = null;
+    setImageSearchAvailable(false);
+    setImageSearchState({ kind: "idle" });
+    setImageComposerEpoch((value) => value + 1);
     setHistory([]);
     setPresentations({});
     setProductActionError(null);
@@ -50,17 +64,32 @@ export function useWebsocket({
     ws.addEventListener("close", () => {
       if (websocket.current !== ws) return;
       setIsReady(false);
-      setIsLoading(false); // Stop loading on close
+      setIsLoading(false);
+      if (imageRequest.current) setImageSearchState({ kind: "error", message: "การเชื่อมต่อขัดข้อง กรุณาเชื่อมต่อใหม่", retryable: true });
+      imageRequest.current = null;
     });
     ws.addEventListener("error", (event) => {
       if (websocket.current !== ws) return;
       setIsReady(false);
       setIsLoading(false);
+      imageRequest.current = null;
+      setImageSearchState({ kind: "error", message: "การเชื่อมต่อขัดข้อง กรุณาเชื่อมต่อใหม่", retryable: true });
       console.error("Websocket error", event);
     });
     ws.addEventListener("message", (event) => {
       if (websocket.current !== ws) return;
       const data = JSON.parse(event.data);
+      if (data.type === "knowledge.image.result" || data.type === "knowledge.image.error") {
+        if (!imageRequest.current || data.request_id !== imageRequest.current) return;
+        imageRequest.current = null;
+        setIsLoading(false);
+        if (data.type === "knowledge.image.error" || data.status === "unavailable") {
+          setImageSearchState({ kind: "error", message: typeof data.message === "string" ? data.message : "การค้นหาด้วยรูปภาพยังไม่พร้อมใช้งาน", retryable: data.retryable !== false });
+        } else if (data.status === "matched" || data.status === "no_match") {
+          setImageSearchState({ kind: "complete", status: data.status });
+        }
+        return;
+      }
       if (data.type === "product.action.error") {
         setProductActionError(typeof data.message === "string" ? data.message : "ไม่สามารถสอบถามสินค้านี้ได้");
         setIsLoading(false);
@@ -75,6 +104,7 @@ export function useWebsocket({
 
       // Handle session config from server
       if (data.type === "session.config") {
+        setImageSearchAvailable(data.knowledge_image_search_enabled === true);
         if (typeof data.voice_response_enabled === "boolean") {
           setVoiceResponseEnabled(data.voice_response_enabled);
         }
@@ -82,6 +112,7 @@ export function useWebsocket({
       }
 
       if (data.type === "history.updated") {
+        if (data.reason === "knowledge.image.result" && (!imageRequest.current || data.request_id !== imageRequest.current)) return;
         if (["response.done", "assistant.message", "admin.message"].includes(data.reason) || data.inputs.length === 0) {
           setIsLoading(false);
         }
@@ -137,7 +168,28 @@ export function useWebsocket({
     websocket.current.send(JSON.stringify({ type: "product.inquire", call_id: callId, product_id: productId }));
   }
 
+  function sendImageSearch(image: { mime: "image/jpeg" | "image/png"; base64: string }): boolean {
+    if (websocket.current?.readyState !== WebSocket.OPEN || isLoading || imageRequest.current || !imageSearchAvailable) return false;
+    const requestId = crypto.randomUUID();
+    imageRequest.current = requestId;
+    setImageSearchState({ kind: "pending", requestId });
+    setProductActionError(null);
+    setIsLoading(true);
+    websocket.current.send(JSON.stringify({ type: "knowledge.image.search", request_id: requestId, image }));
+    return true;
+  }
+
+  function sendKnowledgeInquiry(messageId: string, cardId: string) {
+    if (websocket.current?.readyState !== WebSocket.OPEN || isLoading || imageRequest.current) return;
+    setProductActionError(null);
+    setIsLoading(true);
+    websocket.current.send(JSON.stringify({ type: "knowledge.product.inquire", message_id: messageId, card_id: cardId }));
+  }
+
   function resetHistory() {
+    imageRequest.current = null;
+    setImageSearchState({ kind: "idle" });
+    setImageComposerEpoch((value) => value + 1);
     setPresentations({});
     setProductActionError(null);
     setHistory([]);
@@ -176,6 +228,11 @@ export function useWebsocket({
 
   return {
     isReady,
+    imageSearchAvailable,
+    imageSearchState,
+    imageComposerEpoch,
+    sendImageSearch,
+    sendKnowledgeInquiry,
     sendTextMessage,
     sendProductInquiry,
     presentations,

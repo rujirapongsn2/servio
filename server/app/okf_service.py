@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Callable, Any, Dict, Iterable, List, Literal, Optional
 from xml.etree import ElementTree as ET
 
 import yaml
@@ -55,6 +55,8 @@ SUPPORTED_KNOWLEDGE_EXTENSIONS = {
     ".jpg",
     ".jpeg",
     ".png",
+    ".wav",
+    ".mp3",
 }
 SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".tar", ".tgz", ".gz"}
 
@@ -127,6 +129,9 @@ class ExtractedKnowledge:
     content_hash: str
     warnings: List[str]
     image_bytes: Optional[bytes] = None
+    image_text_status: Optional[Literal['ready', 'empty', 'unavailable', 'not_requested']] = None
+    audio_bytes: Optional[bytes] = None
+    audio_metadata: Optional[Dict[str, Any]] = None
     source_url: Optional[str] = None
     final_url: Optional[str] = None
     fetched_at: Optional[str] = None
@@ -349,12 +354,26 @@ def _extract_pdf_text(path: Path) -> tuple[str, List[str]]:
         raise OKFValidationError(str(exc)) from exc
 
 
-def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None) -> ExtractedKnowledge:
+def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None, *, preview: bool = False, on_progress: Optional[Callable[[str, str], None]] = None) -> ExtractedKnowledge:
     rel = (rel_path or Path(path.name)).as_posix()
     suffix = path.suffix.lower()
     warnings: List[str] = []
     title = _title_from_filename(path)
 
+    if suffix in {".wav", ".mp3"}:
+        from app.knowledge_audio import MAX_BYTES, process_audio
+        if path.stat().st_size > MAX_BYTES:
+            raise OKFValidationError(f"{path.name}: audio exceeds 50 MB")
+        data = path.read_bytes()
+        try:
+            if on_progress and not preview:
+                on_progress("Transcribing audio", rel)
+            audio = process_audio(data, preview=preview)
+        except (ValueError, OSError, __import__('httpx').HTTPError) as exc:
+            raise OKFValidationError(f"{path.name}: {exc}") from exc
+        return ExtractedKnowledge(title=title, source_file=rel, document_type=suffix.lstrip('.'),
+            text=audio.transcript(), content_hash=audio.asset_id, warnings=[], audio_bytes=data,
+            audio_metadata=audio.model_dump())
     if suffix in {".jpg", ".jpeg", ".png"}:
         from app.local_image_rag import enabled, validated_image
         if not enabled():
@@ -366,12 +385,20 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None) -> Extr
             validated_image(data)
         except ValueError as exc:
             raise OKFValidationError(f"{path.name}: {exc}") from exc
-        from app.knowledge_vision import extract_text
-        ocr_text, ocr_warnings = extract_text(data)
+        from app.knowledge_vision import extract_text_with_status
+        if on_progress:
+            from app.knowledge_vision import enabled as ocr_enabled
+            from app.provider_models import get_task_model
+            if ocr_enabled('image_ocr') and get_task_model('image_ocr'):
+                on_progress("Extracting image text", rel)
+        ocr = extract_text_with_status(data)
+        ocr_text, ocr_warnings = ocr.text, ocr.warnings
         body = f"Image source: {rel}" + ("\n\nOCR text:\n" + ocr_text if ocr_text else "")
         return ExtractedKnowledge(title=title, source_file=rel, document_type=suffix.lstrip("."),
             text=body,
-            content_hash=hashlib.sha256(data).hexdigest(), warnings=ocr_warnings, image_bytes=data)
+            content_hash=hashlib.sha256(data).hexdigest(), warnings=ocr_warnings, image_bytes=data, image_text_status=ocr.status)
+    if on_progress:
+        on_progress("Extracting document text", rel)
     if suffix in {".txt", ".csv", ".tsv"}:
         text = _decode_text_file(path).strip()
     elif suffix in {".md", ".markdown"}:
@@ -456,6 +483,11 @@ def _write_generated_okf_bundle(
             "tags": ["imported", source.document_type],
             "timestamp": generated_at,
         }
+        if source.audio_bytes is not None:
+            asset_path = Path('assets') / (source.content_hash + ('.mp3' if source.audio_metadata['mime'] == 'audio/mpeg' else '.wav'))
+            (destination / 'assets').mkdir(exist_ok=True)
+            (destination / asset_path).write_bytes(source.audio_bytes)
+            frontmatter.update(audio=source.audio_metadata, audio_asset_path=asset_path.as_posix())
         if source.image_bytes is not None:
             asset_id = hashlib.sha256(source.image_bytes).hexdigest()
             asset_path = Path("assets") / (asset_id + (".png" if source.document_type == "png" else ".jpg"))
@@ -511,7 +543,7 @@ def _collect_url_sources(urls: List[str]) -> tuple[List[ExtractedKnowledge], Lis
         raise OKFValidationError(str(exc)) from exc
 
 
-def _collect_knowledge_sources(source_paths: List[Path]) -> tuple[List[ExtractedKnowledge], List[str]]:
+def _collect_knowledge_sources(source_paths: List[Path], *, preview: bool = False, on_progress: Optional[Callable[[str, str], None]] = None) -> tuple[List[ExtractedKnowledge], List[str]]:
     with tempfile.TemporaryDirectory(prefix="okf_expand_") as tmp_name:
         expanded_dir = Path(tmp_name)
         candidate_files: List[tuple[Path, Path]] = []
@@ -536,7 +568,7 @@ def _collect_knowledge_sources(source_paths: List[Path]) -> tuple[List[Extracted
         seen_hashes: Dict[str, str] = {}
         for file_path, rel_path in candidate_files:
             try:
-                extracted = _extract_knowledge_file(file_path, rel_path)
+                extracted = _extract_knowledge_file(file_path, rel_path, preview=preview, **({"on_progress": on_progress} if on_progress else {}))
                 warnings.extend(extracted.warnings)
                 duplicate_source = seen_hashes.get(extracted.content_hash)
                 if duplicate_source:
@@ -771,11 +803,12 @@ class OKFService:
         visibility: str,
         created_by_username: Optional[str],
         urls: Optional[List[str]] = None,
+        on_progress: Optional[Callable[[str, str], None]] = None,
     ) -> Dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="okf_generate_") as tmp_name:
             tmp_dir = Path(tmp_name)
             generated_dir = tmp_dir / "generated_okf"
-            sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths)
+            sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths, **({"on_progress": on_progress} if on_progress else {}))
             duplicate_warnings = self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
                 team_agent_id=team_agent_id,
@@ -841,7 +874,7 @@ class OKFService:
         team_agent_id: Optional[int],
         urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths)
+        sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths, preview=True)
         warnings.extend(
             self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
@@ -850,14 +883,27 @@ class OKFService:
         )
         documents = []
         for source in sources:
-            excerpt = re.sub(r"\s+", " ", source.text).strip()[:260]
+            media_kind = 'audio' if source.audio_metadata else 'image' if source.image_bytes else 'document'
+            text = source.text
+            text_status = 'ready' if text.strip() else 'empty'
+            if media_kind == 'audio':
+                text, text_status = '', 'not_requested'
+            elif media_kind == 'image':
+                text = text.split('\n\nOCR text:\n', 1)[1] if '\n\nOCR text:\n' in text else ''
+                text_status = source.image_text_status or ('ready' if text.strip() else 'empty')
+            excerpt = re.sub(r"\s+", " ", text).strip()[:260]
             documents.append(
                 {
                     "title": source.title,
                     "source_file": source.source_file,
                     "document_type": source.document_type,
-                    "character_count": len(source.text),
+                    "character_count": len(text),
                     "excerpt": excerpt,
+                    "media_kind": media_kind,
+                    "duration_ms": source.audio_metadata.get('duration_ms') if source.audio_metadata else None,
+                    "text_status": text_status,
+                    "text": text[:12000],
+                    "text_truncated": len(text) > 12000,
                     "content_hash": source.content_hash,
                 }
             )
@@ -880,13 +926,18 @@ class OKFService:
             }
             return bundle.updated_at, Path(bundle.storage_path), concepts, versions
 
-    def _apply_source_updates(self, bundle_id, team_agent_id, snapshot, source, replacements):
+    def _apply_source_updates(self, bundle_id, team_agent_id, snapshot, source, replacements, *, expected_hashes=None, prepared_audio=None, prepared_text=None):
         with get_db() as db:
             bundle = db.query(OKFBundle).filter_by(id=bundle_id).with_for_update().first()
             if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
                 raise KeyError("OKF bundle not found")
             if bundle.updated_at != snapshot or Path(bundle.storage_path) != source:
                 raise OKFValidationError("This knowledge changed. Reload it before saving or reindexing.")
+            if expected_hashes is not None:
+                current, _ = parse_okf_directory(source)
+                indexed = {c.concept_id:c.content_hash for c in db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all()}
+                if {c.concept_id:c.content_hash for c in current} != expected_hashes or indexed != expected_hashes:
+                    raise OKFValidationError('Knowledge changed during audio refresh; previous source retained')
             originals = {}
             try:
                 for relative, markdown in replacements.items():
@@ -901,7 +952,15 @@ class OKFService:
                 bundle.status = "ready"
                 bundle.updated_at = datetime.utcnow()
                 db.flush()
+                if prepared_audio is not None:
+                    from app.local_audio_rag import replace_records
+                    replace_records(db.connection(), bundle_id, prepared_audio)
+                if prepared_text is not None:
+                    from app.local_rag import replace_records
+                    replace_records(db.connection(), bundle_id, *prepared_text)
                 result = _bundle_to_dict(bundle)
+                if prepared_audio is not None:
+                    result.update(audio_index={'status':'ready','segments':len(prepared_audio)}, vectors_refreshed=True)
                 db.commit()
             except Exception:
                 for path, original in originals.items():
@@ -934,6 +993,42 @@ class OKFService:
                 if ocr_text:
                     body += "\n\nOCR text:\n" + ocr_text
                 replacements[concept.file_path] = self._source_markdown(dict(concept.frontmatter), body)
+        from app.knowledge_audio import enabled as audio_enabled, process_audio
+        if audio_enabled():
+            from app.local_audio_rag import _asset
+            for concept in concepts:
+                if 'audio' not in concept.frontmatter:
+                    continue
+                _, data = _asset(source, concept.frontmatter)
+                try:
+                    metadata = process_audio(data)
+                except Exception as exc:
+                    raise OKFValidationError('Local audio refresh failed; previous source retained') from exc
+                fm = dict(concept.frontmatter)
+                fm['audio'] = metadata.model_dump()
+                replacements[concept.file_path] = self._source_markdown(fm, metadata.transcript())
+        if audio_enabled() and any('audio' in concept.frontmatter for concept in concepts):
+            from contextlib import ExitStack
+            from app import local_audio_rag, local_rag
+            expected = {c.concept_id:c.content_hash for c in concepts}
+            with ExitStack() as stack:
+                stack.enter_context(local_audio_rag._lock)
+                stack.enter_context(local_rag._ingest_lock)
+                local_audio_rag.ensure_schema()
+                if local_rag.enabled():
+                    local_rag.ensure_schema()
+                with tempfile.TemporaryDirectory(prefix='okf_audio_refresh_') as temporary:
+                    staged = Path(temporary) / 'source'
+                    shutil.copytree(source, staged)
+                    for relative, markdown in replacements.items():
+                        path = staged / relative
+                        _ensure_within(staged,path)
+                        path.write_text(markdown,encoding='utf-8')
+                    staged_concepts,_ = parse_okf_directory(staged)
+                    audio_records = local_audio_rag.build_records(staged,staged_concepts)
+                    text_records = local_rag.prepare_records(staged,staged_concepts) if local_rag.enabled() else None
+                    return self._apply_source_updates(bundle_id,team_agent_id,snapshot,source,replacements,
+                        expected_hashes=expected,prepared_audio=audio_records,prepared_text=text_records)
         return self._apply_source_updates(bundle_id, team_agent_id, snapshot, source, replacements)
 
     @staticmethod
@@ -978,6 +1073,8 @@ class OKFService:
             title = str(frontmatter.get("title") or _title_from_concept_id(concept.concept_id))
             description = str(frontmatter.get("description") or "")
             tags = _normalize_tags(frontmatter.get("tags"))
+            if isinstance(frontmatter.get('audio'), dict) and frontmatter['audio'].get('transcript_status') == 'empty':
+                tags = [*tags, 'audio-native-only']
             timestamp = frontmatter.get("timestamp")
             if timestamp is not None:
                 timestamp = str(timestamp)
@@ -1125,14 +1222,17 @@ class OKFService:
         title: Optional[str], description: Optional[str], tags: Optional[List[str]], body: str,
         expected_updated_at: Optional[str] = None,
     ) -> Dict[str, Any]:
-        if not body or not body.strip():
-            raise OKFValidationError("Content cannot be empty")
         snapshot, source, concepts, versions = self._source_snapshot(bundle_id, team_agent_id)
         concept = next((item for item in concepts if item.concept_id == concept_id), None)
         if not concept:
             raise KeyError("OKF concept not found")
         if expected_updated_at and versions.get(concept_id) != expected_updated_at:
             raise OKFValidationError("This document changed since it was opened. Reload it before saving.")
+        if 'audio' in concept.frontmatter:
+            if body.strip() != concept.body.strip():
+                raise OKFValidationError('Audio transcripts are generated and read-only. Re-index the source to refresh the transcript.')
+        elif not body.strip():
+            raise OKFValidationError("Content cannot be empty")
         frontmatter = dict(concept.frontmatter)
         if title is not None:
             if not title.strip():
@@ -1179,12 +1279,16 @@ class OKFService:
         from app.local_rag import enabled as text_enabled, index_bundle
         from app.local_image_rag import enabled as images_enabled, try_index_bundle as index_images
         images = index_images(bundle_id) if images_enabled() else {"status": "disabled", "images": 0}
+        from app.local_audio_rag import try_index_bundle as index_audio
+        audio = index_audio(bundle_id)
+        if audio['status'] == 'failed':
+            raise RuntimeError('Audio indexing failed. Retry reindex-vectors.')
         text_active = text_enabled()
         result = index_bundle(bundle_id) if text_active else {"status": images["status"], "chunks": 0}
         if images["status"] == "failed":
             prefix = "Text index refreshed but " if text_active else ""
             raise RuntimeError(prefix + "image indexing failed. Retry reindex-vectors.")
-        return {**result, "image_index": images}
+        return {**result, "image_index": images, "audio_index": audio}
 
     def query_bundle(self, bundle_id: int, query: str, team_agent_id: Optional[int] = None,
                      limit: int = 5, expand_links: bool = True, *, image_links: bool = True) -> Dict[str, Any]:
@@ -1217,6 +1321,22 @@ class OKFService:
                 import logging
                 logging.getLogger(__name__).exception("Image retrieval unavailable; preserving text results")
                 result["response"] += "\n\nImage search is temporarily unavailable. Do not claim to have searched or viewed images."
+        from app.local_audio_rag import enabled as audio_enabled, query_bundle as audio_query
+        if audio_enabled():
+            try:
+                audio = audio_query(bundle_id, query, team_agent_id, limit, audio_links=image_links, text_concepts=result.get('concepts', []))
+                if audio:
+                    result['audio'] = audio
+                    result.update(type='knowledge_media' if image_links else 'knowledge_media_refs', version=1)
+                    evidence = [f"{card['source_label']} [{card['start_ms']//60000:02d}:{card['start_ms']//1000%60:02d}] {card['transcript']}" for card in audio if card['transcript']]
+                    if evidence:
+                        result['response'] += '\n\nAudio transcript excerpts:\n' + '\n'.join(evidence)
+                    if not image_links:
+                        result['response'] += '\n\nThe client displays audio players. Native audio similarity is not factual evidence. Answer only from transcript excerpts and cite timestamps. If a clip has no transcript, say so. Do not generate playback URLs.'
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Audio search unavailable; preserving text and image results')
+                result['response'] += '\n\nAudio search is temporarily unavailable.'
         return result
 
     def _query_text_bundle(
@@ -1251,6 +1371,8 @@ class OKFService:
             concepts = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all()
             scored = []
             for concept in concepts:
+                if 'audio-native-only' in (concept.tags or []):
+                    continue
                 title_text = (concept.title or "").lower()
                 description_text = (concept.description or "").lower()
                 tag_text = " ".join(concept.tags or []).lower()

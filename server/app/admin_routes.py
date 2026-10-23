@@ -1432,7 +1432,7 @@ def _run_okf_import_job(
     urls: Optional[List[str]] = None,
 ) -> None:
     try:
-        _update_okf_job(job_id, status="processing", message="Reading files and preparing local knowledge")
+        _update_okf_job(job_id, status="processing", message="Preparing local knowledge")
         service = OKFService()
         paths = [Path(path) for path in source_paths]
         if import_mode == "archive":
@@ -1453,21 +1453,29 @@ def _run_okf_import_job(
                 team_agent_id=team_agent_id,
                 visibility=visibility,
                 created_by_username=current_user,
+                on_progress=lambda stage, source: _update_okf_job(job_id, message=f"{stage}: {source}" if source else stage),
             )
 
         # Queue processing already runs off the API request. Build vectors after
         # the OKF import transaction commits; failed embedding must not remove
         # the successfully imported source or its lexical search capability.
         from app.local_image_rag import enabled as image_search_enabled, try_index_bundle as index_images
+        from app.local_audio_rag import try_index_bundle as index_audio
+        from app.knowledge_audio import enabled as audio_search_enabled
+        if audio_search_enabled():
+            _update_okf_job(job_id, message="Indexing audio")
+        audio_index = index_audio(bundle['id'])
+        if audio_index['status'] == 'failed':
+            bundle['validation_summary']['warnings'].append('Audio indexing failed. Retry reindex-vectors.')
         if image_search_enabled():
-            _update_okf_job(job_id, message="Building image search index")
+            _update_okf_job(job_id, message="Indexing images")
         image_index = index_images(bundle["id"])
         if image_index["status"] == "failed":
             bundle["validation_summary"]["warnings"].append("Image indexing failed. Retry reindex-vectors.")
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
             try:
-                _update_okf_job(job_id, message="Building local pgvector index")
+                _update_okf_job(job_id, message="Indexing text")
                 index_bundle(bundle["id"])
             except Exception as vector_exc:
                 import logging
@@ -1518,6 +1526,16 @@ async def get_okf_bundles(
     """Get OKF bundles available to the selected Team Agent."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     return OKFService().list_bundles(team_agent_id=team_agent_id)
+
+
+@router.get("/okf-bundles/import-capabilities")
+async def get_knowledge_import_capabilities(
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    _require_resolved_team_access(current_user, team_agent_id, "admin")
+    from app.knowledge_import_capabilities import import_capabilities
+    return await import_capabilities()
 
 
 @router.post("/okf-bundles/preview")
@@ -1767,6 +1785,10 @@ async def import_okf_bundle(
         # The legacy synchronous import endpoint also needs a fresh vector index.
         # Failure must not roll back the already-committed local OKF documents.
         from app.local_image_rag import try_index_bundle as index_images
+        from app.local_audio_rag import try_index_bundle as index_audio
+        audio_index = await run_in_threadpool(index_audio, bundle['id'])
+        if audio_index['status'] == 'failed':
+            bundle['validation_summary']['warnings'].append('Audio indexing failed. Retry reindex-vectors.')
         image_index = await run_in_threadpool(index_images, bundle["id"])
         if image_index["status"] == "failed":
             bundle["validation_summary"]["warnings"].append("Image indexing failed. Retry reindex-vectors.")
@@ -1884,6 +1906,10 @@ async def update_okf_concept(
         # Keep vector retrieval current after an edit. Preserve the saved edit
         # even if shared GPU indexing fails; legacy lexical retrieval stays ready.
         from app.local_image_rag import try_index_bundle as index_images
+        from app.local_audio_rag import try_index_bundle as index_audio
+        audio_index = await run_in_threadpool(index_audio, bundle_id)
+        if audio_index['status'] == 'failed':
+            raise HTTPException(status_code=503, detail='Audio indexing failed. Retry reindex-vectors.')
         image_index = await run_in_threadpool(index_images, bundle_id)
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
@@ -1924,6 +1950,7 @@ async def test_okf_bundle(
         response=result["response"],
         concepts=result.get("concepts", []),
         images=result.get("images", []),
+        audio=result.get("audio", []),
         response_time=time.time() - start_time,
     )
 
@@ -1974,6 +2001,10 @@ async def reindex_okf_source(
         result = await run_in_threadpool(service.reindex_source, bundle_id, request.concept_id, team_agent_id,
                                          url=request.url, expected_updated_at=request.expected_updated_at)
         from app.local_image_rag import try_index_bundle as index_images
+        from app.local_audio_rag import try_index_bundle as index_audio
+        audio_index = await run_in_threadpool(index_audio, bundle_id)
+        if audio_index['status'] == 'failed':
+            raise HTTPException(status_code=503, detail='Audio indexing failed. Retry reindex-vectors.')
         image_index = await run_in_threadpool(index_images, bundle_id)
         from app.local_rag import enabled, index_bundle
         if enabled():
@@ -2013,9 +2044,13 @@ async def reindex_okf_bundle(
     try:
         result = await run_in_threadpool(OKFService().reindex_bundle, bundle_id, team_agent_id=team_agent_id)
         from app.local_image_rag import try_index_bundle as index_images
+        from app.local_audio_rag import try_index_bundle as index_audio
+        audio_index = result.get('audio_index') or await run_in_threadpool(index_audio, bundle_id)
+        if audio_index['status'] == 'failed':
+            raise HTTPException(status_code=503, detail='Audio indexing failed. Retry reindex-vectors.')
         image_index = await run_in_threadpool(index_images, bundle_id)
         from app.local_rag import enabled as hybrid_enabled, index_bundle
-        if hybrid_enabled():
+        if hybrid_enabled() and not result.get('vectors_refreshed'):
             try:
                 await run_in_threadpool(index_bundle, bundle_id)
             except Exception:

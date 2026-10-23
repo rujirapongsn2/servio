@@ -1,5 +1,7 @@
+import asyncio
 import base64
 import json
+import threading
 from typing import Optional
 
 import numpy as np
@@ -16,6 +18,11 @@ from openai.types.responses import ResponseTextDeltaEvent
 from app.analytics_service import AnalyticsService
 from app.product_presentations import parse_product_carousel, product_inquiry
 from app.knowledge_image_presentations import hydrate_knowledge_images
+from app.knowledge_image_search import ImageSearchSession, ImageSearchRequest, InvalidSearchImage, search_image
+from app.knowledge_audio_presentations import hydrate_knowledge_media
+
+
+_IMAGE_SEARCH_WORKERS = threading.BoundedSemaphore(2)
 
 
 def transform_data_to_events(audio_np: np.ndarray) -> dict:
@@ -99,6 +106,7 @@ class WebsocketHelper:
         self.partial_response = ""
         self.presentations = {}
         self._knowledge_calls = {}
+        self.image_search_session = ImageSearchSession()
         self.team_agent_id = team_agent_id
         self.session_id = session_id
         self.voice_response_enabled = voice_response_enabled
@@ -116,6 +124,79 @@ class WebsocketHelper:
     def reset_presentations(self):
         self.presentations.clear()
         self._knowledge_calls.clear()
+        self.image_search_session.reset()
+
+    async def _image_search_manual(self, request: ImageSearchRequest) -> bool:
+        from app.session_manager import session_manager
+
+        session = session_manager.sessions.get(self.session_id)
+        if session is None or session.mode != "MANUAL":
+            return False
+        user_input = "ค้นหาสินค้าจากรูปภาพ"
+        await self.show_user_input(user_input)
+        await session_manager.update_session(self.session_id, {"content": user_input}, is_user=True)
+        await self.websocket.send_json({"type": "knowledge.image.error", "request_id": request.request_id,
+            "code": "manual_mode", "message": "เจ้าหน้าที่กำลังดูแลการสนทนานี้", "retryable": False})
+        return True
+
+    async def search_knowledge_image(self, request: ImageSearchRequest, generation: int):
+        def bounded_search():
+            if not _IMAGE_SEARCH_WORKERS.acquire(blocking=False):
+                return None
+            try:
+                return search_image(self.team_agent_id, request)
+            finally:
+                _IMAGE_SEARCH_WORKERS.release()
+
+        try:
+            if await self._image_search_manual(request):
+                return
+            result = await asyncio.to_thread(bounded_search)
+            if generation != self.image_search_session.generation:
+                return
+            if await self._image_search_manual(request):
+                return
+            if result is None:
+                await self.websocket.send_json({"type": "knowledge.image.error", "request_id": request.request_id,
+                    "code": "busy", "message": "กำลังค้นหารูปภาพ กรุณารอสักครู่", "retryable": True})
+                return
+            message_id = None
+            if result.status == "matched":
+                message_id, presentation = self.image_search_session.presentation(result, self.team_agent_id)
+                self.presentations[message_id] = presentation.model_dump()
+                while len(self.presentations) > 50:
+                    del self.presentations[next(iter(self.presentations))]
+                self.history.extend([
+                    {"type": "message", "role": "user", "content": "ค้นหาสินค้าจากรูปภาพ"},
+                    {"type": "message", "role": "assistant", "id": message_id, "content": [{"type": "output_text", "text": presentation.summary, "annotations": []}]},
+                ])
+            else:
+                content = "ไม่พบสินค้าที่ใกล้เคียง ลองรูปอื่น" if result.status == "no_match" else "การค้นหาด้วยรูปภาพยังไม่พร้อมใช้งาน"
+                self.history.extend([
+                    {"type": "message", "role": "user", "content": "ค้นหาสินค้าจากรูปภาพ"},
+                    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": content, "annotations": []}]},
+                ])
+            from app.session_manager import session_manager
+
+            summary = presentation.summary if result.status == "matched" else content
+            self.analytics.track_message(role="user", content="ค้นหาสินค้าจากรูปภาพ", agent_name=self.latest_agent.name)
+            self.analytics.track_message(role="assistant", content=summary, agent_name=self.latest_agent.name)
+            await session_manager.update_session(self.session_id, {"content": "ค้นหาสินค้าจากรูปภาพ"}, is_user=True)
+            await session_manager.update_session(self.session_id, {"content": summary}, is_user=False)
+            if generation != self.image_search_session.generation:
+                return
+            await self.websocket.send_json({"type": "history.updated", "reason": "knowledge.image.result", "request_id": request.request_id, "inputs": self.history,
+                "presentations": self.presentations, "agent_name": self.latest_agent.name})
+            await self.websocket.send_json({"type": "knowledge.image.result", "request_id": request.request_id,
+                "status": result.status, "message_id": message_id})
+        except InvalidSearchImage as exc:
+            if generation == self.image_search_session.generation:
+                await self.websocket.send_json({"type": "knowledge.image.error", "request_id": request.request_id,
+                    "code": "invalid_image", "message": str(exc), "retryable": False})
+        except Exception:
+            if generation == self.image_search_session.generation:
+                await self.websocket.send_json({"type": "knowledge.image.error", "request_id": request.request_id,
+                    "code": "unavailable", "message": "การค้นหาด้วยรูปภาพขัดข้องชั่วคราว กรุณาลองใหม่", "retryable": True})
 
     def resolve_product_inquiry(self, message: dict) -> str | None:
         call_id = message.get("call_id")
@@ -216,7 +297,7 @@ class WebsocketHelper:
                 bundle_id = self._knowledge_calls.pop(call_id, None)
                 carousel = parse_product_carousel(item.get("output"))
                 if carousel is None and bundle_id is not None:
-                    carousel = hydrate_knowledge_images(item.get("output"), self.team_agent_id, bundle_id)
+                    carousel = hydrate_knowledge_images(item.get("output"), self.team_agent_id, bundle_id) or hydrate_knowledge_media(item.get("output"), self.team_agent_id, bundle_id)
                 if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
                     if len(self.presentations) < 50:
                         self.presentations[call_id] = carousel.model_dump(exclude_none=True)
@@ -245,7 +326,7 @@ class WebsocketHelper:
         elif is_text_output(event):
             await self.stream_response(event.data.delta)  # type: ignore
 
-    async def text_output_complete(self, output, is_done=False):
+    async def text_output_complete(self, output, is_done=False, knowledge_context=None):
         if not is_done:
             await self.websocket.send_text(
                 json.dumps(
@@ -269,7 +350,7 @@ class WebsocketHelper:
 
             self.partial_response = ""
             self.latest_agent = output.last_agent
-            self.history = output.to_input_list()
+            self.history = [item for item in output.to_input_list() if knowledge_context is None or item != knowledge_context]
             await self.websocket.send_text(
                 json.dumps(
                     {
