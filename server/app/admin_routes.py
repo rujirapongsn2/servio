@@ -1180,7 +1180,6 @@ Provide optimized instructions that are clear, actionable, and follow best pract
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.7,
         )
 
         optimized = response.choices[0].message.content.strip()

@@ -267,3 +267,46 @@ def test_scoped_optimizer_preserves_legacy_behavior_and_does_not_save(populated,
     assert len(calls) == 2
     with get_db() as db:
         assert db.get(Agent, 1).instructions == "old"
+
+
+@pytest.mark.parametrize("model", ["luna", "gpt-6-luna", "gpt-4o-mini"])
+@pytest.mark.parametrize("query", ["", "?team_agent_id=1"])
+def test_optimizer_supports_provider_default_sampling(populated, monkeypatch, model, query):
+    from types import SimpleNamespace
+    import httpx
+    import openai
+
+    calls = []
+    client_options = []
+
+    def create(**arguments):
+        calls.append(arguments)
+        if "temperature" in arguments:
+            message = "Unsupported value: 'temperature' does not support 0.7 with this model. Only the default (1) value is supported."
+            raise openai.BadRequestError(
+                message,
+                response=httpx.Response(400, request=httpx.Request("POST", "https://provider.example/v1/chat/completions")),
+                body={"error": {"message": message, "param": "temperature", "code": "unsupported_value"}},
+            )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=" Optimized instructions "))])
+
+    def configured_client(**options):
+        client_options.append(options)
+        return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    monkeypatch.setattr(openai, "OpenAI", configured_client)
+    client, get_db = populated
+    response = client.post(
+        f"/api/admin/agents/optimize-prompt{query}",
+        headers=headers(),
+        json={"instructions": "Support customers", "llm_provider_id": 1, "model": model},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"optimized_instructions": "Optimized instructions"}
+    assert client_options == [{"api_key": "secret", "base_url": "https://provider.example/v1"}]
+    assert len(calls) == 1
+    assert calls[0]["model"] == model
+    assert "Support customers" in calls[0]["messages"][1]["content"]
+    with get_db() as db:
+        agent = db.get(Agent, 1)
+        assert (agent.instructions, agent.model) == ("old", "test")
