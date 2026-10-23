@@ -41,6 +41,7 @@ function LLMProvidersContent() {
     const returnAgentId = searchParams.get("return_agent_id") || "new";
     const returnTeamId = searchParams.get("return_team_id");
     const returnTeamName = searchParams.get("return_team_name");
+    const returnWorkspace = searchParams.get("return_workspace");
     const teamAgentId = searchParams.get("team_agent_id");
     const draftId = searchParams.get("draft_id");
     const shouldCreateProvider = searchParams.get("create") === "1";
@@ -74,6 +75,7 @@ function LLMProvidersContent() {
         if (teamAgentId) params.set("team_agent_id", teamAgentId);
         if (returnTeamId) params.set("return_team_id", returnTeamId);
         if (returnTeamName) params.set("return_team_name", returnTeamName);
+        if (returnWorkspace === "workflow") params.set("return_workspace", "workflow");
         if (draftId) params.set("draft_id", draftId);
         if (providerId) params.set("select_provider_id", String(providerId));
         const query = params.toString();

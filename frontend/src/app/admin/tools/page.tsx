@@ -113,6 +113,7 @@ function ToolsPageInner() {
   const returnTo = searchParams.get("return_to");
   const returnTeamId = searchParams.get("return_team_id");
   const returnTeamName = searchParams.get("return_team_name");
+  const returnWorkspace = searchParams.get("return_workspace");
   const draftId = searchParams.get("draft_id");
   const effectiveTeamId = routeTeamId ?? selectedTeamId;
   const isTeamSetupMode = returnTo === "team_manage" && Boolean(returnTeamId);
@@ -122,6 +123,7 @@ function ToolsPageInner() {
     returnTo ? `return_to=${encodeURIComponent(returnTo)}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    returnWorkspace === "workflow" ? "return_workspace=workflow" : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
   const agentReturnHref = returnAgentId
@@ -136,6 +138,7 @@ function ToolsPageInner() {
     returnAgentId ? `return_agent_id=${returnAgentId}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    returnWorkspace === "workflow" ? "return_workspace=workflow" : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
   const newToolQuery = [
@@ -145,6 +148,7 @@ function ToolsPageInner() {
     returnAgentId ? `return_agent_id=${returnAgentId}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    returnWorkspace === "workflow" ? "return_workspace=workflow" : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
 

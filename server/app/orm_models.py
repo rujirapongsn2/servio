@@ -537,3 +537,14 @@ class AnalyticsDailySummary(Base):
     top_topics: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     top_agents: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class WorkflowCreationReceipt(Base):
+    __tablename__ = "workflow_creation_receipts"
+
+    team_agent_id: Mapped[int] = mapped_column(ForeignKey("team_agents.id", ondelete="CASCADE"), primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    resource_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

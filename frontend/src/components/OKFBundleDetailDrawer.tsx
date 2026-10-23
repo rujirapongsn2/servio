@@ -96,6 +96,7 @@ interface OKFBundleDetailDrawerProps {
   teamAgentId?: number | null;
   onClose: () => void;
   onReindexed?: () => void;
+  canEdit?: boolean;
 }
 
 type DetailTab = "overview" | "documents" | "ask" | "issues";
@@ -114,9 +115,10 @@ export default function OKFBundleDetailDrawer({
   teamAgentId,
   onClose,
   onReindexed,
+  canEdit = true,
 }: OKFBundleDetailDrawerProps) {
   const apiBaseUrl = getApiBaseUrl();
-  const config = useMemo(() => (tool.config ? JSON.parse(tool.config) : {}), [tool.config]);
+  const config = useMemo(() => { try { const parsed = tool.config ? JSON.parse(tool.config) : {}; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; } }, [tool.config]);
   const bundleId = config.okf_bundle_id as number | undefined;
   const displayName = (config.display_name as string | undefined) || tool.name;
   const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
@@ -244,6 +246,7 @@ export default function OKFBundleDetailDrawer({
   }, [selectedConceptId, bundleId, teamAgentId]);
 
   const handleReindex = async () => {
+    if (!canEdit) return;
     if (!bundleId) return;
     if (concepts.some((concept) => /^https?:\/\//i.test(concept.resource || "")) && !window.confirm("Re-fetch all URL sources? This replaces their content, including manual edits.")) return;
     setReindexing(true);
@@ -273,6 +276,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const handleRefreshSource = async () => {
+    if (!canEdit) return;
     if (!bundleId || !selectedConcept || !sourceUrl.trim()) return;
     if (!window.confirm("Fetch this URL again? Its content, including manual edits, will be replaced.")) return;
     setRefreshingSource(true);
@@ -340,6 +344,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const handleEditConcept = () => {
+    if (!canEdit) return;
     if (!selectedConcept) return;
     setEditTitle(selectedConcept.title || "");
     setEditDescription(selectedConcept.description || "");
@@ -362,6 +367,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const handleSaveConcept = async () => {
+    if (!canEdit) return;
     if (!bundleId || !selectedConcept || (!selectedConcept.frontmatter?.audio && !editBody.trim())) return;
     setSavingConcept(true);
     setSaveMessage(null);
@@ -410,7 +416,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40">
+    <div role="dialog" aria-modal="true" aria-label="Knowledge details" tabIndex={-1} className="fixed inset-0 z-50 bg-black/40">
       <div className="absolute inset-y-0 right-0 flex w-full max-w-6xl flex-col bg-white shadow-2xl dark:bg-gray-900">
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-gray-800">
           <div className="min-w-0">
@@ -433,7 +439,7 @@ export default function OKFBundleDetailDrawer({
             <button
               type="button"
               onClick={handleReindex}
-              disabled={reindexing || refreshingSource || savingConcept || !bundleId}
+              disabled={!canEdit || reindexing || refreshingSource || savingConcept || !bundleId}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               {reindexing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -543,7 +549,7 @@ export default function OKFBundleDetailDrawer({
                           key={concept.concept_id}
                           type="button"
                           onClick={() => setSelectedConceptId(concept.concept_id)}
-                          disabled={refreshingSource || reindexing || savingConcept}
+                          disabled={ refreshingSource || reindexing || savingConcept}
                           className={[
                             "block w-full border-b border-gray-100 p-3 text-left last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800",
                             selectedConceptId === concept.concept_id ? "bg-emerald-50 dark:bg-emerald-900/20" : "",
@@ -604,8 +610,8 @@ export default function OKFBundleDetailDrawer({
                           <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
                             <label htmlFor="document-source-url" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Source URL</label>
                             <div className="flex flex-col gap-2 sm:flex-row">
-                              <input id="document-source-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} disabled={refreshingSource || reindexing || savingConcept} className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
-                              <button type="button" onClick={handleRefreshSource} disabled={refreshingSource || reindexing || savingConcept || !sourceUrl.trim()} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">
+                              <input id="document-source-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} disabled={!canEdit || refreshingSource || reindexing || savingConcept} className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                              <button type="button" onClick={handleRefreshSource} disabled={!canEdit || refreshingSource || reindexing || savingConcept || !sourceUrl.trim()} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">
                                 {refreshingSource ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Re-index URL
                               </button>
                             </div>
@@ -649,7 +655,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleCancelEdit}
-                                    disabled={savingConcept || refreshingSource || reindexing}
+                                    disabled={!canEdit || savingConcept || refreshingSource || reindexing}
                                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                   >
                                     <X className="h-4 w-4" />
@@ -658,7 +664,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleSaveConcept}
-                                    disabled={savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
+                                    disabled={!canEdit || savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
                                     className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                                   >
                                     {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -669,7 +675,7 @@ export default function OKFBundleDetailDrawer({
                                 <button
                                   type="button"
                                   onClick={handleEditConcept}
-                                  disabled={refreshingSource || reindexing}
+                                  disabled={!canEdit || refreshingSource || reindexing}
                                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 >
                                   <Edit3 className="h-4 w-4" />
@@ -709,6 +715,7 @@ export default function OKFBundleDetailDrawer({
                               <label className="block text-sm font-semibold text-gray-900 dark:text-white">
                                 {selectedConcept.frontmatter?.audio ? "Generated transcript (Re-index to refresh)" : "Content"}
                                 <textarea
+                                  aria-label={selectedConcept.frontmatter?.audio ? "Generated transcript" : "Content"}
                                   readOnly={Boolean(selectedConcept.frontmatter?.audio)}
                                   value={editBody}
                                   onChange={(event) => setEditBody(event.target.value)}
@@ -759,10 +766,11 @@ export default function OKFBundleDetailDrawer({
               {activeTab === "ask" && (
                 <div className="space-y-5">
                   <form onSubmit={handleTest} className="space-y-3">
-                    <label className="block text-sm font-semibold text-gray-900 dark:text-white">
+                    <label htmlFor="workflow-knowledge-question" className="block text-sm font-semibold text-gray-900 dark:text-white">
                       Ask a question
                     </label>
                     <textarea
+                      id="workflow-knowledge-question"
                       value={testQuery}
                       onChange={(event) => setTestQuery(event.target.value)}
                       rows={3}

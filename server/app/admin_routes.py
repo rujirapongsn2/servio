@@ -21,6 +21,13 @@ from app.models import (
     AgentResponse,
     CreateAgentRequest,
     UpdateAgentRequest,
+    UpdateWorkflowAgentRequest,
+    UpdateWorkflowMembersRequest,
+    DeleteWorkflowAgentRequest,
+    CreateWorkflowAgentRequest,
+    CreateWorkflowToolRequest,
+    CreatedToolResponse,
+    CreatedProviderResponse,
     TestAgentRequest,
     TestAgentResponse,
     ToolResponse,
@@ -566,6 +573,116 @@ async def update_team_agent_members(
     return MessageResponse(message="Team members updated")
 
 
+@router.get("/team-agents/{team_id}/workflow")
+async def get_team_workflow(team_id: int, current_user: str = Depends(get_current_user)):
+    from app.team_workflow import get_snapshot
+
+    require_team_access(current_user, team_id, "viewer")
+    snapshot = get_snapshot(team_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Team Agent not found")
+    snapshot["can_edit"] = database.has_team_access(current_user, team_id, "admin")
+    return snapshot
+
+
+@router.get("/team-agents/{team_id}/workflow/member-options")
+async def get_team_workflow_member_options(team_id: int, current_user: str = Depends(get_current_user)):
+    from app.team_workflow import get_member_options
+
+    require_team_access(current_user, team_id, "admin")
+    try:
+        return get_member_options(team_id, current_user)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+
+
+@router.put("/team-agents/{team_id}/workflow/members")
+async def update_team_workflow_members(team_id: int, request: UpdateWorkflowMembersRequest,
+                                       current_user: str = Depends(get_current_user)):
+    from app.team_workflow import WorkflowConflict, update_workflow_members
+
+    require_team_access(current_user, team_id, "admin")
+    try:
+        update_workflow_members(team_id, request, current_user)
+        return {"success": True}
+    except WorkflowConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.delete("/team-agents/{team_id}/workflow/agents/{agent_id}")
+async def delete_team_workflow_agent(team_id: int, agent_id: int, request: DeleteWorkflowAgentRequest,
+                                     current_user: str = Depends(get_current_user)):
+    from app.team_workflow import WorkflowConflict, delete_workflow_agent
+
+    require_team_access(current_user, team_id, "admin")
+    try:
+        return {"agent_id": delete_workflow_agent(team_id, agent_id, request)}
+    except WorkflowConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.put("/team-agents/{team_id}/workflow/agents/{agent_id}")
+async def update_team_workflow_agent(
+    team_id: int,
+    agent_id: int,
+    request: UpdateWorkflowAgentRequest,
+    current_user: str = Depends(get_current_user),
+):
+    from app.team_workflow import WorkflowConflict, update_workflow_agent
+
+    require_team_access(current_user, team_id, "admin")
+    try:
+        return {"agent_id": update_workflow_agent(team_id, agent_id, request)}
+    except WorkflowConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/team-agents/{team_id}/workflow/agents")
+async def create_team_workflow_agent(team_id: int, request: CreateWorkflowAgentRequest,
+                                     current_user: str = Depends(get_current_user)):
+    from app.team_workflow import WorkflowConflict, create_workflow_agent
+
+    require_team_access(current_user, team_id, "admin")
+    try:
+        return {"agent_id": create_workflow_agent(team_id, request)}
+    except WorkflowConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/team-agents/{team_id}/workflow/tools")
+async def create_team_workflow_tool(team_id: int, request: CreateWorkflowToolRequest,
+                                    current_user: str = Depends(get_current_user)):
+    from app.team_workflow import WorkflowConflict, create_workflow_tool
+
+    require_team_access(current_user, team_id, "admin")
+    try:
+        return {"tool_id": create_workflow_tool(team_id, request, current_user)}
+    except WorkflowConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 # User Management endpoints
 @router.get("/users")
 async def get_users(current_user: str = Depends(get_current_user)):
@@ -727,6 +844,8 @@ async def get_agent(
             detail="Agent not found"
         )
 
+    if team_agent_id is not None:
+        agent = next(item for item in database.get_all_agents(team_agent_id=team_agent_id) if item["id"] == agent_id)
     return agent
 
 
@@ -816,7 +935,12 @@ async def delete_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found"
         )
-    success = database.delete_agent(agent_id)
+    if team_agent_id is not None and team_agent_id not in database.get_agent_team_ids(agent_id):
+        raise HTTPException(status_code=404, detail="Agent not found in this Team Agent")
+    try:
+        success = database.delete_agent(agent_id)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error))
 
     if not success:
         raise HTTPException(
@@ -993,9 +1117,11 @@ async def test_agent(
 @router.post("/agents/optimize-prompt", response_model=OptimizePromptResponse)
 async def optimize_prompt(
     request: OptimizePromptRequest,
+    team_agent_id: Optional[int] = None,
     current_user: str = Depends(get_current_user)
 ):
     """Optimize agent instructions using AI"""
+    require_team_access(current_user, team_agent_id, "admin")
     import os
     from openai import OpenAI
     from app import provider_service, database
@@ -1150,7 +1276,7 @@ async def system_info(
     )
 
 
-@router.post("/tools", response_model=MessageResponse)
+@router.post("/tools", response_model=CreatedToolResponse)
 async def create_tool(
     request: CreateCustomToolRequest,
     team_agent_id: Optional[int] = None,
@@ -1187,7 +1313,7 @@ async def create_tool(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Failed to auto-assign tool to target agent",
                 )
-        return MessageResponse(message=f"Tool created successfully with ID {tool_id}")
+        return CreatedToolResponse(message=f"Tool created successfully with ID {tool_id}", tool_id=tool_id)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2616,7 +2742,7 @@ async def get_llm_providers(current_user: str = Depends(get_current_user)):
         ]
 
 
-@router.post("/llm-providers", response_model=MessageResponse)
+@router.post("/llm-providers", response_model=CreatedProviderResponse)
 async def create_llm_provider(
     request: CreateLLMProviderRequest,
     current_user: str = Depends(get_current_user)
@@ -2627,7 +2753,7 @@ async def create_llm_provider(
     with database.get_db() as db:
         try:
             provider = provider_service.create_provider(db, request)
-            return MessageResponse(message=f"Provider created successfully with ID {provider.id}")
+            return CreatedProviderResponse(message=f"Provider created successfully with ID {provider.id}", provider_id=provider.id)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -3400,7 +3526,7 @@ async def get_llm_providers(current_user: str = Depends(get_current_user)):
         ]
 
 
-@router.post("/llm-providers", response_model=MessageResponse)
+@router.post("/llm-providers", response_model=CreatedProviderResponse)
 async def create_llm_provider(
     request: CreateLLMProviderRequest,
     current_user: str = Depends(get_current_user)
@@ -3411,7 +3537,7 @@ async def create_llm_provider(
     with database.get_db() as db:
         try:
             provider = provider_service.create_provider(db, request)
-            return MessageResponse(message=f"Provider created successfully with ID {provider.id}")
+            return CreatedProviderResponse(message=f"Provider created successfully with ID {provider.id}", provider_id=provider.id)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

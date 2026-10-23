@@ -8,6 +8,7 @@ import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { Sparkles, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
+import { DEFAULT_MODELS, parseModelIds } from "@/lib/provider-models";
 
 interface Tool {
   id: number;
@@ -43,20 +44,7 @@ interface AgentDraft {
   handoff_ids: number[];
 }
 
-const DEFAULT_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"];
 const CUSTOM_MODEL = "__custom_model__";
-
-function parseModelIds(data: unknown, registered: boolean): string[] {
-  if (!Array.isArray(data)) throw new Error("Invalid model list");
-  return data.flatMap((item: unknown) => {
-    if (!registered && typeof item === "string") return item.trim() ? [item.trim()] : [];
-    if (typeof item !== "object" || item === null) return [];
-    if (registered && (!("enabled" in item) || item.enabled !== true ||
-      !("capabilities" in item) || !Array.isArray(item.capabilities) || !item.capabilities.includes("text"))) return [];
-    const id = registered ? ("model_id" in item ? item.model_id : null) : ("id" in item ? item.id : null);
-    return typeof id === "string" && id.trim() ? [id.trim()] : [];
-  });
-}
 
 export default function AgentEditorPage() {
   const router = useRouter();
@@ -75,7 +63,10 @@ export default function AgentEditorPage() {
   const returnTeamName = searchParams.get("return_team_name");
   const routeDraftId = searchParams.get("draft_id");
   const effectiveTeamId = routeTeamId ?? selectedTeamId;
-  const teamManageHref = returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams";
+  const returnToWorkflow = (searchParams.get("return_to") === "workflow" || searchParams.get("return_workspace") === "workflow");
+  const teamManageHref = returnTeamId
+    ? returnToWorkflow ? `/admin/teams/${returnTeamId}/workflow` : `/admin/teams?manage_team=${returnTeamId}`
+    : "/admin/teams";
   const autoSelectToolId = searchParams.get("auto_select_tool_id")
     ? parseInt(searchParams.get("auto_select_tool_id") as string)
     : null;
@@ -128,6 +119,7 @@ export default function AgentEditorPage() {
     `return_agent_id=${params.id}`,
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    returnToWorkflow ? "return_workspace=workflow" : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
   const providersQuery = [
@@ -136,6 +128,7 @@ export default function AgentEditorPage() {
     effectiveTeamId ? `team_agent_id=${effectiveTeamId}` : "",
     returnTeamId ? `return_team_id=${returnTeamId}` : "",
     returnTeamName ? `return_team_name=${encodeURIComponent(returnTeamName)}` : "",
+    returnToWorkflow ? "return_workspace=workflow" : "",
     draftId ? `draft_id=${draftId}` : "",
   ].filter(Boolean).join("&");
   const providersHref = `/admin/providers${providersQuery ? `?${providersQuery}` : ""}`;
@@ -619,12 +612,12 @@ export default function AgentEditorPage() {
   return (
     <div className="space-y-6 max-w-4xl">
       <WorkflowNavigator
-        backLabel={returnTeamId ? "Team Manage" : "Team Agents"}
+        backLabel={returnTeamId ? returnToWorkflow ? "Workflow" : "Team Manage" : "Team Agents"}
         backHref={teamManageHref}
         steps={[
-          { label: "Team Agents", href: returnTeamId ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams" },
+          { label: "Team Agents", href: returnTeamId && !returnToWorkflow ? `/admin/teams?manage_team=${returnTeamId}` : "/admin/teams" },
           ...(returnTeamId
-            ? [{ label: returnTeamName || "Manage Team", href: teamManageHref }]
+            ? [{ label: returnTeamName || (returnToWorkflow ? "Workflow" : "Manage Team"), href: teamManageHref }]
             : []),
           { label: isNew ? "Create Agent" : "Edit Agent", active: true },
         ]}
@@ -797,7 +790,7 @@ export default function AgentEditorPage() {
                 htmlFor="is_starting_agent"
                 className="ml-2 block text-sm text-gray-700 dark:text-gray-300"
               >
-                Set as starting agent (first agent users interact with)
+                {effectiveTeamId ? "Use as team fallback" : "Set as starting agent"}
               </label>
             </div>
           </div>

@@ -107,7 +107,7 @@ async function pageHarness({ edit = false, config = null, type = 'custom_api' } 
   const saved = [];
   globalThis.localStorage = { getItem: () => 'admin-token' };
   globalThis.fetch = async (url, options) => {
-    if (options?.method) { saved.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ message: 'ID 9' }) }; }
+    if (options?.method) { saved.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ message: 'ID 9', tool_id: 9 }) }; }
     return { ok: true, json: async () => ({ name: 'original_name', type, config: JSON.stringify(config), icon: 'Wrench', visibility: 'team' }) };
   };
   const mocks = {
@@ -117,6 +117,8 @@ async function pageHarness({ edit = false, config = null, type = 'custom_api' } 
     '@/lib/ui-copy': { UI_COPY: { tools: { navLabel: 'Integrations' } } }, '@/lib/custom-api': api,
     '@/components/CustomApiRequestEditor': { default: Editor },
   };
+  mocks['@/components/CreateToolForm'] = { default: load('src/components/CreateToolForm.tsx', { ...mocks, '@/lib/tool-creation': load('src/lib/tool-creation.ts') }).default };
+  mocks['@/components/EditToolForm'] = { default: load('src/components/EditToolForm.tsx', mocks).default };
   const Page = load(`src/app/admin/tools/${edit ? '[id]' : 'new'}/page.tsx`, mocks).default;
   let renderer;
   await act(async () => { renderer = create(React.createElement(Page)); });

@@ -86,7 +86,7 @@ export default function TestOKFBundleModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div role="dialog" aria-modal="true" aria-label="Test knowledge" tabIndex={-1} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
@@ -99,6 +99,7 @@ export default function TestOKFBundleModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close knowledge test"
             disabled={testing}
             className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 disabled:opacity-50"
           >
@@ -109,10 +110,11 @@ export default function TestOKFBundleModal({
         <div className="p-6 space-y-6">
           <form onSubmit={handleTest} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="workflow-knowledge-test-query" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Query
               </label>
               <textarea
+              id="workflow-knowledge-test-query"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 disabled={testing}

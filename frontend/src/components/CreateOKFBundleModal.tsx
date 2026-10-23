@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, ImageIcon, Music2, Loader2, Trash2, Upload, X } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
@@ -38,9 +38,12 @@ interface CreateOKFBundleModalProps {
   teamSetupMode?: boolean;
   teamName?: string | null;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (result: KnowledgeImportResult) => void;
+  jobStorageKey?: string;
   onReturnToTeam?: () => void;
 }
+
+export type KnowledgeImportResult = { job_id: string; bundle_id: number; tool_id: number; display_name: string };
 
 type ImportMode = "files" | "paste" | "urls" | "archive";
 
@@ -78,6 +81,27 @@ interface ImportJob {
   warnings: string[];
 }
 
+function parseImportJob(value: unknown): ImportJob {
+  if (!value || typeof value !== "object" || !("job_id" in value) || typeof value.job_id !== "string" || !value.job_id || !("status" in value) || !["queued", "processing", "succeeded", "failed"].includes(String(value.status))) throw new Error("The server returned an invalid import job.");
+  const status = value.status;
+  if (status !== "queued" && status !== "processing" && status !== "succeeded" && status !== "failed") throw new Error("Invalid import status.");
+  const job: ImportJob = { job_id: value.job_id, status, message: "message" in value && typeof value.message === "string" ? value.message : "", warnings: "warnings" in value && Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : [] };
+  if ("error" in value && typeof value.error === "string") job.error = value.error;
+  if ("bundle" in value && value.bundle && typeof value.bundle === "object") {
+    const bundle = value.bundle;
+    if ("id" in bundle && typeof bundle.id === "number" && "tool_id" in bundle && typeof bundle.tool_id === "number" && "display_name" in bundle && typeof bundle.display_name === "string") {
+      job.bundle = { id: bundle.id, tool_id: bundle.tool_id, display_name: bundle.display_name, concept_count: "concept_count" in bundle && typeof bundle.concept_count === "number" ? bundle.concept_count : 0, link_count: "link_count" in bundle && typeof bundle.link_count === "number" ? bundle.link_count : 0 };
+    }
+  }
+  return job;
+}
+
+function completedImport(job: ImportJob): KnowledgeImportResult {
+  const bundle = job.bundle;
+  if (!bundle || !Number.isSafeInteger(bundle.id) || bundle.id <= 0 || typeof bundle.tool_id !== "number" || !Number.isSafeInteger(bundle.tool_id) || bundle.tool_id <= 0) throw new Error("The import completed without a valid knowledge tool. Reopen Add Knowledge to check again.");
+  return { job_id: job.job_id, bundle_id: bundle.id, tool_id: bundle.tool_id, display_name: bundle.display_name };
+}
+
 const MODE_OPTIONS = [
   { id: "files", label: "Files", Icon: FileText },
   { id: "paste", label: "Paste Text", Icon: Clipboard },
@@ -92,8 +116,16 @@ export default function CreateOKFBundleModal({
   onClose,
   onSuccess,
   onReturnToTeam,
+  jobStorageKey,
 }: CreateOKFBundleModalProps) {
   const headingId = useId();
+  const pollController = useRef<AbortController | null>(null);
+  const pendingImport = useRef<string | null>(null);
+  const startController = useRef<AbortController | null>(null);
+  const importInFlight = useRef(false);
+  const deliveredJobs = useRef(new Set<string>());
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
   useEffect(() => {
     const body = document.body;
@@ -242,7 +274,15 @@ export default function CreateOKFBundleModal({
   };
 
   const handleImport = async () => {
-    if (!displayName.trim() || !hasSource || selectedIssues.length) return;
+    if (pendingImport.current && !importInFlight.current) {
+      setError(null); setImporting(true);
+      await pollImportJob(pendingImport.current);
+      return;
+    }
+    if (importInFlight.current || !displayName.trim() || !hasSource || selectedIssues.length) return;
+    importInFlight.current = true;
+    const controller = new AbortController();
+    startController.current = controller;
 
     try {
       setImporting(true);
@@ -253,6 +293,7 @@ export default function CreateOKFBundleModal({
 
       const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
       const response = await fetch(`${apiBaseUrl}/api/admin/okf-bundles/import-jobs${params}`, {
+        signal: controller.signal,
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -263,40 +304,78 @@ export default function CreateOKFBundleModal({
         throw new Error(data.detail || "Failed to add knowledge");
       }
 
-      const job: ImportJob = await response.json();
+      const job = parseImportJob(await response.json());
+      if (controller.signal.aborted) return;
+      pendingImport.current = job.job_id;
+      if (jobStorageKey) { try { sessionStorage.setItem(jobStorageKey, job.job_id); } catch {} }
       setImportJob(job);
       await pollImportJob(job.job_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add knowledge");
-      setImporting(false);
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : "Failed to add knowledge");
+        setImporting(false);
+      }
+    } finally {
+      importInFlight.current = false;
     }
   };
 
-  const pollImportJob = async (jobId: string) => {
+  const pollImportJob = useCallback(async (jobId: string) => {
+    pollController.current?.abort();
+    const controller = new AbortController();
+    pollController.current = controller;
     const token = localStorage.getItem("adminToken");
-    for (;;) {
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      const response = await fetch(`${apiBaseUrl}/api/admin/okf-bundles/import-jobs/${jobId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to read import job status");
+    try {
+      for (;;) {
+        const response = await fetch(`${apiBaseUrl}/api/admin/okf-bundles/import-jobs/${encodeURIComponent(jobId)}`, {
+          headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (!response.ok) throw new Error("Failed to read import job status. Reopen Add Knowledge to resume.");
+        const job = parseImportJob(await response.json());
+        if (controller.signal.aborted) return;
+        if (job.job_id !== jobId) throw new Error("The server returned a different import job.");
+        if (job.status === "succeeded") {
+          const result = completedImport(job);
+          setImportJob(job);
+          setImporting(false);
+          pendingImport.current = null;
+          if (jobStorageKey) { try { sessionStorage.removeItem(jobStorageKey); } catch {} }
+          if (!deliveredJobs.current.has(jobId)) {
+            deliveredJobs.current.add(jobId);
+            onSuccessRef.current(result);
+          }
+          return;
+        }
+        setImportJob(job);
+        if (job.status === "failed") {
+          setImporting(false);
+          pendingImport.current = null;
+          if (jobStorageKey) { try { sessionStorage.removeItem(jobStorageKey); } catch {} }
+          setError(job.error || "Failed to add knowledge");
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          const finish = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", finish); resolve(); };
+          const timer = setTimeout(finish, 900);
+          controller.signal.addEventListener("abort", finish, { once: true });
+        });
+        if (controller.signal.aborted) return;
       }
-      const job: ImportJob = await response.json();
-      setImportJob(job);
-      if (job.status === "succeeded") {
+    } catch (error) {
+      if (!controller.signal.aborted) {
         setImporting(false);
-        onSuccess();
-        return;
-      }
-      if (job.status === "failed") {
-        setImporting(false);
-        setError(job.error || "Failed to add knowledge");
-        return;
+        setError(error instanceof Error ? error.message : "Failed to read import job status");
       }
     }
-  };
+  }, [apiBaseUrl, jobStorageKey]);
+
+  useEffect(() => {
+    let pendingJobId: string | null = null;
+    try { pendingJobId = jobStorageKey ? sessionStorage.getItem(jobStorageKey) : null; } catch {}
+    if (pendingJobId) { pendingImport.current = pendingJobId; setImporting(true); void pollImportJob(pendingJobId); }
+    return () => { pollController.current?.abort(); startController.current?.abort(); };
+  }, [jobStorageKey, pollImportJob]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -312,7 +391,7 @@ export default function CreateOKFBundleModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div role="dialog" aria-modal={true} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
+      <div role="dialog" aria-modal={true} aria-busy={importing || previewing} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
         <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div>
             <h2 id={headingId} className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -560,6 +639,7 @@ export default function CreateOKFBundleModal({
             {error && (
               <div className="rounded-md bg-red-50 p-4 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
                 {error}
+                {pendingImport.current && !importing && <button type="button" onClick={() => { void handleImport(); }} className="ml-3 font-medium underline">Retry status</button>}
               </div>
             )}
           </div>

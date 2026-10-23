@@ -26,11 +26,13 @@ interface FileStoreFile {
 interface FileStoreDetailModalProps {
   store: FileStore;
   onClose: () => void;
+  canEdit?: boolean;
 }
 
 export default function FileStoreDetailModal({
   store,
   onClose,
+  canEdit = true,
 }: FileStoreDetailModalProps) {
   const apiBaseUrl = getApiBaseUrl();
   const [files, setFiles] = useState<FileStoreFile[]>([]);
@@ -68,6 +70,7 @@ export default function FileStoreDetailModal({
   }, [fetchFiles]);
 
   const handleUploadFiles = async () => {
+    if (!canEdit) return;
     if (newFiles.length === 0) {
       alert("Please select at least one file to upload");
       return;
@@ -125,6 +128,7 @@ export default function FileStoreDetailModal({
   };
 
   const handleDeleteFile = async (fileId: number, filename: string) => {
+    if (!canEdit) return;
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
       return;
     }
@@ -162,7 +166,7 @@ export default function FileStoreDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div role="dialog" aria-modal="true" aria-busy={uploading || deleting !== null} aria-label="Document library" tabIndex={-1} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
@@ -246,7 +250,7 @@ export default function FileStoreDetailModal({
                     </div>
                     <button
                       onClick={() => handleDeleteFile(file.id, file.original_filename)}
-                      disabled={deleting === file.id || uploading}
+                      disabled={!canEdit || deleting === file.id || uploading}
                       className="ml-4 p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-md disabled:opacity-50 transition-colors"
                       title="Delete file"
                     >
@@ -271,7 +275,7 @@ export default function FileStoreDetailModal({
             <MultiFileUploader
               files={newFiles}
               onFilesChange={setNewFiles}
-              disabled={uploading}
+              disabled={!canEdit || uploading}
             />
 
             {uploading && (
@@ -300,6 +304,7 @@ export default function FileStoreDetailModal({
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={handleUploadFiles}
+                  disabled={!canEdit}
                   className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
                 >
                   <Upload className="w-4 h-4" />

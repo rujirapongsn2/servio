@@ -89,6 +89,12 @@ function agentSetup(t, { isNew = false, autoSelect = true } = {}) {
     'next/navigation': { useParams: () => ({ id: isNew ? 'new' : '7' }), useSearchParams: () => navigation.search, useRouter: () => navigation.router },
     '@/lib/team-context': { useTeam: () => ({ selectedTeamId: 1, setSelectedTeamId: () => {} }) },
   };
+  const modelExports = {};
+  const modelSource = ts.transpileModule(fs.readFileSync(path.join(frontend, 'src/lib/provider-models.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  vm.runInThisContext(`(function(exports) {${modelSource}\n})`)(modelExports);
+  mocks['@/lib/provider-models'] = modelExports;
   const Agent = load('src/app/admin/agents/[id]/page.tsx', mocks);
   return { ...env, Agent, navigation, routes };
 }
@@ -330,4 +336,22 @@ test('registered models and custom entry are available while discovery is still 
   await submitAgent(renderer);
   assert.equal(saves.at(-1).model, 'manual-during-discovery');
   await act(async () => discovery.resolve(response([])));
+});
+
+
+test('Workflow agent setup keeps its destination through provider and capability links', async (t) => {
+  const env = agentSetup(t, { autoSelect: false });
+  env.navigation.search.set('return_to', 'workflow');
+  env.navigation.search.set('return_team_id', '1');
+  global.fetch = agentFetch();
+  const renderer = await env.mount(env.Agent);
+  const capabilityHref = renderer.root.findAllByType('a').find((node) => text(node).includes('Manage Capabilities')).props.href;
+  assert.equal(new URL(capabilityHref, 'http://localhost').searchParams.get('return_workspace'), 'workflow');
+  await selectValue(providerSelect(renderer), '__new_provider__');
+  assert.equal(new URL(env.routes.at(-1), 'http://localhost').searchParams.get('return_workspace'), 'workflow');
+  env.navigation.search.delete('return_to');
+  env.navigation.search.set('return_workspace', 'workflow');
+  await act(async () => renderer.update(React.createElement(env.Agent)));
+  await submitAgent(renderer);
+  assert.equal(env.routes.at(-1), '/admin/teams/1/workflow');
 });

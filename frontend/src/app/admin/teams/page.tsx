@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import { useTeam } from "@/lib/team-context";
 import { getApiBaseUrl } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -45,11 +44,6 @@ interface ToolOption {
   type: string;
 }
 
-const AgentFlowGraph = dynamic(
-  () => import("@/components/AgentFlowGraph"),
-  { ssr: false },
-);
-
 export default function TeamsPage() {
   const router = useRouter();
   const { teams, loading: teamsLoading, refreshTeams, setSelectedTeamId } = useTeam();
@@ -61,10 +55,6 @@ export default function TeamsPage() {
   const [membersSaveState, setMembersSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
-  const [workflowTeam, setWorkflowTeam] = useState<{ id: number; name: string } | null>(null);
-  const [workflowAgents, setWorkflowAgents] = useState<AgentOption[]>([]);
-  const [workflowLoading, setWorkflowLoading] = useState(false);
-  const [workflowError, setWorkflowError] = useState("");
   const [pageMessage, setPageMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const apiBase = getApiBaseUrl();
@@ -170,29 +160,6 @@ export default function TeamsPage() {
       return_team_name: editingTeam.name,
     });
     router.push(`/admin/agents/${agentId}/test?${params}`);
-  };
-
-  const openWorkflowModal = async (teamId: number, teamName: string) => {
-    setWorkflowTeam({ id: teamId, name: teamName });
-    setWorkflowLoading(true);
-    setWorkflowError("");
-    try {
-      const res = await fetch(`${apiBase}/api/admin/agents?team_agent_id=${teamId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.detail || "Failed to load team workflow");
-      }
-      const data: AgentOption[] = await res.json();
-      setWorkflowAgents(data);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load team workflow";
-      setWorkflowAgents([]);
-      setWorkflowError(message);
-    } finally {
-      setWorkflowLoading(false);
-    }
   };
 
   const toggleMember = (agentId: number) => {
@@ -343,7 +310,7 @@ export default function TeamsPage() {
               <Button variant="outline" size="sm" onClick={() => openEdit(team.id)}>
                 Manage
               </Button>
-              <Button variant="outline" size="sm" onClick={() => openWorkflowModal(team.id, team.name)}>
+              <Button variant="outline" size="sm" onClick={() => router.push(`/admin/teams/${team.id}/workflow`)}>
                 Workflow
               </Button>
               <Button
@@ -434,7 +401,7 @@ export default function TeamsPage() {
                       {editingTeam.name} — Members
                     </h2>
                     <p className="mt-1 text-sm font-medium text-[#778DA9]">
-                      Select members and choose the starting agent.
+                      Select members and choose the fallback agent.
                     </p>
                   </div>
                   <Button
@@ -467,7 +434,7 @@ export default function TeamsPage() {
                           Member
                         </th>
                         <th className="w-28 px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
-                          Starting
+                          Fallback
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
                           Agent
@@ -582,44 +549,7 @@ export default function TeamsPage() {
         </div>
       )}
 
-      {workflowTeam && (
-        <div className="fixed inset-y-0 right-0 z-50 flex items-center justify-center bg-black/[0.24] px-4 [left:var(--admin-sidebar-width)]">
-          <div className="max-h-[88vh] w-full max-w-[1200px] overflow-y-auto rounded-[20px] border border-[#E2E8F0] bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
-            <WorkflowNavigator
-              backLabel="Close"
-              onBack={() => setWorkflowTeam(null)}
-              steps={[
-                { label: "Team Agents", href: "/admin/teams" },
-                { label: workflowTeam.name, active: true },
-              ]}
-            />
-            <div className="mt-6 space-y-3">
-              <h2 className="text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-[#0D1B2A]">
-                {workflowTeam.name} — Workflow
-              </h2>
-              <p className="text-sm font-medium text-[#778DA9]">
-                Digital employee map showing routing, handoffs, and tool responsibilities in this Team Agent.
-              </p>
-              {workflowLoading ? (
-                <div className="rounded-[14px] border border-dashed border-[#CBD5E1] py-12 text-center text-sm font-medium text-[#778DA9]">
-                  Loading workflow...
-                </div>
-              ) : workflowError ? (
-                <div className="rounded-[14px] border border-red-200 bg-red-50 py-12 text-center text-sm font-medium text-red-700">
-                  {workflowError}
-                </div>
-              ) : (
-                <AgentFlowGraph agents={workflowAgents} />
-              )}
-            </div>
-            <div className="mt-4 flex justify-end">
-              <Button variant="outline" onClick={() => setWorkflowTeam(null)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

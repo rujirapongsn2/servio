@@ -1,5 +1,6 @@
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, Literal, Annotated
+from uuid import UUID
+from pydantic import BaseModel, Field, field_validator
 
 
 # Authentication models
@@ -74,6 +75,68 @@ class UpdateAgentRequest(BaseModel):
     is_starting_agent: bool = False
 
 
+class UpdateWorkflowAgentRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    instructions: str
+    model: str = Field(min_length=1, max_length=100)
+    llm_provider_id: Optional[int] = None
+    tool_ids: List[int] = Field(default_factory=list)
+    handoff_agent_ids: List[int] = Field(default_factory=list)
+    is_fallback: bool
+    expected_updated_at: Optional[str]
+    expected_fallback_agent_id: Optional[int]
+
+
+WorkflowAgentId = Annotated[int, Field(strict=True, gt=0)]
+
+
+class WorkflowMembershipExpectation(BaseModel):
+    expected_member_agent_ids: List[WorkflowAgentId]
+    expected_fallback_agent_id: Optional[WorkflowAgentId]
+
+    @field_validator("expected_member_agent_ids", check_fields=False)
+    @classmethod
+    def unique_ids(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError("Agent IDs must be unique")
+        return value
+
+
+class UpdateWorkflowMembersRequest(WorkflowMembershipExpectation):
+    member_agent_ids: List[WorkflowAgentId]
+    fallback_agent_id: Optional[WorkflowAgentId]
+
+    @field_validator("member_agent_ids")
+    @classmethod
+    def unique_members(cls, value):
+        return cls.unique_ids(value)
+
+
+class DeleteWorkflowAgentRequest(WorkflowMembershipExpectation):
+    expected_updated_at: Optional[str]
+    replacement_fallback_agent_id: Optional[WorkflowAgentId]
+
+
+class CreateWorkflowAgentRequest(BaseModel):
+    request_id: UUID
+    name: str = Field(min_length=1, max_length=255)
+    instructions: str
+    model: str = Field(min_length=1, max_length=100)
+    llm_provider_id: Optional[int] = None
+    tool_ids: List[int] = Field(default_factory=list)
+    handoff_agent_ids: List[int] = Field(default_factory=list)
+    is_fallback: bool = False
+    expected_fallback_agent_id: Optional[int] = None
+
+
+class CreateWorkflowToolRequest(BaseModel):
+    request_id: UUID
+    name: str = Field(min_length=1, max_length=255)
+    config: Dict[str, Any]
+    icon: str = "Wrench"
+    visibility: Literal["team"] = "team"
+
+
 class TestAgentRequest(BaseModel):
     message: str
     class ForceTool(BaseModel):
@@ -134,6 +197,14 @@ class OptimizePromptResponse(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+
+
+class CreatedToolResponse(MessageResponse):
+    tool_id: int
+
+
+class CreatedProviderResponse(MessageResponse):
+    provider_id: int = Field(gt=0)
 
 
 # System info

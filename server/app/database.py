@@ -403,7 +403,9 @@ def get_all_agents(
             selectinload(Agent.llm_provider)  # Added
         )
         if team_agent_id is not None:
-            member_ids = _team_member_agent_ids(db, team_agent_id)
+            members = db.query(TeamAgentMember).filter_by(team_agent_id=team_agent_id).all()
+            member_ids = [member.agent_id for member in members]
+            starting_ids = {member.agent_id for member in members if member.role == "starting"}
             if not member_ids:
                 return []
             query = query.filter(Agent.id.in_(member_ids))
@@ -428,7 +430,7 @@ def get_all_agents(
                 "name": agent.name,
                 "instructions": agent.instructions,
                 "model": agent.model,
-                "is_starting_agent": agent.is_starting_agent,
+                "is_starting_agent": agent.id in starting_ids if team_agent_id is not None else agent.is_starting_agent,
                 "llm_provider": {  # Added
                     "id": agent.llm_provider.id,
                     "name": agent.llm_provider.name,
@@ -452,6 +454,7 @@ def get_all_agents(
                         "name": h.name
                     }
                     for h in agent.handoff_to
+                    if team_agent_id is None or h.id in member_ids
                 ]
             }
             for agent in agents
@@ -521,7 +524,7 @@ def create_agent(
             effective_tool_ids.append(datetime_tool.id)
 
         if team_agent_id is not None:
-            if not db.query(TeamAgent).filter_by(id=team_agent_id).first():
+            if not db.query(TeamAgent).filter_by(id=team_agent_id).with_for_update().first():
                 raise ValueError("Team Agent not found")
             invalid_tools = [
                 tool_id for tool_id in effective_tool_ids
@@ -535,7 +538,7 @@ def create_agent(
                 raise ValueError("Handoff agents must be members of the same Team Agent")
 
         # If this is a starting agent, unset other starting agents
-        if is_starting_agent:
+        if is_starting_agent and team_agent_id is None:
             db.query(Agent).update({"is_starting_agent": False})
 
         # Create agent
@@ -543,7 +546,7 @@ def create_agent(
             name=name,
             instructions=instructions,
             model=model,
-            is_starting_agent=is_starting_agent,
+            is_starting_agent=is_starting_agent if team_agent_id is None else False,
             llm_provider_id=llm_provider_id,  # Added
             updated_at=datetime.utcnow()
         )
@@ -561,7 +564,9 @@ def create_agent(
             db.add(handoff)
 
         if team_agent_id is not None:
-            if is_starting_agent:
+            has_fallback = db.query(TeamAgentMember).filter_by(team_agent_id=team_agent_id, role="starting").first()
+            team_starting = is_starting_agent or not has_fallback
+            if team_starting:
                 db.query(TeamAgentMember).filter_by(
                     team_agent_id=team_agent_id,
                     role="starting",
@@ -569,7 +574,7 @@ def create_agent(
             db.add(TeamAgentMember(
                 team_agent_id=team_agent_id,
                 agent_id=agent.id,
-                role="starting" if is_starting_agent else "member",
+                role="starting" if team_starting else "member",
                 sort_order=db.query(TeamAgentMember).filter_by(team_agent_id=team_agent_id).count(),
             ))
 
@@ -589,9 +594,13 @@ def update_agent(
 ) -> bool:
     """Update an existing agent"""
     with get_db() as db:
-        agent = db.query(Agent).filter(Agent.id == agent_id).first()
+        if team_agent_id is not None:
+            db.query(TeamAgent).filter_by(id=team_agent_id).with_for_update().first()
+        agent = db.query(Agent).filter(Agent.id == agent_id).with_for_update().first()
         if not agent:
             return False
+        if db.query(TeamAgentMember).filter_by(agent_id=agent_id).count() > 1:
+            raise ValueError("Shared agents are read-only. Remove sharing before editing this agent.")
         datetime_tool = db.query(Tool).filter_by(name="DateTimeTool").first()
         effective_tool_ids = list(dict.fromkeys(tool_ids))
         if datetime_tool and datetime_tool.id not in effective_tool_ids:
@@ -615,7 +624,7 @@ def update_agent(
                 raise ValueError("Handoff agents must be members of the same Team Agent")
 
         # If setting as starting agent, unset others
-        if is_starting_agent and not agent.is_starting_agent:
+        if team_agent_id is None and is_starting_agent and not agent.is_starting_agent:
             db.query(Agent).update({"is_starting_agent": False})
         if team_agent_id is not None and is_starting_agent:
             db.query(TeamAgentMember).filter_by(
@@ -627,13 +636,17 @@ def update_agent(
         agent.name = name
         agent.instructions = instructions
         agent.model = model
-        agent.is_starting_agent = is_starting_agent
+        if team_agent_id is None:
+            agent.is_starting_agent = is_starting_agent
         agent.llm_provider_id = llm_provider_id  # Added
         agent.updated_at = datetime.utcnow()
 
         # Remove old tools and handoffs
         db.query(AgentTool).filter_by(agent_id=agent_id).delete()
-        db.query(AgentHandoff).filter_by(from_agent_id=agent_id).delete()
+        handoffs = db.query(AgentHandoff).filter_by(from_agent_id=agent_id)
+        if team_agent_id is not None:
+            handoffs = handoffs.filter(AgentHandoff.to_agent_id.in_(member_ids))
+        handoffs.delete(synchronize_session=False)
 
         # Add new tools
         for tool_id in effective_tool_ids:
@@ -651,9 +664,17 @@ def update_agent(
 def delete_agent(agent_id: int) -> bool:
     """Delete an agent"""
     with get_db() as db:
-        agent = db.query(Agent).filter_by(id=agent_id).first()
+        agent = db.query(Agent).filter_by(id=agent_id).with_for_update().first()
         if not agent:
             return False
+        if db.query(TeamAgentMember).filter_by(agent_id=agent_id).count() > 1:
+            raise ValueError("Shared agents cannot be deleted. Remove them from this team instead.")
+        team_ids = [row.team_agent_id for row in db.query(TeamAgentMember).filter_by(agent_id=agent_id)]
+        db.query(TeamAgentMember).filter_by(agent_id=agent_id).delete(synchronize_session=False)
+        for team_id in team_ids:
+            remaining = db.query(TeamAgentMember).filter(TeamAgentMember.team_agent_id == team_id, TeamAgentMember.agent_id != agent_id).order_by(TeamAgentMember.sort_order).all()
+            if remaining and not any(member.role == "starting" for member in remaining):
+                remaining[0].role = "starting"
         db.delete(agent)
         return True
 
@@ -665,7 +686,7 @@ def assign_tool_to_agent(
 ) -> bool:
     """Assign a tool to an agent if not already assigned."""
     with get_db() as db:
-        agent = db.query(Agent).filter_by(id=agent_id).first()
+        agent = db.query(Agent).filter_by(id=agent_id).with_for_update().first()
         tool = db.query(Tool).filter_by(id=tool_id).first()
         if not agent or not tool:
             return False
@@ -680,11 +701,14 @@ def assign_tool_to_agent(
             if not _tool_available_to_team(db, tool_id, team_agent_id):
                 return False
 
+        if db.query(TeamAgentMember).filter_by(agent_id=agent_id).count() > 1:
+            return False
         existing = db.query(AgentTool).filter_by(agent_id=agent_id, tool_id=tool_id).first()
         if existing:
             return True
 
         db.add(AgentTool(agent_id=agent_id, tool_id=tool_id))
+        agent.updated_at = datetime.utcnow()
         return True
 
 
@@ -2112,7 +2136,7 @@ def update_team_agent(
 def delete_team_agent(team_id: int) -> bool:
     """Delete a team agent"""
     with get_db() as db:
-        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        team = db.query(TeamAgent).filter_by(id=team_id).with_for_update().first()
         if not team:
             return False
         default_team = db.query(TeamAgent).filter_by(slug="default").first()
@@ -2122,17 +2146,44 @@ def delete_team_agent(team_id: int) -> bool:
             row.agent_id
             for row in db.query(TeamAgentMember.agent_id).filter_by(team_agent_id=team_id).all()
         ]
+        other_team_agent_ids = select(TeamAgentMember.agent_id).where(TeamAgentMember.team_agent_id != team_id)
+        exclusive_agent_ids = [row.id for row in db.query(Agent.id).filter(Agent.id.in_(member_agent_ids), ~Agent.id.in_(other_team_agent_ids))]
         owned_tools = db.query(Tool).filter_by(owner_team_agent_id=team_id).all()
         owned_okf_bundles = db.query(OKFBundle).filter_by(owner_team_agent_id=team_id).all()
         okf_paths_to_delete: List[str] = []
 
         for tool in owned_tools:
             external_use_query = db.query(AgentTool).filter(AgentTool.tool_id == tool.id)
-            if member_agent_ids:
-                external_use_query = external_use_query.filter(~AgentTool.agent_id.in_(member_agent_ids))
+            if exclusive_agent_ids:
+                external_use_query = external_use_query.filter(~AgentTool.agent_id.in_(exclusive_agent_ids))
             external_use_exists = external_use_query.first() is not None
+            shared_team_ids = {
+                row.team_agent_id for row in db.query(TeamToolAssignment.team_agent_id).filter(
+                    TeamToolAssignment.tool_id == tool.id,
+                    TeamToolAssignment.team_agent_id != team_id,
+                    TeamToolAssignment.relationship == "shared_in",
+                ).all()
+            }
+            consuming_team_ids = {
+                row.team_agent_id for row in db.query(TeamAgentMember.team_agent_id).join(
+                    AgentTool, AgentTool.agent_id == TeamAgentMember.agent_id,
+                ).filter(
+                    AgentTool.tool_id == tool.id,
+                    TeamAgentMember.team_agent_id != team_id,
+                ).distinct().all()
+            }
 
-            if tool.visibility == "global" and external_use_exists:
+            if external_use_exists or shared_team_ids:
+                for surviving_team_id in consuming_team_ids - shared_team_ids:
+                    assignment = db.get(TeamToolAssignment, (surviving_team_id, tool.id))
+                    if assignment:
+                        assignment.relationship = "shared_in"
+                    else:
+                        db.add(TeamToolAssignment(
+                            team_agent_id=surviving_team_id,
+                            tool_id=tool.id,
+                            relationship="shared_in",
+                        ))
                 tool.owner_team_agent_id = None
                 tool.created_by_admin_id = None
                 tool.updated_at = datetime.utcnow()
@@ -2151,13 +2202,18 @@ def delete_team_agent(team_id: int) -> bool:
             external_use_exists = False
             for tool in bundle_tools:
                 external_use_query = db.query(AgentTool).filter(AgentTool.tool_id == tool.id)
-                if member_agent_ids:
-                    external_use_query = external_use_query.filter(~AgentTool.agent_id.in_(member_agent_ids))
-                if external_use_query.first() is not None or tool.visibility == "global":
+                if exclusive_agent_ids:
+                    external_use_query = external_use_query.filter(~AgentTool.agent_id.in_(exclusive_agent_ids))
+                shared_with_surviving_team = db.query(TeamToolAssignment).filter(
+                    TeamToolAssignment.tool_id == tool.id,
+                    TeamToolAssignment.team_agent_id != team_id,
+                    TeamToolAssignment.relationship == "shared_in",
+                ).first() is not None
+                if external_use_query.first() is not None or shared_with_surviving_team or tool.visibility == "global":
                     external_use_exists = True
                     break
 
-            if bundle.visibility == "global" and external_use_exists:
+            if external_use_exists:
                 bundle.owner_team_agent_id = None
                 bundle.updated_at = datetime.utcnow()
             else:
@@ -2165,8 +2221,8 @@ def delete_team_agent(team_id: int) -> bool:
                     okf_paths_to_delete.append(bundle.storage_path)
                 db.delete(bundle)
 
-        if member_agent_ids:
-            db.query(Agent).filter(Agent.id.in_(member_agent_ids)).delete(synchronize_session=False)
+        if exclusive_agent_ids:
+            db.query(Agent).filter(Agent.id.in_(exclusive_agent_ids)).delete(synchronize_session=False)
 
         # Reassign non-cascading references to avoid FK violations while preserving data history.
         db.query(ApiKey).filter_by(team_agent_id=team_id).update(
@@ -2226,18 +2282,18 @@ def set_team_agent_members(
 ) -> bool:
     """Set the members of a team agent, replacing existing members.
 
-    Ensures the team has exactly one starting agent when it has members and
-    removes handoff edges from team members to agents outside the team.
+    Ensures exactly one team fallback without modifying global handoff edges.
     """
     with get_db() as db:
-        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        team = db.query(TeamAgent).filter_by(id=team_id).with_for_update().first()
         if not team:
             return False
 
         valid_agent_ids = [
-            row.id for row in db.query(Agent.id).filter(Agent.id.in_(member_agent_ids)).all()
+            row.id for row in db.query(Agent.id).filter(Agent.id.in_(member_agent_ids)).with_for_update().all()
         ] if member_agent_ids else []
-        member_agent_ids = list(dict.fromkeys(valid_agent_ids))
+        valid_ids = set(valid_agent_ids)
+        member_agent_ids = list(dict.fromkeys(agent_id for agent_id in member_agent_ids if agent_id in valid_ids))
         if member_agent_ids and starting_agent_id not in member_agent_ids:
             starting_agent_id = member_agent_ids[0]
         if not member_agent_ids:
@@ -2257,19 +2313,13 @@ def set_team_agent_members(
             )
             db.add(member)
 
-        if member_agent_ids:
-            db.query(AgentHandoff).filter(
-                AgentHandoff.from_agent_id.in_(member_agent_ids),
-                ~AgentHandoff.to_agent_id.in_(member_agent_ids),
-            ).delete(synchronize_session=False)
-
         return True
 
 
 def set_starting_agent(team_id: int, agent_id: int) -> bool:
     """Set the starting agent for a team"""
     with get_db() as db:
-        team = db.query(TeamAgent).filter_by(id=team_id).first()
+        team = db.query(TeamAgent).filter_by(id=team_id).with_for_update().first()
         if not team:
             return False
 
