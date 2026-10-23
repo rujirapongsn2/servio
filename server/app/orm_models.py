@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     String, Integer, Boolean, Text, Float, DateTime, ForeignKey,
-    JSON, Index, text
+    JSON, Index, UniqueConstraint, CheckConstraint, text
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -63,6 +63,42 @@ class LLMProvider(Base):
 
     # Relationships
     agents: Mapped[List["Agent"]] = relationship(back_populates="llm_provider")
+    registered_models: Mapped[List["ProviderModel"]] = relationship(
+        back_populates="provider", cascade="all, delete-orphan"
+    )
+
+
+class ProviderModel(Base):
+    """Manually registered model capabilities, independent of chat defaults."""
+    __tablename__ = "provider_models"
+    __table_args__ = (UniqueConstraint("provider_id", "model_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("llm_providers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    model_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    provider: Mapped["LLMProvider"] = relationship(back_populates="registered_models")
+    task_defaults: Mapped[List["ImageModelDefault"]] = relationship(
+        cascade="all, delete-orphan", back_populates="model"
+    )
+
+
+class ImageModelDefault(Base):
+    """One explicit model selection for each image processing purpose."""
+    __tablename__ = "image_model_defaults"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('image_ocr', 'image_qa')"),
+    )
+
+    purpose: Mapped[str] = mapped_column(String(32), primary_key=True)
+    model_catalog_id: Mapped[int] = mapped_column(
+        ForeignKey("provider_models.id", ondelete="CASCADE"), nullable=False
+    )
+    model: Mapped["ProviderModel"] = relationship(back_populates="task_defaults")
 
 
 class Agent(Base):

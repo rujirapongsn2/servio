@@ -58,6 +58,8 @@ app.include_router(admin_router)
 app.include_router(public_router)
 from app.local_image_rag import router as knowledge_image_router
 app.include_router(knowledge_image_router)
+from app.provider_model_routes import router as provider_model_router
+app.include_router(provider_model_router)
 
 # Database initialization
 from app.database import init_database

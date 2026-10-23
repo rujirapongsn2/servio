@@ -366,9 +366,12 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None) -> Extr
             validated_image(data)
         except ValueError as exc:
             raise OKFValidationError(f"{path.name}: {exc}") from exc
+        from app.knowledge_vision import extract_text
+        ocr_text, ocr_warnings = extract_text(data)
+        body = f"Image source: {rel}" + ("\n\nOCR text:\n" + ocr_text if ocr_text else "")
         return ExtractedKnowledge(title=title, source_file=rel, document_type=suffix.lstrip("."),
-            text=f"Image source: {rel}",
-            content_hash=hashlib.sha256(data).hexdigest(), warnings=[], image_bytes=data)
+            text=body,
+            content_hash=hashlib.sha256(data).hexdigest(), warnings=ocr_warnings, image_bytes=data)
     if suffix in {".txt", ".csv", ".tsv"}:
         text = _decode_text_file(path).strip()
     elif suffix in {".md", ".markdown"}:
@@ -917,6 +920,20 @@ class OKFService:
                 frontmatter.update(source_url=document.source_url, resource=document.source_url, source_file=document.source_url,
                                    final_url=document.final_url, fetched_at=document.fetched_at, document_type=document.document_type)
                 replacements[concept.file_path] = self._source_markdown(frontmatter, document.text)
+        from app.knowledge_vision import enabled as vision_enabled, extract_text
+        if vision_enabled("image_ocr"):
+            from app.local_image_rag import _asset
+            for concept in concepts:
+                if concept.frontmatter.get("document_type") not in {"jpg", "jpeg", "png"}:
+                    continue
+                _, data, _ = _asset(source, concept.frontmatter)
+                ocr_text, warnings = extract_text(data)
+                if any("failed" in warning or "not configured" in warning for warning in warnings):
+                    raise OKFValidationError("Image OCR unavailable; previous source retained")
+                body = "Image source: " + str(concept.frontmatter.get("source_file", concept.file_path))
+                if ocr_text:
+                    body += "\n\nOCR text:\n" + ocr_text
+                replacements[concept.file_path] = self._source_markdown(dict(concept.frontmatter), body)
         return self._apply_source_updates(bundle_id, team_agent_id, snapshot, source, replacements)
 
     @staticmethod
@@ -1175,12 +1192,27 @@ class OKFService:
         from app.local_image_rag import enabled, query_bundle as image_query
         if enabled():
             try:
-                images = image_query(bundle_id, query, team_agent_id, limit, image_links=image_links)
+                images = image_query(bundle_id, query, team_agent_id, limit, image_links=False)
                 if images:
+                    from app.knowledge_vision import answer_images
+                    analysis_unavailable = False
+                    try:
+                        vision_answer = answer_images(query, images, team_agent_id)
+                    except Exception:
+                        vision_answer = None
+                        analysis_unavailable = True
+                    if image_links:
+                        from app.knowledge_image_presentations import hydrate_knowledge_images
+                        presentation = hydrate_knowledge_images({"type": "knowledge_image_refs", "version": 1, "response": "Image sources", "images": images}, team_agent_id, bundle_id)
+                        images = [image.model_dump() for image in presentation.images] if presentation else []
                     result.update(type="knowledge_images" if image_links else "knowledge_image_refs", version=1, images=images)
                     if not result.get("concepts"):
                         result["response"] = "Related image sources: " + ", ".join(image["title"] for image in images)
-                    result["response"] += "\n\nImage search returned visually related sources. The client already displays image cards with an original-image button. Do not generate image tags, links or asset URLs. Answer briefly from textual evidence only. Do not infer visual details from filenames or claim to have inspected the images. Ask the user to use the original-image button when exact visual details are needed."
+                    if analysis_unavailable:
+                        result["response"] += "\nImage analysis is unavailable; use OCR evidence only."
+                    if vision_answer:
+                        result["response"] += "\n\n" + vision_answer
+                    result["response"] += "\n\nThe client displays original-image cards. Do not generate image tags or URLs. Answer from OCR excerpts and Vision evidence when available; do not infer visual details from filenames or similarity alone. Cite source labels and say when evidence is missing."
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Image retrieval unavailable; preserving text results")

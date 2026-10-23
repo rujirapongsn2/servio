@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { ArrowLeft, Copy, Plus, Trash2, Edit2, Link as LinkIcon, Check, X, Loader2, Sparkles } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
+import { ProviderModels } from "@/components/ProviderModels";
 
 interface LLMProvider {
     id: number;
@@ -44,6 +45,7 @@ function LLMProvidersContent() {
     const draftId = searchParams.get("draft_id");
     const shouldCreateProvider = searchParams.get("create") === "1";
     const [providers, setProviders] = useState<LLMProvider[]>([]);
+    const [modelsProvider, setModelsProvider] = useState<LLMProvider | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
@@ -248,7 +250,7 @@ function LLMProvidersContent() {
                 </div>
             )}
 
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap justify-between items-center gap-3">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">LLM Providers</h1>
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
@@ -268,7 +270,7 @@ function LLMProvidersContent() {
             )}
 
             {/* List */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
@@ -298,10 +300,11 @@ function LLMProvidersContent() {
                                         {provider.is_default && <Check className="w-4 h-4 text-green-500 mx-auto" />}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button className="text-blue-600 hover:text-blue-900 dark:hover:text-blue-400 mr-4" onClick={() => handleEdit(provider)}>
+                                        <button type="button" className="text-blue-600 hover:text-blue-900 dark:hover:text-blue-400 mr-4" onClick={() => setModelsProvider(provider)} aria-label={`Manage models for ${provider.name}`}>Models</button>
+                                        <button type="button" aria-label={`Edit provider ${provider.name}`} title="Edit provider" className="text-blue-600 hover:text-blue-900 dark:hover:text-blue-400 mr-4" onClick={() => handleEdit(provider)}>
                                             <Edit2 className="w-4 h-4" />
                                         </button>
-                                        <button className="text-red-600 hover:text-red-900 dark:hover:text-red-400" onClick={() => handleDelete(provider.id)}>
+                                        <button type="button" aria-label={`Delete provider ${provider.name}`} title="Delete provider" className="text-red-600 hover:text-red-900 dark:hover:text-red-400" onClick={() => handleDelete(provider.id)}>
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </td>
@@ -312,15 +315,17 @@ function LLMProvidersContent() {
                 </table>
             </div>
 
+            {modelsProvider && <ProviderModels provider={modelsProvider} providers={providers} onClose={() => setModelsProvider(null)} />}
+
             {/* Edit Modal */}
             {isEditing && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 animate-in fade-in zoom-in-95 duration-200">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                                 {currentProvider.id ? "Edit Provider" : "New Provider"}
                             </h2>
-                            <button onClick={() => setIsEditing(false)} className="text-gray-400 hover:text-gray-500">
+                            <button type="button" aria-label="Close provider settings" onClick={() => setIsEditing(false)} className="text-gray-400 hover:text-gray-500">
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
@@ -375,7 +380,7 @@ function LLMProvidersContent() {
                                 </div>
                             )}
 
-                            <div className="flex justify-between pt-4">
+                            <div className="flex flex-wrap justify-between gap-3 pt-4">
                                 <Button variant="outline" onClick={testConnection} disabled={isTesting || !currentProvider.id}>
                                     {isTesting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LinkIcon className="w-4 h-4 mr-2" />}
                                     Test Connection
