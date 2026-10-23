@@ -55,6 +55,7 @@ function AgentNode({ data }: NodeProps<AgentNodeData>) {
 }
 
 const nodeTypes = { agent: AgentNode };
+const fitViewOptions = { padding: 0.2, maxZoom: 0.87 };
 
 export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selectedAgentId, onSelect, canEdit = false, disabled = false, pendingAgentIds = [], onHandoffChange }: {
   agents: WorkflowAgent[];
@@ -74,7 +75,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
   const memberKey = agents.map((agent) => agent.id).join(",");
   useEffect(() => {
     if (!instance) return;
-    const frame = requestAnimationFrame(() => { void instance.fitView({ padding: 0.2 }); });
+    const frame = requestAnimationFrame(() => { void instance.fitView(fitViewOptions); });
     return () => cancelAnimationFrame(frame);
   }, [instance, memberKey]);
   useEffect(() => {
@@ -82,7 +83,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
     let frame = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => { void instance.fitView({ padding: 0.2 }); });
+      frame = requestAnimationFrame(() => { void instance.fitView(fitViewOptions); });
     });
     observer.observe(container.current);
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
@@ -145,9 +146,9 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
         }}
         deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
         onNodeClick={(_, node) => { if (node.id !== "coordinator") onSelect(Number(node.id)); }}
-        nodesFocusable={false} edgesFocusable={editable} elementsSelectable={editable} fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.2} maxZoom={1.5}>
+        nodesFocusable={false} edgesFocusable={editable} elementsSelectable={editable} fitView fitViewOptions={fitViewOptions} minZoom={0.2} maxZoom={1.5}>
         <Background gap={24} color="#dbe3ec" />
-        <Controls showInteractive={false} position="bottom-right" />
+        <Controls showInteractive={false} fitViewOptions={fitViewOptions} position="bottom-right" />
       </ReactFlow>
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-600">
         <span className="inline-flex items-center gap-1"><Network className="h-3.5 w-3.5 text-slate-400" />Auto routing</span>
