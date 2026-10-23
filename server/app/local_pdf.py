@@ -120,12 +120,21 @@ def extract_pdf(path: Path) -> tuple[str, list[str]]:
             raise PDFExtractionError(path, f"maximum {MAX_PAGES} pages exceeded")
         sections: list[str] = []
         ocr_pages: list[int] = []
+        nul_pages: dict[int, int] = {}
+
+        def clean_extracted_text(text: str, page: int) -> str:
+            count = text.count("\x00")
+            if count:
+                nul_pages[page] = nul_pages.get(page, 0) + count
+                text = text.replace("\x00", "")
+            return text.strip()
+
         size = 0
         deadline: float | None = None
         tools: tuple[str, str] | None = None
         for page_number, page in enumerate(reader.pages, 1):
             try:
-                native = (page.extract_text() or "").strip()
+                native = clean_extracted_text(page.extract_text() or "", page_number)
                 has_images = _has_images(page)
             except Exception:
                 native = ""
@@ -168,7 +177,7 @@ def extract_pdf(path: Path) -> tuple[str, list[str]]:
                             output_file = output.with_suffix(".txt")
                             if not output_file.is_file() or output_file.stat().st_size > MAX_CHARACTERS * 4:
                                 raise PDFExtractionError(path, "invalid or oversized OCR output", page_number)
-                            recognized = output_file.read_text(encoding="utf-8").strip()
+                            recognized = clean_extracted_text(output_file.read_text(encoding="utf-8"), page_number)
                             if not any(character.isalnum() for character in recognized):
                                 raise PDFExtractionError(path, "nonblank scanned page has no readable OCR text", page_number)
                             ocr_pages.append(page_number)
@@ -184,6 +193,10 @@ def extract_pdf(path: Path) -> tuple[str, list[str]]:
         warnings = []
         if ocr_pages:
             warnings.append(f"{path.name}: local OCR used on pages {', '.join(map(str, ocr_pages))}. Verify recognition against the original.")
+        if nul_pages:
+            count = sum(nul_pages.values())
+            unit = "character" if count == 1 else "characters"
+            warnings.append(f"{path.name}: removed {count} NUL {unit} from pages {', '.join(map(str, nul_pages))}.")
         return "\n\n".join(sections), warnings
     except PDFExtractionError:
         raise

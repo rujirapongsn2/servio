@@ -1,5 +1,6 @@
 """PDF extraction boundaries without external OCR or database writes."""
 import asyncio
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -57,6 +58,68 @@ def test_native_text_unchanged_without_ocr_tools(document, monkeypatch):
     path = document(Page("Hello native ไทย"), Page(contents=False), Page("Second"))
     monkeypatch.setattr(pdf.shutil, "which", lambda _: pytest.fail("native PDF must not need OCR tools"))
     assert pdf.extract_pdf(path) == ("### Page 1\nHello native ไทย\n\n### Page 3\nSecond", [])
+
+
+def test_real_pdf_nul_is_removed_before_knowledge_hashing(tmp_path, monkeypatch):
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+    from app.okf_service import _collect_knowledge_sources
+
+    path = tmp_path / "furniture.pdf"
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"),
+    })
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)}),
+    })
+    content = DecodedStreamObject()
+    content.set_data(b"BT /F1 12 Tf 10 90 Td (Furniture\\000catalog) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(content)
+    writer.write(path)
+    monkeypatch.setattr(pdf.shutil, "which", lambda _: pytest.fail("native PDF must not need OCR"))
+
+    expected = "### Page 1\nFurniturecatalog"
+    text, warnings = pdf.extract_pdf(path)
+    assert text == expected
+    assert warnings == ["furniture.pdf: removed 1 NUL character from pages 1."]
+    preview, preview_warnings = _collect_knowledge_sources([path], preview=True)
+    imported, import_warnings = _collect_knowledge_sources([path])
+    assert preview[0].text == imported[0].text == expected
+    assert preview[0].content_hash == imported[0].content_hash == hashlib.sha256(expected.encode()).hexdigest()
+    assert preview_warnings == import_warnings == warnings
+
+
+def test_native_and_ocr_nul_preserve_thai_whitespace_and_pages(document, ocr):
+    ocr["text"] = "สินค้า\x00  ไทย\nราคา\t100"
+    text, warnings = pdf.extract_pdf(document(
+        Page("ข้อความ\x00  ไทย\nราคา\t200"), Page(contents=False), Page("หัว\x00ข้อ", image=True),
+    ))
+    assert text == "### Page 1\nข้อความ  ไทย\nราคา\t200\n\n### Page 3\nหัวข้อ\nสินค้า  ไทย\nราคา\t100"
+    assert "local OCR used on pages 3" in warnings[0]
+    assert warnings[1] == "policy.pdf: removed 3 NUL characters from pages 1, 3."
+
+
+def test_nul_only_native_text_uses_ocr(document, ocr):
+    text, warnings = pdf.extract_pdf(document(Page("\x00\x00")))
+    assert text == "### Page 1\nนโยบายบริษัท Company policy"
+    assert "local OCR used on pages 1" in warnings[0]
+    assert warnings[1] == "policy.pdf: removed 2 NUL characters from pages 1."
+
+
+def test_nul_only_native_blank_page_is_omitted(document, ocr):
+    ocr["blank"] = True
+    text, warnings = pdf.extract_pdf(document(Page("\x00"), Page("Next")))
+    assert text == "### Page 2\nNext"
+    assert warnings == ["policy.pdf: removed 1 NUL character from pages 1."]
+
+
+def test_nul_only_ocr_text_is_not_readable(document, ocr):
+    ocr["text"] = "\x00\x00"
+    with pytest.raises(pdf.PDFExtractionError, match="page 1: nonblank scanned page has no readable OCR text"):
+        pdf.extract_pdf(document(Page(image=True)))
 
 
 def test_scan_uses_local_thai_english_and_cleans_temp(document, ocr):
