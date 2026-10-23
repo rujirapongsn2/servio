@@ -43,6 +43,21 @@ interface AgentDraft {
   handoff_ids: number[];
 }
 
+const DEFAULT_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"];
+const CUSTOM_MODEL = "__custom_model__";
+
+function parseModelIds(data: unknown, registered: boolean): string[] {
+  if (!Array.isArray(data)) throw new Error("Invalid model list");
+  return data.flatMap((item: unknown) => {
+    if (!registered && typeof item === "string") return item.trim() ? [item.trim()] : [];
+    if (typeof item !== "object" || item === null) return [];
+    if (registered && (!("enabled" in item) || item.enabled !== true ||
+      !("capabilities" in item) || !Array.isArray(item.capabilities) || !item.capabilities.includes("text"))) return [];
+    const id = registered ? ("model_id" in item ? item.model_id : null) : ("id" in item ? item.id : null);
+    return typeof id === "string" && id.trim() ? [id.trim()] : [];
+  });
+}
+
 export default function AgentEditorPage() {
   const router = useRouter();
   const params = useParams();
@@ -85,6 +100,8 @@ export default function AgentEditorPage() {
   const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelsError, setModelsError] = useState("");
+  const [customModel, setCustomModel] = useState(false);
   const [toolsLoaded, setToolsLoaded] = useState(false);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(routeDraftId);
@@ -159,28 +176,35 @@ export default function AgentEditorPage() {
       .join(" ");
   };
 
-  const fetchModels = useCallback(async (providerId: number) => {
+  const fetchModels = useCallback(async (providerId: number | null | undefined, currentModel = "") => {
     const requestId = ++modelRequestId.current;
-    setFetchingModels(true);
-    try {
-      const token = localStorage.getItem("adminToken");
-      const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers/${providerId}/models`, {
+    setModelsError("");
+    setCustomModel(providerId === null && !!currentModel && !DEFAULT_MODELS.includes(currentModel));
+    setAvailableModels(providerId === null ? DEFAULT_MODELS : []);
+    setFetchingModels(typeof providerId === "number");
+    if (typeof providerId !== "number") return;
+
+    const token = localStorage.getItem("adminToken");
+    const load = async (endpoint: string, registered: boolean) => {
+      const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers/${providerId}/${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await response.json();
-      // Expecting list of objects with 'id' field, or just strings?
-      // provider_service returns model objects. OpenAIChatCompletionsModel expects string ID.
-      // Usually OpenAI models list has 'id' field.
-      const modelIds = data.map((m: any) => m.id || m);
-      if (requestId === modelRequestId.current) setAvailableModels(modelIds);
-    } catch (error) {
-      console.error("Failed to fetch models:", error);
-      // Fallback or keep empty
-      if (requestId === modelRequestId.current) setAvailableModels([]);
-    } finally {
-      if (requestId === modelRequestId.current) setFetchingModels(false);
-    }
+      if (!response.ok) throw new Error("Failed to load models");
+      const ids = parseModelIds(await response.json(), registered);
+      if (requestId === modelRequestId.current) {
+        setAvailableModels((previous) => Array.from(new Set([...previous, ...ids])));
+      }
+      return ids;
+    };
+    const results = await Promise.allSettled([load("models", false), load("registered-models", true)]);
+    if (requestId !== modelRequestId.current) return;
+    setAvailableModels(Array.from(new Set(results.flatMap((result) => result.status === "fulfilled" ? result.value : []))));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    setModelsError(failed === 2 ? "Models unavailable. Enter a model ID." : failed ? "Some models could not be loaded." : "");
+    setFetchingModels(false);
   }, [apiBaseUrl]);
+
+  useEffect(() => () => { modelRequestId.current += 1; }, []);
 
   useEffect(() => {
     if (routeDraftId) {
@@ -236,7 +260,7 @@ export default function AgentEditorPage() {
     setFormData((prev) => ({
       ...prev,
       name: draftData.name,
-      model: draftData.model,
+      model: draftData.model.trim(),
       instructions: draftData.instructions,
       is_starting_agent: draftData.is_starting_agent,
       llm_provider_id: draftData.llm_provider_id,
@@ -244,11 +268,7 @@ export default function AgentEditorPage() {
       handoffs: availableAgents.filter((agent) => draftData.handoff_ids.includes(agent.id)),
     }));
 
-    if (draftData.llm_provider_id) {
-      fetchModels(draftData.llm_provider_id);
-    } else if (draftData.llm_provider_id === null) {
-      setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
-    }
+    fetchModels(draftData.llm_provider_id, draftData.model.trim());
 
     setHydratedDraftKey(draftStorageKey);
   }, [loading, draftReady, toolsLoaded, agentsLoaded, draftHydrated, draftStorageKey, draftData, availableTools, availableAgents, fetchModels]);
@@ -260,7 +280,7 @@ export default function AgentEditorPage() {
 
     const draftPayload: AgentDraft = {
       name: formData.name,
-      model: formData.model,
+      model: formData.model.trim(),
       instructions: formData.instructions,
       is_starting_agent: formData.is_starting_agent,
       llm_provider_id: formData.llm_provider_id,
@@ -382,20 +402,14 @@ export default function AgentEditorPage() {
       setFormData({
         ...data,
         name: typeof data.name === "string" ? data.name : "",
-        model: typeof data.model === "string" ? data.model : "",
+        model: typeof data.model === "string" ? data.model.trim() : "",
         instructions: typeof data.instructions === "string" ? data.instructions : "",
         tools: Array.isArray(data.tools) ? data.tools : [],
         handoffs: Array.isArray(data.handoffs) ? data.handoffs : [],
         llm_provider_id: providerId
       });
 
-      // Load models if provider is set
-      if (providerId) {
-        fetchModels(providerId);
-      } else {
-        // Default OpenAI models
-        setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
-      }
+      fetchModels(providerId, typeof data.model === "string" ? data.model.trim() : "");
     } catch (error) {
       console.error("Failed to fetch agent:", error);
     } finally {
@@ -406,6 +420,10 @@ export default function AgentEditorPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!formData.model.trim()) {
+      setError("Enter a model ID.");
+      return;
+    }
     setSaving(true);
 
     try {
@@ -424,7 +442,7 @@ export default function AgentEditorPage() {
               tool_ids: formData.tools.map((t) => t.id),
             }),
         name: formData.name,
-        model: formData.model,
+        model: formData.model.trim(),
         instructions: formData.instructions,
         handoff_agent_ids: formData.handoffs.map((h) => h.id),
         is_starting_agent: formData.is_starting_agent,
@@ -544,13 +562,7 @@ export default function AgentEditorPage() {
       model: "", // Reset model when provider changes
     });
 
-    if (providerId) {
-      fetchModels(providerId);
-    } else if (value === "default") {
-      setAvailableModels(["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]);
-    } else {
-      setAvailableModels([]);
-    }
+    fetchModels(finalProviderId);
   };
 
   const handleOptimizePrompt = async () => {
@@ -575,7 +587,7 @@ export default function AgentEditorPage() {
           body: JSON.stringify({
             instructions: safeInstructions,
             agent_name: formData.name,
-            model: formData.model,
+            model: formData.model.trim(),
             llm_provider_id: formData.llm_provider_id,
           }),
         }
@@ -655,10 +667,11 @@ export default function AgentEditorPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="llm-provider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 LLM Provider <span className="text-red-500">*</span>
               </label>
               <select
+                id="llm-provider"
                 value={formData.llm_provider_id === undefined ? "" : (formData.llm_provider_id === null ? "default" : formData.llm_provider_id)}
                 onChange={handleProviderChange}
                 required
@@ -691,15 +704,18 @@ export default function AgentEditorPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="agent-model" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Model {fetchingModels && <span className="text-xs text-gray-400 ml-2">(Loading...)</span>}
               </label>
               <select
-                value={formData.model}
-                onChange={(e) =>
-                  setFormData({ ...formData, model: e.target.value })
-                }
-                disabled={fetchingModels || formData.llm_provider_id === undefined}
+                id="agent-model"
+                value={customModel ? CUSTOM_MODEL : formData.model}
+                onChange={(e) => {
+                  const custom = e.target.value === CUSTOM_MODEL;
+                  setCustomModel(custom);
+                  setFormData({ ...formData, model: custom ? "" : e.target.value });
+                }}
+                disabled={formData.llm_provider_id === undefined}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white disabled:opacity-50"
                 required
               >
@@ -711,10 +727,26 @@ export default function AgentEditorPage() {
                 {availableModels.map(m => (
                   <option key={m} value={m}>{m}</option>
                 ))}
-                {!availableModels.includes(formData.model) && formData.model && (
+                {!customModel && !availableModels.includes(formData.model) && formData.model && (
                   <option value={formData.model}>{formData.model} (Current)</option>
                 )}
+                <option value={CUSTOM_MODEL}>+ Enter model ID…</option>
               </select>
+              {customModel && (
+                <div className="mt-3">
+                  <label htmlFor="custom-model-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Model ID</label>
+                  <input
+                    id="custom-model-id"
+                    type="text"
+                    required
+                    pattern={".*\\S.*"}
+                    value={formData.model}
+                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                  />
+                </div>
+              )}
+              {modelsError && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{modelsError}</p>}
             </div>
 
             <div>

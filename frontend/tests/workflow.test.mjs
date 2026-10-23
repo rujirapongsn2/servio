@@ -96,6 +96,7 @@ function providerSelect(renderer) { return renderer.root.findAllByType('select')
 function agentFetch(delays = {}) {
   return async (url, options) => {
     if (options?.method === 'PUT') return response({ message: 'Agent updated' });
+    if (url.endsWith('/registered-models')) return delays.registered?.(url) ?? response([]);
     if (url.endsWith('/models')) return delays.models?.(url) ?? response([{ id: url.includes('/99/') ? 'new-model' : 'old-model' }]);
     if (url === '/api/admin/llm-providers') return delays.providers?.promise ?? response([{ id: 1, name: 'Old provider' }, { id: 99, name: 'New provider' }]);
     if (url.startsWith('/api/admin/tools')) return delays.tools?.promise ?? response([]);
@@ -142,6 +143,7 @@ test('existing agent edits survive provider navigation and are removed only afte
   assert.equal(renderer.root.findAllByType('textarea')[0].props.value, 'Unsaved instructions');
   assert.equal(providerSelect(renderer).props.value, 99);
   assert.ok(env.storage.has('agent-draft:1:7:draft1'));
+  await act(async () => renderer.root.findAllByType('select')[1].props.onChange({ target: { value: 'new-model' } }));
   await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
   assert.ok(!env.storage.has('agent-draft:1:7:draft1'));
 });
@@ -207,4 +209,125 @@ test('switching draft query restores the selected draft without overwriting it w
   assert.equal(renderer.root.findAllByType('input')[0].props.value, 'Second draft');
   assert.equal(JSON.parse(env.storage.get('agent-draft:1:7:draft1')).name, 'First draft');
   assert.equal(JSON.parse(env.storage.get('agent-draft:1:7:draft2')).name, 'Second draft');
+});
+
+function modelSelect(renderer) { return renderer.root.findByProps({ id: 'agent-model' }); }
+function modelIds(renderer) { return modelSelect(renderer).findAllByType('option').map((node) => node.props.value); }
+async function selectValue(node, value) {
+  await act(async () => node.props.onChange({ target: { value } }));
+}
+async function submitAgent(renderer) {
+  await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+}
+function captureSaves(fetcher) {
+  const saves = [];
+  global.fetch = async (url, options) => {
+    if (options?.method === 'PUT' || options?.method === 'POST') saves.push(JSON.parse(options.body));
+    return fetcher(url, options);
+  };
+  return saves;
+}
+test('registered text models merge with discovery, deduplicate IDs, and save model_id rather than catalog id', async (t) => {
+  const env = agentSetup(t, { autoSelect: false });
+  const saves = captureSaves(agentFetch({
+    models: () => response([{ id: 'shared' }, 'upstream-only', { id: 'disabled' }, { id: 123 }]),
+    registered: () => response([
+      { id: 21, model_id: 'manual/text-model', enabled: true, capabilities: ['text'] },
+      { id: 22, model_id: 'shared', enabled: true, capabilities: ['text', 'vision'] },
+      { id: 23, model_id: 'disabled', enabled: false, capabilities: ['text'] },
+      { id: 24, model_id: 'disabled-only', enabled: false, capabilities: ['text'] },
+      { id: 25, model_id: 'vision-only', enabled: true, capabilities: ['vision'] },
+      { id: 26, model_id: 'missing-capabilities', enabled: true },
+      { id: 27, model_id: 27, enabled: true, capabilities: ['text'] },
+    ]),
+  }));
+  const renderer = await env.mount(env.Agent);
+  const ids = modelIds(renderer);
+  assert.equal(ids.filter((id) => id === 'shared').length, 1);
+  for (const id of ['manual/text-model', 'upstream-only', 'disabled', 'old-model']) assert.ok(ids.includes(id), id);
+  for (const id of [21, 123, 'disabled-only', 'vision-only', 'missing-capabilities']) assert.ok(!ids.includes(id), String(id));
+  await selectValue(modelSelect(renderer), 'manual/text-model');
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'manual/text-model');
+});
+for (const failure of ['http', 'network', 'malformed']) {
+  test(`registered models remain selectable when discovery has ${failure} failure`, async (t) => {
+    const env = agentSetup(t, { autoSelect: false });
+    global.fetch = agentFetch({
+      models: () => {
+        if (failure === 'network') throw new Error('Offline');
+        return failure === 'http' ? { ok: false } : response({ detail: 'Invalid response' });
+      },
+      registered: () => response([{ id: 17, model_id: 'manual-model', enabled: true, capabilities: ['text'] }]),
+    });
+    const renderer = await env.mount(env.Agent);
+    assert.ok(modelIds(renderer).includes('manual-model'));
+    assert.ok(modelIds(renderer).includes('old-model'));
+    assert.equal(modelSelect(renderer).props.disabled, false);
+    assert.match(text(renderer.root.findByProps({ role: 'status' })), /could not be loaded/);
+  });
+}
+test('Default custom model is trimmed in draft and save, restores its input, and rejects whitespace', async (t) => {
+  const env = agentSetup(t, { autoSelect: false });
+  const saves = captureSaves(agentFetch());
+  let renderer = await env.mount(env.Agent);
+  await selectValue(providerSelect(renderer), 'default');
+  await selectValue(modelSelect(renderer), '__custom_model__');
+  let input = renderer.root.findByProps({ id: 'custom-model-id' });
+  assert.equal(input.props.required, true);
+  assert.ok(!new RegExp(input.props.pattern).test('   '));
+  assert.equal(renderer.root.findByProps({ htmlFor: 'custom-model-id' }).children.join(''), 'Model ID');
+  await selectValue(input, '   ');
+  await submitAgent(renderer);
+  assert.equal(saves.length, 0);
+  await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), '  my/custom-default  ');
+  const draft = JSON.parse(env.storage.get('agent-draft:1:7:draft1'));
+  assert.equal(draft.model, 'my/custom-default');
+  assert.equal(draft.llm_provider_id, null);
+  await act(async () => renderer.unmount());
+  renderer = await env.mount(env.Agent);
+  assert.equal(providerSelect(renderer).props.value, 'default');
+  assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/custom-default');
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'my/custom-default');
+  assert.equal(saves.at(-1).llm_provider_id, null);
+});
+for (const nextProvider of ['default', '']) {
+  test(`pending provider results and errors cannot replace ${nextProvider || 'placeholder'} choices`, async (t) => {
+    const env = agentSetup(t, { autoSelect: false });
+    const models = deferred();
+    const registry = deferred();
+    global.fetch = agentFetch({ models: () => models.promise, registered: () => registry.promise });
+    const renderer = await env.mount(env.Agent);
+    assert.equal(modelSelect(renderer).props.disabled, false);
+    await selectValue(modelSelect(renderer), '__custom_model__');
+    assert.ok(renderer.root.findByProps({ id: 'custom-model-id' }));
+    await selectValue(providerSelect(renderer), nextProvider);
+    await act(async () => {
+      models.resolve(response([{ id: 'stale-model' }]));
+      registry.resolve({ ok: false });
+    });
+    assert.ok(!modelIds(renderer).includes('stale-model'));
+    assert.equal(renderer.root.findAllByProps({ role: 'status' }).length, 0);
+    assert.equal(modelSelect(renderer).props.disabled, nextProvider === '');
+    if (nextProvider === 'default') assert.ok(modelIds(renderer).includes('gpt-4o-mini'));
+    assert.equal(renderer.root.findAllByProps({ id: 'custom-model-id' }).length, 0);
+  });
+}
+
+test('registered models and custom entry are available while discovery is still pending', async (t) => {
+  const env = agentSetup(t, { autoSelect: false });
+  const discovery = deferred();
+  const saves = captureSaves(agentFetch({
+    models: () => discovery.promise,
+    registered: () => response([{ id: 18, model_id: 'manual-during-discovery', enabled: true, capabilities: ['text'] }]),
+  }));
+  const renderer = await env.mount(env.Agent);
+  assert.ok(modelIds(renderer).includes('manual-during-discovery'));
+  assert.equal(modelSelect(renderer).props.disabled, false);
+  assert.ok(modelIds(renderer).includes('__custom_model__'));
+  await selectValue(modelSelect(renderer), 'manual-during-discovery');
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'manual-during-discovery');
+  await act(async () => discovery.resolve(response([])));
 });
