@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { X, Play, Loader2, Clock, BookOpen, Link as LinkIcon } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
+import { KnowledgeImages } from "@/components/KnowledgeImages";
+import { parseKnowledgeImages, type KnowledgeImage } from "@/lib/product-presentations";
 
 interface Tool {
   id: number;
@@ -13,6 +15,7 @@ interface Tool {
 interface TestResult {
   response: string;
   response_time: number;
+  images?: KnowledgeImage[];
   concepts: Array<{
     concept_id: string;
     title?: string;
@@ -146,6 +149,8 @@ export default function TestOKFBundleModal({
                   {result.response}
                 </p>
               </div>
+
+              <KnowledgeImages images={parseKnowledgeImages({ type: "knowledge_images", version: 1, response: result.response, images: result.images })?.images || []} />
 
               {result.concepts.length > 0 && (
                 <div className="space-y-3">

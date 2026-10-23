@@ -15,6 +15,8 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { KnowledgeImages } from "@/components/KnowledgeImages";
+import { parseKnowledgeImages, type KnowledgeImage } from "@/lib/product-presentations";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface Tool {
@@ -73,6 +75,7 @@ interface OKFConcept {
 }
 
 interface TestResult {
+  images?: KnowledgeImage[];
   response: string;
   response_time: number;
   concepts: Array<{
@@ -787,6 +790,7 @@ export default function OKFBundleDetailDrawer({
                           {testResult.response}
                         </div>
                       </div>
+                      {testResult.images && <KnowledgeImages images={parseKnowledgeImages({ type: "knowledge_images", version: 1, response: testResult.response, images: testResult.images })?.images || []} />}
                       <div className="space-y-2">
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           Sources Used ({testResult.concepts.length})

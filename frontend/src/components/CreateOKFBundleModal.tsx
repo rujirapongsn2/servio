@@ -107,12 +107,12 @@ export default function CreateOKFBundleModal({
   const fileHint =
     mode === "archive"
       ? "ZIP, TAR, TAR.GZ, or TGZ containing OKF Markdown files"
-      : "PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON, HTML or archives up to 50MB";
+      : "JPG/PNG up to 10MB; PDF, Office, text and archives up to 50MB";
 
   const accept =
     mode === "archive"
       ? ".zip,.tar,.gz,.tgz"
-      : ".pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.zip,.tar,.gz,.tgz";
+      : ".jpg,.jpeg,.png,.pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.zip,.tar,.gz,.tgz";
 
   const resetSource = (nextMode: ImportMode) => {
     setMode(nextMode);

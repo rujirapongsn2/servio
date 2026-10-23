@@ -15,6 +15,7 @@ from openai.types.responses import ResponseTextDeltaEvent
 
 from app.analytics_service import AnalyticsService
 from app.product_presentations import parse_product_carousel, product_inquiry
+from app.knowledge_image_presentations import hydrate_knowledge_images
 
 
 def transform_data_to_events(audio_np: np.ndarray) -> dict:
@@ -97,6 +98,8 @@ class WebsocketHelper:
         self.latest_agent = initial_agent
         self.partial_response = ""
         self.presentations = {}
+        self._knowledge_calls = {}
+        self.team_agent_id = team_agent_id
         self.session_id = session_id
         self.voice_response_enabled = voice_response_enabled
 
@@ -112,6 +115,7 @@ class WebsocketHelper:
 
     def reset_presentations(self):
         self.presentations.clear()
+        self._knowledge_calls.clear()
 
     def resolve_product_inquiry(self, message: dict) -> str | None:
         call_id = message.get("call_id")
@@ -201,9 +205,18 @@ class WebsocketHelper:
         elif is_new_output_item(event):
             item = event.item.to_input_item()  # type: ignore
             self.history.append(item)
+            if item.get("type") == "function_call":
+                for tool in event.item.agent.tools:
+                    bundle_id = getattr(tool, "_servio_knowledge_bundle_id", None)
+                    if getattr(tool, "name", None) == item.get("name") and bundle_id:
+                        self._knowledge_calls[item["call_id"]] = bundle_id
+                        break
             if item.get("type") == "function_call_output":
-                carousel = parse_product_carousel(item.get("output"))
                 call_id = item.get("call_id")
+                bundle_id = self._knowledge_calls.pop(call_id, None)
+                carousel = parse_product_carousel(item.get("output"))
+                if carousel is None and bundle_id is not None:
+                    carousel = hydrate_knowledge_images(item.get("output"), self.team_agent_id, bundle_id)
                 if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
                     if len(self.presentations) < 50:
                         self.presentations[call_id] = carousel.model_dump(exclude_none=True)

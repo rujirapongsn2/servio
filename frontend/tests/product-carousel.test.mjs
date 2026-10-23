@@ -136,6 +136,7 @@ test('WebSocket sidecars persist across snapshots, actions send IDs only and res
 
 test('product search keeps extra model text collapsed and selected-product reply readable', async () => {
   const { ChatHistory } = load('src/components/ChatDialog.tsx', {
+    '@/components/KnowledgeImages': { KnowledgeImages: () => null },
     clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
     '@/components/ChatLoadingDots': { default: () => null },
     '@/components/MessageBubble': { MessageBubble: ({ message }) => React.createElement('p', null, message.content) },
@@ -159,4 +160,70 @@ test('product search keeps extra model text collapsed and selected-product reply
   assert.ok(reply);
   assert.ok(!extra.findAllByType('p').some((node) => node.children.includes('Selected product answer')));
   await act(async () => renderer.unmount());
+});
+
+const imageEnvelope = { type: 'knowledge_images', version: 1, response: 'Related visual sources', images: [{ asset_id: 'a'.repeat(64), title: 'ต้นฉบับ', source_label: 'reference.png', image_url: `/api/knowledge-images/${'a'.repeat(64)}?token=header.payload.signature` }] };
+test('accepts signed local image references and rejects foreign or ambiguous image URLs', () => {
+  assert.equal(parsing.parseKnowledgeImages(imageEnvelope).images.length, 1);
+  assert.equal(parsing.parseProductPresentations({ images: imageEnvelope }).images.type, 'knowledge_images');
+  for (const url of ['https://example.com/image.png', '//evil.test/image', '/api/knowledge-images/' + 'b'.repeat(64) + '?token=x', imageEnvelope.images[0].image_url + '&admin_key=secret']) {
+    assert.equal(parsing.parseKnowledgeImages({ ...imageEnvelope, images: [{ ...imageEnvelope.images[0], image_url: url }] }), null);
+  }
+});
+test('image results retain a visible assistant answer and have no product inquiry action', async () => {
+  const { ChatHistory } = load('src/components/ChatDialog.tsx', {
+    clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
+    '@/components/KnowledgeImages': { KnowledgeImages: ({ images }) => React.createElement('section', { 'aria-label': 'image-results' }, images[0].title) },
+    '@/components/ProductCarousel': { ProductCarousel: () => null },
+    '@/components/ChatLoadingDots': { default: () => null },
+    '@/components/MessageBubble': { MessageBubble: () => React.createElement('div', null, 'visible-answer') },
+  });
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(ChatHistory, { messages: [{ type: 'function_call_output', call_id: 'images', output: '{}' }, { type: 'message', role: 'assistant', content: [] }], isLoading: false, presentations: { images: imageEnvelope } })); });
+  assert.equal(renderer.root.findAllByType('details').length, 0);
+  assert.equal(renderer.root.findAllByType('button').length, 0);
+  assert.equal(renderer.root.findAllByType('section').length, 1);
+  assert.match(JSON.stringify(renderer.toJSON()), /visible-answer/);
+  await act(async () => renderer.unmount());
+});
+
+test('image originals report expired links and empty sources render nothing', async () => {
+  const { KnowledgeImages } = load('src/components/KnowledgeImages.tsx', { '@/lib/api': { buildApiUrl: (value) => value } });
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(KnowledgeImages, { images: [] })); });
+  assert.equal(renderer.toJSON(), null);
+  const image = { asset_id: 'a'.repeat(64), title: 'Source', source_label: 'source.png', image_url: '/api/knowledge-images/source?token=test' };
+  await act(async () => { renderer.update(React.createElement(KnowledgeImages, { images: [image] })); });
+  const trigger = renderer.root.findAllByType('button')[0];
+  await act(async () => trigger.props.onClick({ currentTarget: { focus() {} } }));
+  const original = renderer.root.findByType('dialog').findByType('img');
+  await act(async () => original.props.onError());
+  assert.match(JSON.stringify(renderer.toJSON()), /ภาพหมดอายุ กรุณาค้นหาใหม่/);
+  assert.equal(renderer.root.findByType('dialog').findAllByType('img').length, 0);
+  await act(async () => renderer.unmount());
+});
+
+test('Knowledge test modal displays validated source images from query results', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: () => 'disposable-test-token' };
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ response: 'Matched image', response_time: .1, concepts: [], images: imageEnvelope.images }) });
+  const { KnowledgeImages } = load('src/components/KnowledgeImages.tsx', { '@/lib/api': { buildApiUrl: (value) => value } });
+  const { default: TestKnowledge } = load('src/components/TestOKFBundleModal.tsx', {
+    '@/lib/api': { getApiBaseUrl: () => 'http://localhost' },
+    '@/components/KnowledgeImages': { KnowledgeImages },
+    '@/lib/product-presentations': parsing,
+  });
+  let renderer;
+  try {
+    await act(async () => { renderer = create(React.createElement(TestKnowledge, { tool: { id: 1, name: 'Images', config: JSON.stringify({ okf_bundle_id: 1 }) }, teamAgentId: 1, onClose() {} })); });
+    await act(async () => renderer.root.findByType('textarea').props.onChange({ target: { value: 'red circle' } }));
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(renderer.root.findAllByType('article').length, 1);
+    assert.equal(renderer.root.findByType('img').props.alt, imageEnvelope.images[0].title);
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    globalThis.fetch = previousFetch;
+    globalThis.localStorage = previousStorage;
+  }
 });

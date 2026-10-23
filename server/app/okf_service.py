@@ -52,6 +52,9 @@ SUPPORTED_KNOWLEDGE_EXTENSIONS = {
     ".pdf",
     ".xlsx",
     ".pptx",
+    ".jpg",
+    ".jpeg",
+    ".png",
 }
 SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".tar", ".tgz", ".gz"}
 
@@ -123,6 +126,7 @@ class ExtractedKnowledge:
     text: str
     content_hash: str
     warnings: List[str]
+    image_bytes: Optional[bytes] = None
     source_url: Optional[str] = None
     final_url: Optional[str] = None
     fetched_at: Optional[str] = None
@@ -351,6 +355,20 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None) -> Extr
     warnings: List[str] = []
     title = _title_from_filename(path)
 
+    if suffix in {".jpg", ".jpeg", ".png"}:
+        from app.local_image_rag import enabled, validated_image
+        if not enabled():
+            raise OKFValidationError("Image knowledge is not enabled")
+        if path.stat().st_size > 10 * 1024 * 1024:
+            raise OKFValidationError(f"{path.name}: image exceeds 10 MB")
+        data = path.read_bytes()
+        try:
+            validated_image(data)
+        except ValueError as exc:
+            raise OKFValidationError(f"{path.name}: {exc}") from exc
+        return ExtractedKnowledge(title=title, source_file=rel, document_type=suffix.lstrip("."),
+            text=f"Image source: {rel}",
+            content_hash=hashlib.sha256(data).hexdigest(), warnings=[], image_bytes=data)
     if suffix in {".txt", ".csv", ".tsv"}:
         text = _decode_text_file(path).strip()
     elif suffix in {".md", ".markdown"}:
@@ -435,6 +453,12 @@ def _write_generated_okf_bundle(
             "tags": ["imported", source.document_type],
             "timestamp": generated_at,
         }
+        if source.image_bytes is not None:
+            asset_id = hashlib.sha256(source.image_bytes).hexdigest()
+            asset_path = Path("assets") / (asset_id + (".png" if source.document_type == "png" else ".jpg"))
+            (destination / "assets").mkdir(exist_ok=True)
+            (destination / asset_path).write_bytes(source.image_bytes)
+            frontmatter.update(image_asset_id=asset_id, image_asset_path=asset_path.as_posix())
         if source.source_url:
             frontmatter.update(source_url=source.source_url, final_url=source.final_url, fetched_at=source.fetched_at)
         body = f"# {source.title}\n\n{source.text}\n"
@@ -1135,10 +1159,35 @@ class OKFService:
         bundle = self.get_bundle(bundle_id, team_agent_id)
         if bundle is None:
             raise KeyError("OKF bundle not found")
-        from app.local_rag import index_bundle
-        return index_bundle(bundle_id)
+        from app.local_rag import enabled as text_enabled, index_bundle
+        from app.local_image_rag import enabled as images_enabled, try_index_bundle as index_images
+        images = index_images(bundle_id) if images_enabled() else {"status": "disabled", "images": 0}
+        text_active = text_enabled()
+        result = index_bundle(bundle_id) if text_active else {"status": images["status"], "chunks": 0}
+        if images["status"] == "failed":
+            prefix = "Text index refreshed but " if text_active else ""
+            raise RuntimeError(prefix + "image indexing failed. Retry reindex-vectors.")
+        return {**result, "image_index": images}
 
-    def query_bundle(
+    def query_bundle(self, bundle_id: int, query: str, team_agent_id: Optional[int] = None,
+                     limit: int = 5, expand_links: bool = True, *, image_links: bool = True) -> Dict[str, Any]:
+        result = self._query_text_bundle(bundle_id, query, team_agent_id, limit, expand_links)
+        from app.local_image_rag import enabled, query_bundle as image_query
+        if enabled():
+            try:
+                images = image_query(bundle_id, query, team_agent_id, limit, image_links=image_links)
+                if images:
+                    result.update(type="knowledge_images" if image_links else "knowledge_image_refs", version=1, images=images)
+                    if not result.get("concepts"):
+                        result["response"] = "Related image sources: " + ", ".join(image["title"] for image in images)
+                    result["response"] += "\n\nImage search returned visually related sources. The client already displays image cards with an original-image button. Do not generate image tags, links or asset URLs. Answer briefly from textual evidence only. Do not infer visual details from filenames or claim to have inspected the images. Ask the user to use the original-image button when exact visual details are needed."
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Image retrieval unavailable; preserving text results")
+                result["response"] += "\n\nImage search is temporarily unavailable. Do not claim to have searched or viewed images."
+        return result
+
+    def _query_text_bundle(
         self,
         bundle_id: int,
         query: str,

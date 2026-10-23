@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import ChatLoadingDots from "@/components/ChatLoadingDots";
 import { MessageBubble } from "@/components/MessageBubble";
+import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
 import { ProductPresentations } from "@/lib/product-presentations";
 import { Message, ToolCall } from "@/lib/types";
@@ -61,8 +62,10 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
         {displayMessages.map((message, index) => {
           if (message.type === "message" && message.role === "user") productResponse = false;
           if (message.type === "function_call_output" && presentations[message.call_id]) {
+            const presentation = presentations[message.call_id];
+            if (presentation.type === "knowledge_images") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             productResponse = true;
-            return <ProductCarousel key={`products-${message.call_id}`} presentation={presentations[message.call_id]} disabled={productActionsDisabled || isLoading || !onProductInquiry} onInquire={(productId) => onProductInquiry?.(message.call_id, productId)} />;
+            return <ProductCarousel key={`products-${message.call_id}`} presentation={presentation} disabled={productActionsDisabled || isLoading || !onProductInquiry} onInquire={(productId) => onProductInquiry?.(message.call_id, productId)} />;
           }
           if (message.type === "function_call" && presentations[message.call_id]) return null;
           // Check if there is any subsequent message after this one,

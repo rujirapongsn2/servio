@@ -56,6 +56,8 @@ app = FastAPI()
 from app.admin_routes import router as admin_router, public_router
 app.include_router(admin_router)
 app.include_router(public_router)
+from app.local_image_rag import router as knowledge_image_router
+app.include_router(knowledge_image_router)
 
 # Database initialization
 from app.database import init_database

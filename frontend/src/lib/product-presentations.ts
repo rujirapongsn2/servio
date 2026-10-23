@@ -14,7 +14,19 @@ export interface ProductCarouselPresentation {
   summary: string;
   products: Product[];
 }
-export type ProductPresentations = Record<string, ProductCarouselPresentation>;
+export interface KnowledgeImage {
+  asset_id: string;
+  title: string;
+  source_label: string;
+  image_url: string;
+}
+export interface KnowledgeImagesPresentation {
+  type: "knowledge_images";
+  version: 1;
+  response: string;
+  images: KnowledgeImage[];
+}
+export type ProductPresentations = Record<string, ProductCarouselPresentation | KnowledgeImagesPresentation>;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -63,8 +75,22 @@ export function parseProductPresentations(value: unknown): ProductPresentations 
   const result: ProductPresentations = Object.create(null);
   if (!isObject(value)) return result;
   for (const [callId, raw] of Object.entries(value).slice(0, 50)) {
-    const carousel = parseProductCarousel(raw);
+    const carousel = parseProductCarousel(raw) || parseKnowledgeImages(raw);
     if (carousel) result[callId] = carousel;
   }
   return result;
+}
+
+export function parseKnowledgeImages(value: unknown): KnowledgeImagesPresentation | null {
+  if (!isObject(value) || value.type !== "knowledge_images" || value.version !== 1 || typeof value.response !== "string" || value.response.length > 64000) return null;
+  if (Object.keys(value).some((key) => !["type", "version", "response", "images"].includes(key))) return null;
+  if (!Array.isArray(value.images) || value.images.length < 1 || value.images.length > 5) return null;
+  const images: KnowledgeImage[] = [];
+  for (const raw of value.images) {
+    if (!isObject(raw) || !text(raw.asset_id, 64) || !/^[a-f0-9]{64}$/.test(raw.asset_id) || !text(raw.title, 1000) || !text(raw.source_label, 2000) || !text(raw.image_url, 4096)) return null;
+    if (Object.keys(raw).some((key) => !["asset_id", "title", "source_label", "image_url"].includes(key))) return null;
+    if (!new RegExp(`^/api/knowledge-images/${raw.asset_id}\\?token=[A-Za-z0-9_.-]+$`).test(raw.image_url)) return null;
+    images.push({ asset_id: raw.asset_id, title: raw.title, source_label: raw.source_label, image_url: raw.image_url });
+  }
+  return { type: "knowledge_images", version: 1, response: value.response, images };
 }

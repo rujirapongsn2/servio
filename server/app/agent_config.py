@@ -328,7 +328,7 @@ def create_okf_knowledge_graph_tool(
     limit = int(retrieval.get("limit", 5) or 5)
     expand_links = bool(retrieval.get("expand_links", True))
 
-    def dynamic_okf_tool(query: str):
+    async def dynamic_okf_tool(query: str):
         """Search a local Open Knowledge Format bundle."""
         try:
             log_tool_call(tool_name, {"query": query, "okf_bundle_id": bundle_id})
@@ -336,20 +336,26 @@ def create_okf_knowledge_graph_tool(
                 return "OKF bundle is not configured for this capability."
             if runtime_team_agent_id is None:
                 return "Knowledge is unavailable without a runtime team."
-            result = OKFService().query_bundle(
+            result = await asyncio.to_thread(
+                OKFService().query_bundle,
                 bundle_id=bundle_id,
                 query=query,
                 team_agent_id=runtime_team_agent_id,
                 limit=limit,
                 expand_links=expand_links,
+                image_links=False,
             )
+            if result.get("type") == "knowledge_image_refs":
+                return json.dumps({key: result[key] for key in ("type", "version", "response", "images")}, ensure_ascii=False)
             return result.get("response", "No matching OKF concepts found.")
         except Exception as e:
             return f"Error searching OKF knowledge: {str(e)}"
 
     dynamic_okf_tool.__name__ = tool_name
     dynamic_okf_tool.__doc__ = description
-    return function_tool(dynamic_okf_tool)
+    tool = function_tool(dynamic_okf_tool)
+    tool._servio_knowledge_bundle_id = bundle_id
+    return tool
 
 
 def create_softnix_tool(tool_name: str, config: Dict[str, Any]):

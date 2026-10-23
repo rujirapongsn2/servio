@@ -31,6 +31,7 @@ def client(monkeypatch):
                         {"is_super_admin": user == "super"} if user != "removed" else None)
     monkeypatch.setattr(routes.database, "get_team_access_role", lambda user, team: roles.get((user, team)))
     monkeypatch.setenv("LOCAL_KNOWLEDGE_HYBRID_ENABLED", "true")
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGES_ENABLED", "false")
 
     class Service:
         def get_bundle(self, bundle_id, team_agent_id):
@@ -241,3 +242,11 @@ def test_other_team_cannot_refresh_shared_or_global_source(client, bundle_id):
 def test_invalid_url_mode_rejected_before_fetch(client, suffix, data):
     response = client.post("/api/admin/okf-bundles" + suffix, data=data, headers={"Authorization":"Bearer " + create_access_token({"sub":"owner"})})
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize('text_enabled,image_enabled,expected', [(False, True, 200), (True, False, 200), (True, True, 200), (False, False, 409)])
+def test_vector_reindex_accepts_either_enabled_feature(client, monkeypatch, text_enabled, image_enabled, expected):
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_HYBRID_ENABLED', str(text_enabled).lower())
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', str(image_enabled).lower())
+    response = request(client, ('POST', '/10/reindex-vectors', None), 'owner', 1)
+    assert response.status_code == expected, response.text

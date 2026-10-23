@@ -1446,6 +1446,12 @@ def _run_okf_import_job(
         # Queue processing already runs off the API request. Build vectors after
         # the OKF import transaction commits; failed embedding must not remove
         # the successfully imported source or its lexical search capability.
+        from app.local_image_rag import enabled as image_search_enabled, try_index_bundle as index_images
+        if image_search_enabled():
+            _update_okf_job(job_id, message="Building image search index")
+        image_index = index_images(bundle["id"])
+        if image_index["status"] == "failed":
+            bundle["validation_summary"]["warnings"].append("Image indexing failed. Retry reindex-vectors.")
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
             try:
@@ -1748,6 +1754,10 @@ async def import_okf_bundle(
 
         # The legacy synchronous import endpoint also needs a fresh vector index.
         # Failure must not roll back the already-committed local OKF documents.
+        from app.local_image_rag import try_index_bundle as index_images
+        image_index = await run_in_threadpool(index_images, bundle["id"])
+        if image_index["status"] == "failed":
+            bundle["validation_summary"]["warnings"].append("Image indexing failed. Retry reindex-vectors.")
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
             try:
@@ -1861,6 +1871,8 @@ async def update_okf_concept(
         )
         # Keep vector retrieval current after an edit. Preserve the saved edit
         # even if shared GPU indexing fails; legacy lexical retrieval stays ready.
+        from app.local_image_rag import try_index_bundle as index_images
+        image_index = await run_in_threadpool(index_images, bundle_id)
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
             try:
@@ -1872,6 +1884,8 @@ async def update_okf_concept(
                     status_code=503,
                     detail="Document was saved but local vector reindex failed; retry reindex-vectors",
                 )
+        if image_index["status"] == "failed":
+            raise HTTPException(status_code=503, detail="Knowledge was saved but image indexing failed. Retry reindex-vectors.")
         return updated
     except HTTPException:
         raise
@@ -1893,10 +1907,11 @@ async def test_okf_bundle(
     """Test local OKF retrieval without calling external file search services."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     start_time = time.time()
-    result = OKFService().query_bundle(bundle_id, request.query, team_agent_id=team_agent_id)
+    result = await run_in_threadpool(OKFService().query_bundle, bundle_id, request.query, team_agent_id=team_agent_id)
     return TestOKFBundleResponse(
         response=result["response"],
         concepts=result.get("concepts", []),
+        images=result.get("images", []),
         response_time=time.time() - start_time,
     )
 
@@ -1916,8 +1931,9 @@ async def reindex_okf_vectors(
     if bundle.get("owner_team_agent_id") is not None and bundle.get("owner_team_agent_id") != team_agent_id and not (admin and admin.get("is_super_admin")):
         raise HTTPException(status_code=403, detail="Only owning team may reindex")
     from app.local_rag import enabled
-    if not enabled():
-        raise HTTPException(status_code=409, detail="Enable LOCAL_KNOWLEDGE_HYBRID_ENABLED first")
+    from app.local_image_rag import enabled as images_enabled
+    if not enabled() and not images_enabled():
+        raise HTTPException(status_code=409, detail="Enable LOCAL_KNOWLEDGE_HYBRID_ENABLED or LOCAL_KNOWLEDGE_IMAGES_ENABLED first")
     from fastapi.concurrency import run_in_threadpool
     try:
         return await run_in_threadpool(OKFService().reindex_hybrid, bundle_id, team_agent_id)
@@ -1945,6 +1961,8 @@ async def reindex_okf_source(
     try:
         result = await run_in_threadpool(service.reindex_source, bundle_id, request.concept_id, team_agent_id,
                                          url=request.url, expected_updated_at=request.expected_updated_at)
+        from app.local_image_rag import try_index_bundle as index_images
+        image_index = await run_in_threadpool(index_images, bundle_id)
         from app.local_rag import enabled, index_bundle
         if enabled():
             try:
@@ -1953,6 +1971,8 @@ async def reindex_okf_source(
                 import logging
                 logging.getLogger(__name__).exception("URL source saved but vector indexing failed")
                 raise HTTPException(status_code=503, detail="URL content was replaced, but vector indexing failed. Retry reindex-vectors.") from exc
+        if image_index["status"] == "failed":
+            raise HTTPException(status_code=503, detail="Knowledge was saved but image indexing failed. Retry reindex-vectors.")
         return result
     except KeyError:
         raise HTTPException(status_code=404, detail="OKF source not found")
@@ -1980,6 +2000,8 @@ async def reindex_okf_bundle(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owning team can re-index this OKF bundle")
     try:
         result = await run_in_threadpool(OKFService().reindex_bundle, bundle_id, team_agent_id=team_agent_id)
+        from app.local_image_rag import try_index_bundle as index_images
+        image_index = await run_in_threadpool(index_images, bundle_id)
         from app.local_rag import enabled as hybrid_enabled, index_bundle
         if hybrid_enabled():
             try:
@@ -1988,6 +2010,8 @@ async def reindex_okf_bundle(
                 import logging
                 logging.getLogger(__name__).exception("OKF source reindexed but vector reindex failed")
                 raise HTTPException(status_code=503, detail="OKF source saved; vector reindex failed. Retry reindex-vectors.")
+        if image_index["status"] == "failed":
+            raise HTTPException(status_code=503, detail="Knowledge was saved but image indexing failed. Retry reindex-vectors.")
         return result
     except HTTPException:
         raise

@@ -7,6 +7,7 @@ import pytest
 from agents import RunContextWrapper
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app import agent_config, db_config, local_rag, okf_service
 from app.orm_models import Base, OKFBundle, TeamAgent, TeamToolAssignment, Tool
@@ -18,7 +19,7 @@ def runtime(monkeypatch, tmp_path):
         imports.setattr(db_config, "init_database", lambda: None)
         from app import database
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     sessions = sessionmaker(bind=engine)
 

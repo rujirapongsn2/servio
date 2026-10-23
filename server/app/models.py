@@ -270,6 +270,7 @@ class TestOKFBundleRequest(BaseModel):
 
 
 class TestOKFBundleResponse(BaseModel):
+    images: List[Dict[str, Any]] = []
     response: str
     concepts: List[Dict[str, Any]] = []
     response_time: float
