@@ -1158,6 +1158,12 @@ async def create_tool(
 ):
     """Create a custom API tool, optionally owned by a team"""
     require_team_access(current_user, team_agent_id, "admin")
+    from app.custom_api import validate_custom_api_config
+    try:
+        validate_custom_api_config(request.config)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
     try:
         tool_id = database.create_custom_tool(
             request.name, request.config, request.icon,
@@ -1185,7 +1191,7 @@ async def create_tool(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create tool: {str(e)}"
+            detail="Failed to create tool." if request.config.get("type", "custom_api") == "custom_api" and "request" in request.config else f"Failed to create tool: {str(e)}"
         )
 
 
@@ -1198,6 +1204,12 @@ async def update_tool(
 ):
     """Update a custom API tool"""
     require_team_access(current_user, team_agent_id, "admin")
+    from app.custom_api import validate_custom_api_config
+    try:
+        validate_custom_api_config(request.config)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
     success = database.update_custom_tool(
         tool_id, request.name, request.config, request.icon,
         team_agent_id=team_agent_id,

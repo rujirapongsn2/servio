@@ -97,7 +97,7 @@ def get_tool_by_name(
         return WebSearchTool(user_location=UserLocation(**location))
     elif tool_config and tool_config.get("type") == "custom_api":
         # Check if this is a Softnix API tool
-        if tool_name == "get_softnix_info" or tool_config.get("api_type") == "softnix":
+        if "request" not in tool_config and (tool_name == "get_softnix_info" or tool_config.get("api_type") == "softnix"):
             return create_softnix_tool(tool_name, tool_config)
         # Otherwise, create a generic custom API tool
         return create_custom_api_tool(tool_name, tool_config)
@@ -169,7 +169,7 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
     method = config.get("method", "POST")
     description = config.get("description", f"Call {tool_name} API")
     # Per-tool timeout with env fallback
-    timeout_s = int(config.get("timeout_seconds", int(os.getenv("TOOL_TIMEOUT_SECONDS", "60"))))
+    timeout_s = int(config.get("timeout_seconds", int(os.getenv("TOOL_TIMEOUT_SECONDS", "60")))) if "request" not in config else 60
 
     def _extract_preferred_text(data: Any) -> Optional[str]:
         try:
@@ -197,40 +197,49 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
         """Dynamic API tool"""
         try:
             log_tool_call(tool_name, {"query": query})
-            headers = {
-                "Content-Type": "application/json",
-            }
-            if auth_token:
-                if auth_token.lower().startswith("bearer "):
-                    headers["Authorization"] = auth_token
+            if "request" in config:
+                from app.custom_api import execute_custom_api_request
+                response = execute_custom_api_request(config, query)
+            else:
+                headers = {
+                    "Content-Type": "application/json",
+                }
+                if auth_token:
+                    if auth_token.lower().startswith("bearer "):
+                        headers["Authorization"] = auth_token
+                    else:
+                        headers["Authorization"] = f"Bearer {auth_token}"
+
+                # Clone the payload template and substitute query
+                payload = json.loads(json.dumps(config.get("payload_template", {"query": query})))
+                if isinstance(payload, dict):
+                    if "query" in payload:
+                        payload["query"] = query
+                    # For compatibility, also try common variations
+                    elif "message" in payload:
+                        payload["message"] = query
+                    elif "text" in payload:
+                        payload["text"] = query
+                    elif "input" in payload:
+                        payload["input"] = query
                 else:
-                    headers["Authorization"] = f"Bearer {auth_token}"
+                    # If not a dict, wrap it
+                    payload = {"query": query}
 
-            # Clone the payload template and substitute query
-            payload = json.loads(json.dumps(config.get("payload_template", {"query": query})))
-            if isinstance(payload, dict):
-                if "query" in payload:
-                    payload["query"] = query
-                # For compatibility, also try common variations
-                elif "message" in payload:
-                    payload["message"] = query
-                elif "text" in payload:
-                    payload["text"] = query
-                elif "input" in payload:
-                    payload["input"] = query
-            else:
-                # If not a dict, wrap it
-                payload = {"query": query}
-
-            if method.upper() == "POST":
-                response = requests.post(api_endpoint, headers=headers, json=payload, timeout=timeout_s)
-            elif method.upper() == "GET":
-                response = requests.get(api_endpoint, headers=headers, params={"query": query}, timeout=timeout_s)
-            else:
-                return f"Unsupported HTTP method: {method}"
+                if method.upper() == "POST":
+                    response = requests.post(api_endpoint, headers=headers, json=payload, timeout=timeout_s)
+                elif method.upper() == "GET":
+                    response = requests.get(api_endpoint, headers=headers, params={"query": query}, timeout=timeout_s)
+                else:
+                    return f"Unsupported HTTP method: {method}"
 
             response.raise_for_status()
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                if "request" in config:
+                    return response.text
+                raise
 
             from app.product_presentations import parse_product_carousel
             carousel = parse_product_carousel(data)
@@ -238,7 +247,7 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
                 return carousel.model_dump_json(exclude_none=True)
 
             # Extract answer from response (handle Tavily-style responses)
-            if "answer" in data and "results" in data:
+            if isinstance(data, dict) and "answer" in data and "results" in data:
                 # Tavily-style response with answer and results
                 result_parts = []
                 if data.get("answer"):
@@ -263,6 +272,8 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
             return json.dumps(data, ensure_ascii=False)
 
         except Exception as e:
+            if "request" in config:
+                return f"Error calling {tool_name}: Custom API request failed. Check configuration and service availability."
             return f"Error calling {tool_name}: {str(e)}"
 
     # Set the function name and docstring BEFORE applying decorator

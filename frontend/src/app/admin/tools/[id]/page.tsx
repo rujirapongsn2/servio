@@ -6,6 +6,8 @@ import { IconPicker } from "@/components/IconPicker";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
+import CustomApiRequestEditor from "@/components/CustomApiRequestEditor";
+import { requestDraft, serializeRequest } from "@/lib/custom-api";
 import { UI_COPY } from "@/lib/ui-copy";
 
 function EditToolForm() {
@@ -37,6 +39,10 @@ function EditToolForm() {
     icon: "Wrench",
     visibility: "team",
   });
+  const [customRequest, setCustomRequest] = useState(() => requestDraft());
+  const [originalConfig, setOriginalConfig] = useState<Record<string, unknown>>({});
+  const [requestChanged, setRequestChanged] = useState(false);
+  const [requestLoadError, setRequestLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -59,6 +65,12 @@ function EditToolForm() {
       const tool = await response.json();
       const config = tool.config ? JSON.parse(tool.config) : {};
 
+      setOriginalConfig(config);
+      setRequestChanged(false);
+      if (tool.type === "custom_api") {
+        try { setCustomRequest(requestDraft(config)); setRequestLoadError(""); }
+        catch { setRequestLoadError("Unsupported or invalid Custom API request. Update the configuration before editing."); }
+      }
       setToolType(tool.type);
       setFormData({
         name: tool.name || "",
@@ -99,14 +111,12 @@ function EditToolForm() {
       };
 
       if (toolType === "custom_api") {
-        config.method = formData.method;
-        config.payload_template = {
-          query: "",
-          inputs: {},
-          files: [],
-          citation: true,
-          response_mode: "blocking",
-        };
+        if (requestLoadError) throw new Error(requestLoadError);
+        config = { ...originalConfig };
+        if (formData.description !== (originalConfig.description ?? "")) config.description = formData.description;
+        if (requestChanged) {
+          config = { ...config, endpoint: customRequest.endpoint, method: customRequest.method, auth_token: customRequest.auth_token, timeout_seconds: Number(customRequest.timeout_seconds), request: serializeRequest(customRequest) };
+        }
       } else if (toolType === "mcp_streamable_http") {
         config.transport = formData.transport;
         config.auth_mode = formData.auth_mode;
@@ -198,10 +208,10 @@ function EditToolForm() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="integration-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Integration Name
               </label>
-              <input
+              <input id="integration-name"
                 type="text"
                 required
                 value={formData.name}
@@ -235,10 +245,10 @@ function EditToolForm() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="integration-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description
               </label>
-              <textarea
+              <textarea id="integration-description"
                 required
                 rows={3}
                 value={formData.description}
@@ -250,9 +260,13 @@ function EditToolForm() {
               />
             </div>
 
+            {toolType === "custom_api" ? (
+              requestLoadError ? <p role="alert" className="text-sm text-red-600">{requestLoadError}</p> :
+              <CustomApiRequestEditor value={customRequest} onChange={draft => { setCustomRequest(draft); setRequestChanged(true); }} />
+            ) : <>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {toolType === "custom_api" ? "API Endpoint URL" : "MCP Server Endpoint"}
+                MCP Server Endpoint
               </label>
               <input
                 type="url"
@@ -261,9 +275,7 @@ function EditToolForm() {
                 onChange={(e) =>
                   setFormData({ ...formData, endpoint: e.target.value })
                 }
-                placeholder={toolType === "custom_api"
-                  ? "https://api.example.com/endpoint"
-                  : "https://mcp-server.example.com/mcp"}
+                placeholder="https://mcp-server.example.com/mcp"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
               {toolType === "mcp_streamable_http" && (
@@ -272,24 +284,6 @@ function EditToolForm() {
                 </p>
               )}
             </div>
-
-            {toolType === "custom_api" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  HTTP Method
-                </label>
-                <select
-                  value={formData.method}
-                  onChange={(e) =>
-                    setFormData({ ...formData, method: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
-                >
-                  <option value="POST">POST</option>
-                  <option value="GET">GET</option>
-                </select>
-              </div>
-            )}
 
             {/* Timeout seconds for both tool types */}
             <div>
@@ -391,9 +385,10 @@ function EditToolForm() {
                 className="mt-3 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Leave empty if the {toolType === "custom_api" ? "API" : "MCP server"} doesn't require authentication
+                Leave empty if the MCP server doesn't require authentication
               </p>
             </div>
+            </>}
           </div>
         </div>
 

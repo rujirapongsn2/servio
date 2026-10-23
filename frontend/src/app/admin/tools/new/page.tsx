@@ -6,6 +6,8 @@ import { IconPicker } from "@/components/IconPicker";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
+import CustomApiRequestEditor from "@/components/CustomApiRequestEditor";
+import { requestDraft, serializeRequest } from "@/lib/custom-api";
 import { UI_COPY } from "@/lib/ui-copy";
 
 function NewToolForm() {
@@ -40,6 +42,7 @@ function NewToolForm() {
     icon: "Wrench",
     visibility: "team",
   });
+  const [customRequest, setCustomRequest] = useState(() => requestDraft());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -60,14 +63,7 @@ function NewToolForm() {
       };
 
       if (toolType === "custom_api") {
-        config.method = formData.method;
-        config.payload_template = {
-          query: "",
-          inputs: {},
-          files: [],
-          citation: true,
-          response_mode: "blocking",
-        };
+        config = { ...config, endpoint: customRequest.endpoint, method: customRequest.method, auth_token: customRequest.auth_token, timeout_seconds: Number(customRequest.timeout_seconds), request: serializeRequest(customRequest) };
       } else if (toolType === "mcp_streamable_http") {
         config.transport = formData.transport;
         config.auth_mode = formData.auth_mode;
@@ -168,18 +164,14 @@ function NewToolForm() {
                 <option value="custom_api">Custom API</option>
                 <option value="mcp_streamable_http">MCP Streamable HTTP</option>
               </select>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {toolType === "custom_api"
-                  ? "Connect directly to an API endpoint"
-                  : "Connect to an MCP server"}
-              </p>
+              {toolType === "mcp_streamable_http" && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Connect to an MCP server</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="integration-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Integration Name
               </label>
-              <input
+              <input id="integration-name"
                 type="text"
                 required
                 value={formData.name}
@@ -189,9 +181,7 @@ function NewToolForm() {
                 placeholder="e.g., order_status_lookup"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Use a clear name that helps your team understand what it does
-              </p>
+
             </div>
 
             <IconPicker
@@ -219,10 +209,10 @@ function NewToolForm() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="integration-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description
               </label>
-              <textarea
+              <textarea id="integration-description"
                 required
                 rows={3}
                 value={formData.description}
@@ -234,9 +224,12 @@ function NewToolForm() {
               />
             </div>
 
+            {toolType === "custom_api" ? (
+              <CustomApiRequestEditor value={customRequest} onChange={setCustomRequest} />
+            ) : <>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {toolType === "custom_api" ? "API Endpoint URL" : "MCP Server Endpoint"}
+                MCP Server Endpoint
               </label>
               <input
                 type="url"
@@ -245,9 +238,7 @@ function NewToolForm() {
                 onChange={(e) =>
                   setFormData({ ...formData, endpoint: e.target.value })
                 }
-                placeholder={toolType === "custom_api"
-                  ? "https://api.example.com/endpoint"
-                  : "https://mcp-server.example.com/mcp"}
+                placeholder="https://mcp-server.example.com/mcp"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
               {toolType === "mcp_streamable_http" && (
@@ -256,24 +247,6 @@ function NewToolForm() {
                 </p>
               )}
             </div>
-
-            {toolType === "custom_api" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  HTTP Method
-                </label>
-                <select
-                  value={formData.method}
-                  onChange={(e) =>
-                    setFormData({ ...formData, method: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
-                >
-                  <option value="POST">POST</option>
-                  <option value="GET">GET</option>
-                </select>
-              </div>
-            )}
 
             {/* Timeout seconds for both tool types */}
             <div>
@@ -375,32 +348,29 @@ function NewToolForm() {
                 className="mt-3 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Leave empty if the {toolType === "custom_api" ? "API" : "MCP server"} doesn't require authentication
+                Leave empty if the MCP server doesn't require authentication
               </p>
             </div>
+            </>}
           </div>
         </div>
 
+        {toolType === "mcp_streamable_http" && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <h3 className="text-sm font-medium text-blue-900 dark:text-blue-300 mb-2">
-            {toolType === "custom_api" ? "Example: Custom API Tool" : "Example: MCP Tool"}
+            Example: MCP Tool
           </h3>
-          {toolType === "custom_api" ? (
-            <div className="text-xs text-blue-800 dark:text-blue-400 space-y-1">
-              <p>• Name: get_custom_info</p>
-              <p>• Endpoint: https://genai.softnix.ai/external/api/chat-messages</p>
-              <p>• Method: POST</p>
-              <p>• Auth Token: Your Softnix API key</p>
-            </div>
-          ) : (
+
             <div className="text-xs text-blue-800 dark:text-blue-400 space-y-1">
               <p>• Name: mcp_weather_tool</p>
               <p>• Endpoint: https://mcp-server.example.com/mcp</p>
               <p>• MCP Tool Names: get_weather, get_forecast (optional)</p>
               <p>• Auth Token: Your MCP server API key (if required)</p>
             </div>
-          )}
+
         </div>
+
+        )}
 
         {error && (
           <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-4">
