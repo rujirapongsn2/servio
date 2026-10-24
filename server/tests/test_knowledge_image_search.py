@@ -41,7 +41,8 @@ def runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(okf_service, "get_db", get_db)
     monkeypatch.setattr(images, "enabled", lambda: True)
     monkeypatch.setattr(images, "ensure_schema", lambda: None)
-    monkeypatch.setenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "0.5")
+    monkeypatch.delenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", raising=False)
+    monkeypatch.delenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", raising=False)
     monkeypatch.setenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5")
     with get_db() as db:
         db.add_all([TeamAgent(id=1, name="Owner", slug="owner"), TeamAgent(id=2, name="Other", slug="other"),
@@ -163,6 +164,92 @@ def test_qualifying_unique_results_are_capped_never_padded_and_source_checked(ru
     assert len(search.search_image(1, request()).matches) == 1
     (runtime[1] / "item-0.md").write_text("changed")
     assert search.search_image(1, request()).status == "no_match"
+
+
+@pytest.fixture
+def nearest_rows(runtime, monkeypatch):
+    class Client:
+        space = "test"
+        def image(self, _): return [1.0] * 768
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", Client)
+    rows = []
+    monkeypatch.setattr(search, "_nearest", lambda *_: rows)
+    return rows
+
+
+def test_bookshelf_search_excludes_unrelated_chair(runtime, nearest_rows):
+    nearest_rows.extend([
+        {**add_concept(runtime, "bookshelf", "red"), "score": .99},
+        {**add_concept(runtime, "chair", "green"), "score": .764},
+    ])
+    assert [match.title for match in search.search_image(1, request()).matches] == ["bookshelf"]
+
+
+def test_search_keeps_close_matches_without_filling_result_limit(runtime, nearest_rows):
+    nearest_rows.extend([
+        {**add_concept(runtime, "bookshelf", "red"), "score": .90},
+        {**add_concept(runtime, "similar-shelf", "green"), "score": .87},
+        {**add_concept(runtime, "distant", "blue"), "score": .83},
+    ])
+    assert [match.title for match in search.search_image(1, request()).matches] == ["bookshelf", "similar-shelf"]
+
+
+def test_similarity_gap_and_result_limit_are_configurable(runtime, nearest_rows, monkeypatch):
+    nearest_rows.extend([
+        {**add_concept(runtime, "bookshelf", "red"), "score": .90},
+        {**add_concept(runtime, "similar-shelf", "green"), "score": .87},
+        {**add_concept(runtime, "distant", "blue"), "score": .83},
+    ])
+    monkeypatch.setenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "0.08")
+    assert len(search.search_image(1, request()).matches) == 3
+    monkeypatch.setenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "2")
+    assert [match.title for match in search.search_image(1, request()).matches] == ["bookshelf", "similar-shelf"]
+
+
+def test_low_similarity_returns_no_match(runtime, nearest_rows):
+    nearest_rows.append({**add_concept(runtime), "score": .79})
+    result = search.search_image(1, request())
+    assert result.status == "no_match" and result.matches == ()
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf"), 1.1, -1.1])
+def test_invalid_candidate_score_cannot_anchor_results(runtime, nearest_rows, score):
+    nearest_rows.extend([
+        {**add_concept(runtime, "invalid", "red"), "score": score},
+        {**add_concept(runtime, "valid", "green"), "score": .90},
+    ])
+    assert [match.title for match in search.search_image(1, request()).matches] == ["valid"]
+
+
+def test_stale_high_score_does_not_hide_valid_matches(runtime, nearest_rows):
+    stale = {**add_concept(runtime, "stale", "red"), "score": .99}
+    (runtime[1] / "stale.md").write_text("changed")
+    nearest_rows.extend([stale, {**add_concept(runtime, "valid", "green"), "score": .87}])
+    assert [match.title for match in search.search_image(1, request()).matches] == ["valid"]
+
+
+def test_inaccessible_high_score_does_not_hide_valid_matches(runtime, nearest_rows):
+    nearest_rows.extend([
+        {**add_concept(runtime, "other", "red"), "bundle_id": 2, "score": .99},
+        {**add_concept(runtime, "valid", "green"), "score": .87},
+    ])
+    assert [match.title for match in search.search_image(1, request()).matches] == ["valid"]
+
+
+@pytest.mark.parametrize("setting,value", [
+    ("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "nan"),
+    ("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "1.1"),
+    ("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "invalid"),
+    ("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "nan"),
+    ("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "-0.1"),
+    ("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "2.1"),
+    ("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "invalid"),
+])
+def test_invalid_similarity_settings_fail_explicitly(runtime, nearest_rows, monkeypatch, setting, value):
+    monkeypatch.setenv(setting, value)
+    nearest_rows.append(add_concept(runtime))
+    with pytest.raises(ValueError):
+        search.search_image(1, request())
 
 
 def test_refs_are_session_owned_expire_reset_and_lookup_current_source(runtime, monkeypatch):

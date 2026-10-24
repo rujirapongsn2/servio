@@ -149,25 +149,32 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
     if not bundles:
         return SearchResult("unavailable")
     rows = _nearest(bundles, client.space, vector)
-    threshold = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "0.5"))
+    threshold = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "0.82"))
+    score_gap = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "0.06"))
     if not math.isfinite(threshold) or not -1 <= threshold <= 1:
         raise ValueError("Invalid image similarity threshold")
+    if not math.isfinite(score_gap) or not 0 <= score_gap <= 2:
+        raise ValueError("Invalid image similarity score gap")
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
     matches = []
     seen = set()
     current = assigned_bundles(team_id)
     for row in rows:
-        if row["bundle_id"] not in current or row["score"] < threshold or row["asset_id"] in seen:
+        score = float(row["score"])
+        if (row["bundle_id"] not in current or not math.isfinite(score)
+                or not -1 <= score <= 1 or score < threshold or row["asset_id"] in seen):
             continue
         ref = KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
         try:
             images._resolve_asset({"bundle": ref.bundle, "concept": ref.concept, "source": ref.source, "asset": ref.asset, "team": team_id})
         except (ValueError, OSError, KeyError):
             continue
-        matches.append(SearchMatch(ref, row["title"][:1000], (row["resource"] or row["title"])[:2000], (row["description"] or "")[:8000], float(row["score"])))
+        matches.append(SearchMatch(ref, row["title"][:1000], (row["resource"] or row["title"])[:2000], (row["description"] or "")[:8000], score))
         seen.add(ref.asset)
-        if len(matches) == limit:
-            break
+    matches.sort(key=lambda match: match.score, reverse=True)
+    if matches:
+        cutoff = max(threshold, matches[0].score - score_gap)
+        matches = [match for match in matches if match.score >= cutoff][:limit]
     return SearchResult("matched" if matches else "no_match", tuple(matches))
 
 

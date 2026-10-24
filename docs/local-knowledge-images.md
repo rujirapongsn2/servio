@@ -49,6 +49,16 @@ MULTIMODAL_IMAGE_MAX_RESULTS=1
 
 For a native backend, use `http://127.0.0.1:8092/v1`. The feature is disabled by default. Retrieval shows the best matching image by default; `MULTIMODAL_IMAGE_MAX_RESULTS` allows up to five candidates. The image model must return finite 768-dimensional vectors for both images and text queries. Only base64 image bytes are sent to inference. The inference client never forwards a user URL or filesystem path.
 
+Image-to-image product search uses separate settings:
+
+```dotenv
+MULTIMODAL_IMAGE_QUERY_MIN_SCORE=0.82
+MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP=0.06
+MULTIMODAL_IMAGE_QUERY_MAX_RESULTS=5
+```
+
+A product must meet the absolute similarity floor and remain within the score gap of the best available source. The result limit is a maximum, so search can return fewer products or no match. Scores must be finite cosine similarities between -1 and 1. The floor accepts that same range, and the gap accepts 0 through 2. Recalibrate these settings against matching and unrelated query images when the encoder or catalog changes.
+
 Change `MULTIMODAL_EMBEDDING_SPACE` whenever the weights, projector, image token budget, or other encoder settings change. Rebuild image vectors through **Re-index Vectors** before querying the changed space. Existing text vectors remain in `okf_rag_chunks`; image vectors use the separate `okf_image_vectors` table.
 
 ## Use a shared GPU service on 8090
