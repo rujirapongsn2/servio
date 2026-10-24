@@ -320,3 +320,87 @@ def test_reindex_runs_only_enabled_indexers(store, monkeypatch, text_enabled, im
     result = api.reindex_hybrid(1, 1)
     assert set(called) == ({'text'} if text_enabled else set()) | ({'image'} if image_enabled else set())
     assert result['image_index']['status'] == ('ready' if image_enabled else 'disabled')
+
+
+def test_explicit_images_use_current_sources_without_embedding(store, tmp_path, monkeypatch):
+    api, _ = store
+    paths = []
+    for name, color in [("06_bed.jpg", "red"), ("18_bunk_bed.jpg", "blue"), ("14_office_desk.jpg", "green")]:
+        path = tmp_path / name
+        path.write_bytes(picture("JPEG", color=color))
+        paths.append(path)
+    bundle = api.import_knowledge_files(paths, "Furniture", 1, "private", None)
+    monkeypatch.setattr(images, "ensure_schema", lambda: pytest.fail("exact lookup initialized vector database"))
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", lambda: pytest.fail("exact lookup called embedding service"))
+    monkeypatch.setenv("MULTIMODAL_IMAGE_MAX_RESULTS", "1")
+    result = images.query_bundle(bundle["id"], "18_bunk_bed.jpg, 06_BED.JPG and 14_ofﬁce_desk.jpg, 06_bed.jpg", 1, image_links=False)
+    assert [image["source_label"] for image in result] == ["18_bunk_bed.jpg", "06_bed.jpg", "14_office_desk.jpg"]
+    assert all(image["bundle_id"] == bundle["id"] for image in result)
+    assert all("image_url" not in image for image in result)
+    assert images.image_filename_inventory(bundle["id"], 1) == [path.name for path in paths]
+    app = FastAPI()
+    app.include_router(images.router)
+    client = TestClient(app)
+    signed = images.query_bundle(bundle["id"], "06_bed.jpg", 1)
+    assert client.get(signed[0]["image_url"]).content == paths[0].read_bytes()
+
+
+def test_explicit_missing_image_never_substitutes_semantic_neighbor(store, tmp_path, monkeypatch):
+    bundle, _, _, _ = imported(store, tmp_path)
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", lambda: pytest.fail("missing filename fell back to embeddings"))
+    assert images.query_bundle(bundle["id"], "unknown_bed.jpg", 1) == []
+    assert images.query_bundle(bundle["id"], "Show unknown_bed.jpg.", 1) == []
+    assert images.query_bundle(bundle["id"], "picture.png, unknown_bed.jpg", 1)[0]["source_label"] == "picture.png"
+
+
+def test_exact_lookup_revokes_foreign_inactive_and_stale_sources(store, tmp_path, monkeypatch):
+    bundle, claims, _, root = imported(store, tmp_path)
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", lambda: pytest.fail("exact lookup called embeddings"))
+    assert images.query_bundle(bundle["id"], "picture.png", 2) == []
+    assert images.image_filename_inventory(bundle["id"], 2) == []
+    api, get_db = store
+    with get_db() as db:
+        team = db.query(TeamAgent).filter_by(id=1).first()
+        team.status = "archived"
+    assert images.query_bundle(bundle["id"], "picture.png", 1) == []
+    assert images.image_filename_inventory(bundle["id"], 1) == []
+    with get_db() as db:
+        db.query(TeamAgent).filter_by(id=1).first().status = "active"
+    concept = api.list_concepts(bundle["id"], 1)[0]
+    source = root / concept["file_path"]
+    source.write_text(source.read_text() + "\nChanged")
+    assert images.query_bundle(bundle["id"], "picture.png", 1) == []
+    assert images.image_filename_inventory(bundle["id"], 1) == []
+
+
+def test_exact_lookup_rejects_changed_original(store, tmp_path):
+    bundle, _, _, root = imported(store, tmp_path)
+    next((root / "assets").iterdir()).write_bytes(picture(color="green"))
+    assert images.query_bundle(bundle["id"], "picture.png", 1) == []
+    assert images.image_filename_inventory(bundle["id"], 1) == []
+
+
+def test_quoted_filenames_preserve_spaces_and_limit(store, tmp_path):
+    api, _ = store
+    paths = []
+    for number in range(6):
+        path = tmp_path / f"Item {number}.png"
+        path.write_bytes(picture(color=(number * 30, 50, 100)))
+        paths.append(path)
+    bundle = api.import_knowledge_files(paths, "Items", 1, "private", None)
+    query = ", ".join(f'"{path.name}"' for path in paths)
+    assert len(images.query_bundle(bundle["id"], query, 1)) == 5
+    assert len(images.query_bundle(bundle["id"], query, 1, limit=2)) == 2
+
+
+def test_ambiguous_source_filename_has_no_arbitrary_match(store, tmp_path):
+    api, _ = store
+    paths = []
+    for folder, color in [("one", "red"), ("two", "blue")]:
+        directory = tmp_path / folder
+        directory.mkdir()
+        path = directory / "same.png"
+        path.write_bytes(picture(color=color))
+        paths.append(path)
+    bundle = api.import_knowledge_files(paths, "Ambiguous", 1, "private", None)
+    assert images.query_bundle(bundle["id"], "same.png", 1) == []

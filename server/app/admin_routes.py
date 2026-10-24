@@ -967,7 +967,9 @@ async def test_agent(
         get_tool_citations,
         get_tool_by_name,
     )
-    from app.utils import is_text_output
+    from app.utils import is_text_output, is_new_output_item
+    from app.knowledge_image_presentations import hydrate_knowledge_images
+    from app.knowledge_audio_presentations import hydrate_knowledge_media
 
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     if not database.user_can_access_agent(current_user, agent_id, "viewer", team_agent_id=team_agent_id):
@@ -1033,6 +1035,8 @@ async def test_agent(
         tool_calls = []
         citation_tools: list[str] = []
         tool_outputs: list[dict] = []
+        calls: dict[str, tuple[str, Optional[int]]] = {}
+        presentations = {}
 
         # Start per-request tool logging so dynamic tools can log invocations
         start_tool_logging()
@@ -1042,52 +1046,40 @@ async def test_agent(
             [{"role": "user", "content": user_message}],
         )
 
-        def _stringify(val):
-            try:
-                if isinstance(val, (dict, list)):
-                    import json as _json
-                    return _json.dumps(val, ensure_ascii=False)
-            except Exception:
-                pass
-            return str(val)
-
         async for event in output.stream_events():
             if is_text_output(event):
                 response_text += event.data.delta  # type: ignore[attr-defined]
-            # Track tool calls and outputs from RunItemStreamEvent
-            elif hasattr(event, 'item'):
-                it = event.item
-                etype = getattr(it, 'type', '') or ''
-                # function call events
-                if etype in {'function_call', 'function_tool_call', 'tool_call', 'function'}:
-                    name = getattr(it, 'name', 'unknown')
-                    args = getattr(it, 'arguments', {})
-                    try:
-                        # arguments may be JSON string in some versions
-                        if isinstance(args, str):
-                            import json as _json
-                            args = _json.loads(args)
-                    except Exception:
-                        pass
-                    tool_calls.append({'name': name, 'arguments': args})
-                    if name and name not in citation_tools:
-                        citation_tools.append(name)
-
-                # function/tool output events — capture for structured display
-                if ('output' in etype) or (etype in {'function_output', 'function_call_output', 'tool_result'}):
-                    name = getattr(it, 'name', None) or getattr(it, 'tool_name', None) or ''
-                    out = getattr(it, 'output', None) or getattr(it, 'content', None) or getattr(it, 'result', None)
-                    if isinstance(out, list):
+            elif is_new_output_item(event):
+                item = event.item.to_input_item()
+                call_id = item.get("call_id")
+                if item.get("type") == "function_call" and isinstance(call_id, str):
+                    name = item["name"]
+                    args = item.get("arguments", "{}")
+                    if isinstance(args, str):
                         try:
-                            texts = []
-                            for x in out:
-                                if isinstance(x, dict) and x.get('type') == 'text' and 'text' in x:
-                                    texts.append(str(x['text']))
-                            if texts:
-                                out = '\n'.join(texts)
-                        except Exception:
+                            args = json.loads(args)
+                        except ValueError:
                             pass
-                    tool_outputs.append({'name': name, 'output': out})
+                    tool_calls.append({"name": name, "arguments": args})
+                    if name not in citation_tools:
+                        citation_tools.append(name)
+                    bundle_id = next((
+                        getattr(tool, "_servio_knowledge_bundle_id", None)
+                        for tool in event.item.agent.tools
+                        if getattr(tool, "name", None) == name
+                    ), None)
+                    calls[call_id] = (name, bundle_id)
+                elif item.get("type") == "function_call_output" and isinstance(call_id, str):
+                    name, bundle_id = calls.pop(call_id, ("", None))
+                    value = item.get("output")
+                    tool_outputs.append({"name": name, "output": value})
+                    if bundle_id is not None and len(presentations) < 50:
+                        presentation = (
+                            hydrate_knowledge_images(value, team_agent_id, bundle_id)
+                            or hydrate_knowledge_media(value, team_agent_id, bundle_id)
+                        )
+                        if presentation is not None:
+                            presentations[call_id] = presentation
 
         # Merge SDK-detected tool calls with explicit logs from tools
         logged_calls = get_tool_log()
@@ -1098,13 +1090,14 @@ async def test_agent(
                 if name and not any(tc.get('name') == name and tc.get('arguments') == args for tc in tool_calls):
                     tool_calls.append({'name': name, 'arguments': args})
 
-        citations = citation_tools or get_tool_citations()
+        citations = list(dict.fromkeys(citation_tools + get_tool_citations()))
 
         return TestAgentResponse(
             response=response_text or "No response",
             tool_calls=tool_calls,
             citations=citations,
             tool_outputs=tool_outputs,
+            presentations=presentations,
         )
 
     except Exception as e:

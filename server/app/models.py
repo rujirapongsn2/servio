@@ -2,6 +2,9 @@ from typing import List, Optional, Dict, Any, Literal, Annotated
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
+from app.knowledge_image_presentations import KnowledgeImages
+from app.knowledge_audio_presentations import KnowledgeMedia
+
 
 # Authentication models
 class LoginRequest(BaseModel):
@@ -151,6 +154,7 @@ class TestAgentResponse(BaseModel):
     tool_calls: List[Dict[str, Any]] = []
     citations: List[str] = []
     tool_outputs: List[Dict[str, Any]] = []
+    presentations: Dict[str, KnowledgeImages | KnowledgeMedia] = Field(default_factory=dict)
 
 
 # Tool models

@@ -5,9 +5,8 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getApiBaseUrl } from "@/lib/api";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { normalizeMarkdownForChat } from "@/lib/markdown";
+import AgentTestContent from "@/components/AgentTestContent";
+import { parseProductPresentations, type ProductPresentations } from "@/lib/product-presentations";
 
 interface ToolCall {
   name?: string;
@@ -25,6 +24,7 @@ interface ChatMessage {
   tool_calls?: ToolCall[];
   citations?: string[];
   tool_outputs?: ToolOutput[];
+  presentations?: ProductPresentations;
 }
 
 export default function AgentTestPage() {
@@ -141,6 +141,7 @@ export default function AgentTestPage() {
         tool_calls: data.tool_calls || [],
         citations: data.citations || [],
         tool_outputs: data.tool_outputs || [],
+        presentations: parseProductPresentations(data.presentations),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -281,7 +282,7 @@ export default function AgentTestPage() {
                 }`}
               >
                 <div
-                  className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                  className={`min-w-0 w-full sm:max-w-[85%] rounded-lg px-4 py-2 ${
                     message.role === "user"
                       ? "bg-blue-600 text-white"
                       : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -292,9 +293,7 @@ export default function AgentTestPage() {
                   </div>
                   <div className="text-sm markdown-content">
                     {message.role === "assistant" ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {normalizeMarkdownForChat(String(message.content || ""))}
-                      </ReactMarkdown>
+                      <AgentTestContent content={String(message.content || "")} presentations={message.presentations} />
                     ) : (
                       <div className="whitespace-pre-wrap">{message.content}</div>
                     )}

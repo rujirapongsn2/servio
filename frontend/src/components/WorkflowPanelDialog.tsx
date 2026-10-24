@@ -30,6 +30,8 @@ export default function WorkflowPanelDialog({ title, onClose, children, busy = f
     dialog.current?.focus();
     const topDialog = () => Array.from(document.body.querySelectorAll<HTMLElement>('[role="dialog"]')).at(-1) ?? dialog.current;
     const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || (event.target instanceof HTMLElement && event.target.closest("dialog[open]")))
+        return;
       const scope = topDialog();
       if (!scope?.contains(event.target instanceof Node ? event.target : null))
         return;

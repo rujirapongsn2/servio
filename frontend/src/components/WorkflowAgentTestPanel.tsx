@@ -1,9 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { getApiBaseUrl } from "@/lib/api";
-import { normalizeMarkdownForChat } from "@/lib/markdown";
+import AgentTestContent from "@/components/AgentTestContent";
+import { parseProductPresentations, type ProductPresentations } from "@/lib/product-presentations";
 import WorkflowPanelDialog from "@/components/WorkflowPanelDialog";
 interface TestMessage {
   role: "user" | "assistant";
@@ -11,6 +10,7 @@ interface TestMessage {
   tool_calls?: unknown[];
   tool_outputs?: unknown[];
   citations?: unknown[];
+  presentations?: ProductPresentations;
 }
 export function parseForcedToolArguments(text: string): Record<string, unknown> {
   const value = text.trim();
@@ -102,7 +102,7 @@ export default function WorkflowAgentTestPanel({ teamId, agent, hasUnsavedChange
       if (controller.signal.aborted || version !== generation.current)
         return;
       const content = data.response;
-      setMessages(previous => [...previous, { role: "assistant", content, tool_calls: "tool_calls" in data && Array.isArray(data.tool_calls) ? data.tool_calls : [], tool_outputs: "tool_outputs" in data && Array.isArray(data.tool_outputs) ? data.tool_outputs : [], citations: "citations" in data && Array.isArray(data.citations) ? data.citations : [] }]);
+      setMessages(previous => [...previous, { role: "assistant", content, presentations: parseProductPresentations("presentations" in data ? data.presentations : null), tool_calls: "tool_calls" in data && Array.isArray(data.tool_calls) ? data.tool_calls : [], tool_outputs: "tool_outputs" in data && Array.isArray(data.tool_outputs) ? data.tool_outputs : [], citations: "citations" in data && Array.isArray(data.citations) ? data.citations : [] }]);
     }
     catch (failure) {
       if (!controller.signal.aborted && version === generation.current)
@@ -133,9 +133,7 @@ export default function WorkflowAgentTestPanel({ teamId, agent, hasUnsavedChange
     </div>}</details>
   <div role="log" aria-label="Test messages" aria-live="polite" className="min-h-48 max-h-[55dvh] space-y-4 overflow-y-auto rounded-lg border p-3 dark:border-gray-700">{messages.length === 0 && <p className="py-12 text-center text-sm text-gray-500">Send a message to test this Agent</p>}{messages.map((message, index) => <article key={index} className={`min-w-0 rounded-lg p-3 ${message.role === "user" ? "bg-blue-50 dark:bg-blue-950" : "bg-gray-50 dark:bg-gray-800"}`}>
     <p className="mb-1 text-xs font-semibold">{message.role === "user" ? "You" : agent.name}</p>
-    <div className="markdown-content break-words text-sm">
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>{normalizeMarkdownForChat(message.content)}</ReactMarkdown>
-    </div>{message.citations && message.citations.length > 0 && <details className="mt-2 text-sm">
+    <AgentTestContent content={message.content} presentations={message.presentations} />{message.citations && message.citations.length > 0 && <details className="mt-2 text-sm">
       <summary>Citations ({message.citations.length})</summary>
       <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs">{message.citations.map(json).join("\n")}</pre>
       </details>}{(["tool_calls", "tool_outputs"] as const).map(key => message[key] && message[key].length > 0 && <details key={key} className="mt-2 text-sm">

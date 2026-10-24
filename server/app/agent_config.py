@@ -36,24 +36,20 @@ STYLE_INSTRUCTIONS = (
 )
 
 """\nLightweight tool-call logging for test runs.\n- Uses ContextVar to isolate per-request logs.\n- Admin test endpoint should call start_tool_logging() before running.\n"""
-_tool_log: ContextVar[list] = ContextVar("tool_log", default=[])
+_tool_log: ContextVar[list[dict] | None] = ContextVar("tool_log", default=None)
 
 def start_tool_logging():
     _tool_log.set([])
 
 def log_tool_call(name: str, arguments: dict | None = None):
-    try:
-        entries = list(_tool_log.get())
+    entries = _tool_log.get()
+    if entries is not None:
         entries.append({"name": name, "arguments": arguments or {}})
-        _tool_log.set(entries)
-    except Exception:
-        pass
+
 
 def get_tool_log() -> List[Dict[str, Any]]:
-    try:
-        return list(_tool_log.get())
-    except Exception:
-        return []
+    return list(_tool_log.get() or [])
+
 
 def get_tool_citations() -> List[str]:
     seen = set()
@@ -338,11 +334,30 @@ def create_okf_knowledge_graph_tool(
     retrieval = config.get("retrieval", {}) if isinstance(config.get("retrieval"), dict) else {}
     limit = int(retrieval.get("limit", 5) or 5)
     expand_links = bool(retrieval.get("expand_links", True))
+    image_filenames = []
+    if bundle_id and runtime_team_agent_id is not None:
+        from app.local_image_rag import image_filename_inventory
+
+        image_filenames = image_filename_inventory(bundle_id, runtime_team_agent_id)
+    if image_filenames:
+        visible_filenames = []
+        inventory_size = 0
+        for filename in image_filenames[:100]:
+            inventory_size += len(filename)
+            if inventory_size > 8000:
+                break
+            visible_filenames.append(filename)
+        description += (
+            " This is an image library. Return photos from the library by querying exact "
+            "source filenames identified in the product knowledge. Available image filenames: "
+            + json.dumps(visible_filenames, ensure_ascii=False)
+            + (" (partial inventory)" if len(visible_filenames) < len(image_filenames) else "")
+        )
 
     async def dynamic_okf_tool(query: str):
         """Search a local Open Knowledge Format bundle."""
         try:
-            log_tool_call(tool_name, {"query": query, "okf_bundle_id": bundle_id})
+            log_tool_call(tool_name, {"query": query})
             if not bundle_id:
                 return "OKF bundle is not configured for this capability."
             if runtime_team_agent_id is None:
@@ -368,6 +383,7 @@ def create_okf_knowledge_graph_tool(
     dynamic_okf_tool.__doc__ = description
     tool = function_tool(dynamic_okf_tool)
     tool._servio_knowledge_bundle_id = bundle_id
+    tool._servio_image_filenames = image_filenames
     return tool
 
 
@@ -673,6 +689,21 @@ def build_agent_from_db(
             f"\n  - User discussed 'Udon Thani' earlier, now asks 'what time does it arrive?' → call tool with 'ขบวนรถ 25 ถึงอุดรธานีกี่โมง' (include destination and train)"
             f"\n  - User mentioned a product, now asks 'how much?' → call tool with the full product name in the query"
             f"\nAlways resolve pronouns, omitted subjects, and implicit references into explicit terms before passing to any tool."
+        )
+
+    if any(getattr(tool, "_servio_image_filenames", None) for tool in tools):
+        instructions += (
+            "\n\nWhen a user asks to see product pictures, first search the "
+            "product document knowledge for the requested product and its exact image filename. "
+            "Then call the image library with that exact filename to display the matching photo. "
+            "For comparisons, retrieve each requested product's exact filename. "
+            "Filename spelling may include typographic ligatures; preserve the document's filename. "
+            "Do not choose a different product just because its image is semantically similar. "
+            "If the product or its matching photo is absent, say it is unavailable. "
+            "Only claim a photo is shown after the image library returned that matching image. "
+            "The interface renders returned library images automatically. Do not invent Markdown "
+            "image links, relative filename links, or external image URLs from document credits. "
+            "Preserve document caveats and never invent missing specifications, prices, or stock."
         )
 
     # Create agent

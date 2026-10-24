@@ -7,6 +7,8 @@ import json
 import logging
 import math
 import os
+import re
+import unicodedata
 import threading
 import time
 from pathlib import Path
@@ -238,6 +240,59 @@ def original_image(asset_id: str, token: str):
     return Response(data, media_type=mime, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"})
 
 
+def _image_sources(bundle_id: int, team_agent_id: int) -> list[dict]:
+    from app.okf_service import _bundle_available_to_team, _parse_frontmatter, _ensure_within
+    if not enabled():
+        return []
+    sources = []
+    with get_db() as db:
+        bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+        team = db.query(TeamAgent).filter_by(id=team_agent_id).first()
+        if not team or team.status != "active" or not bundle or not _bundle_available_to_team(db, bundle, team.id):
+            return []
+        root = Path(bundle.storage_path)
+        concepts = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).order_by(OKFConceptIndex.id).all()
+        for concept in concepts:
+            try:
+                path = root / concept.file_path
+                _ensure_within(root, path)
+                markdown = path.read_text(encoding="utf-8")
+                if hashlib.sha256(markdown.encode()).hexdigest() != concept.content_hash:
+                    continue
+                fm, _ = _parse_frontmatter(markdown, concept.file_path)
+                if fm.get("document_type") not in {"jpg", "jpeg", "png"}:
+                    continue
+                claims = {"bundle": bundle_id, "concept": concept.concept_id, "source": concept.content_hash,
+                          "asset": fm.get("image_asset_id"), "team": team_agent_id}
+                _resolve_asset(claims)
+                sources.append({"concept_id": concept.concept_id, "asset_id": claims["asset"],
+                                "source_hash": concept.content_hash, "title": concept.title,
+                                "resource": concept.resource, "filename": _source_filename(fm.get("source_file"), concept.file_path)})
+            except (ValueError, OSError, KeyError, TypeError):
+                continue
+    return sources
+
+
+def image_filename_inventory(bundle_id: int, team_agent_id: int) -> list[str]:
+    return [source["filename"] for source in _image_sources(bundle_id, team_agent_id)]
+
+
+def _requested_filenames(query: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", query).casefold()
+    pattern = r"[\"'`]([^\"'`\r\n]+\.(?:jpe?g|png))[\"'`]|(?<![\w.-])([^\s\"'`<>\[\](),;]+\.(?:jpe?g|png))(?![\w-]|\.[\w])"
+    return list(dict.fromkeys(first or second for first, second in re.findall(pattern, normalized)))
+
+
+def _image_result(row, bundle_id, team_id, image_links):
+    image = {"asset_id": row["asset_id"], "title": row["title"], "source_label": row["resource"] or row["title"]}
+    if image_links:
+        token = _grant(bundle_id, row["concept_id"], row["asset_id"], row["source_hash"], team_id)
+        image["image_url"] = f"/api/knowledge-images/{row['asset_id']}?token={token}"
+    else:
+        image.update(bundle_id=bundle_id, concept_id=row["concept_id"], source_hash=row["source_hash"])
+    return image
+
+
 def query_bundle(bundle_id, query, team_agent_id, limit=5, *, image_links=True):
     """Authorizes before inference and issues grants only for current source assets."""
     if not enabled() or not query.strip() or team_agent_id is None:
@@ -249,6 +304,15 @@ def query_bundle(bundle_id, query, team_agent_id, limit=5, *, image_links=True):
         if not team or team.status != "active" or not bundle or not _bundle_available_to_team(db, bundle, team.id):
             return []
         team_id = team.id
+    filenames = _requested_filenames(query)
+    if filenames:
+        sources = _image_sources(bundle_id, team_id)
+        matches = {}
+        for source in sources:
+            key = unicodedata.normalize("NFKC", source["filename"]).casefold()
+            matches.setdefault(key, []).append(source)
+        return [_image_result(matches[name][0], bundle_id, team_id, image_links)
+                for name in filenames[:max(1, min(limit, 5))] if len(matches.get(name, [])) == 1]
     ensure_schema()
     client = LocalImageEmbeddingClient()
     with engine.connect() as conn:
@@ -275,11 +339,5 @@ def query_bundle(bundle_id, query, team_agent_id, limit=5, *, image_links=True):
             _resolve_asset(claims)
         except (ValueError, OSError, KeyError):
             continue
-        image = {"asset_id": row["asset_id"], "title": row["title"], "source_label": row["resource"] or row["title"]}
-        if image_links:
-            token = _grant(bundle_id, row["concept_id"], row["asset_id"], row["source_hash"], team_id)
-            image["image_url"] = f"/api/knowledge-images/{row['asset_id']}?token={token}"
-        else:
-            image.update(bundle_id=bundle_id, concept_id=row["concept_id"], source_hash=row["source_hash"])
-        images.append(image)
+        images.append(_image_result(row, bundle_id, team_id, image_links))
     return images

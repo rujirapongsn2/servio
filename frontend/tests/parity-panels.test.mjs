@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import TestRenderer from 'react-test-renderer';
 import ts from 'typescript';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 const { act, create } = TestRenderer;
 const dependency = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,7 +23,20 @@ const mocks = { '@/lib/api': { getApiBaseUrl: () => '' }, '@/components/Workflow
 for (const name of ['WorkflowToolModal','CreateOKFBundleModal','TestOKFBundleModal','CreateFileStoreModal','FileStoreDetailModal','TestFileStoreModal']) mocks[`@/components/${name}`] = { default: noop };
 mocks['@/components/OKFBundleDetailDrawer'] = { default: Knowledge };
 const library = load('src/components/WorkflowCapabilitiesPanel.tsx', mocks);
-const agentTest = load('src/components/WorkflowAgentTestPanel.tsx', { ...mocks, 'react-markdown': { default: ({ children }) => React.createElement('p', null, children) }, 'remark-gfm': { default: noop }, '@/lib/markdown': { normalizeMarkdownForChat: text => text } });
+const presentations = load('src/lib/product-presentations.ts');
+const imageComponents = load('src/components/KnowledgeImages.tsx', { '@/lib/api': { buildApiUrl: value => value } });
+const Content = load('src/components/AgentTestContent.tsx', {
+  'react-markdown': { default: ReactMarkdown }, 'remark-gfm': { default: remarkGfm },
+  '@/lib/markdown': { normalizeMarkdownForChat: text => text },
+  '@/components/KnowledgeImages': imageComponents,
+  '@/components/KnowledgeAudio': { KnowledgeAudio: props => React.createElement('audio-test', props) },
+  '@/components/ProductCarousel': { ProductCarousel: props => React.createElement('carousel-test', props) },
+});
+const agentTest = load('src/components/WorkflowAgentTestPanel.tsx', {
+  ...mocks, '@/components/AgentTestContent': Content, '@/lib/product-presentations': presentations,
+});
+const libraryImage = { asset_id: 'a'.repeat(64), title: 'Sofa', source_label: '01_sofa.jpg', image_url: `/api/knowledge-images/${'a'.repeat(64)}?token=signed.token` };
+const libraryPresentations = { lookup: { type: 'knowledge_images', version: 1, response: 'Found', images: [libraryImage] } };
 const response = (data, ok = true) => ({ ok, json: async () => data });
 const text = tree => JSON.stringify(tree.toJSON());
 const button = (tree, value) => tree.root.findAllByType('button').find(node => node.children.includes(value));
@@ -36,8 +51,8 @@ test('forced tool arguments preserve JSON objects and accept key=value pairs', (
 async function mountTest() { let tree; await act(async () => { tree = create(React.createElement(agentTest.default, { teamId: 5, agent: { id: 7, name: 'Support' }, hasUnsavedChanges: true, onClose() {} })); }); return tree; }
 async function send(tree, value) { await act(async () => tree.root.findByProps({ 'aria-label': 'Test message' }).props.onChange({ target: { value } })); await act(async () => tree.root.findByType('form').props.onSubmit({ preventDefault() {} })); }
 test('Agent tests call team-scoped saved settings and expose outputs and citations', async () => { const restore = globals(); let tree; const requests = []; globalThis.fetch = async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return response({ response: 'Answer', citations: ['policy.md'], tool_calls: [{ name: 'lookup' }], tool_outputs: [{ name: 'lookup', output: { price: 4 } }] }); }; try { tree = await mountTest(); assert.match(text(tree), /Unsaved changes are excluded/); await send(tree, 'Hello'); assert.deepEqual(requests, [{ url: '/api/admin/agents/7/test?team_agent_id=5', body: { message: 'Hello' } }]); assert.match(text(tree), /policy.md/); assert.match(text(tree), /price/); assert.match(text(tree), /Answer/); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
-test('Reset aborts in-flight Agent test and ignores late response', async () => { const restore = globals(); let tree; let resolve; let signal; globalThis.fetch = (url, options) => { signal = options.signal; return new Promise(done => { resolve = done; }); }; try { tree = await mountTest(); await act(async () => tree.root.findByProps({ 'aria-label': 'Test message' }).props.onChange({ target: { value: 'Hello' } })); let pending; await act(async () => { pending = tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); await act(async () => button(tree, 'Reset').props.onClick()); assert.equal(signal.aborted, true); await act(async () => { resolve(response({ response: 'Late answer' })); await pending; }); assert.doesNotMatch(text(tree), /Late answer/); assert.equal(tree.root.findAllByType('article').length, 0); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
-test('switching Agent aborts request and clears old Agent results', async () => { const restore = globals(); let tree; let resolve; let signal; globalThis.fetch = (url, options) => { signal = options.signal; return new Promise(done => { resolve = done; }); }; try { tree = await mountTest(); await act(async () => tree.root.findByProps({ 'aria-label': 'Test message' }).props.onChange({ target: { value: 'Old' } })); let pending; await act(async () => { pending = tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); await act(async () => tree.update(React.createElement(agentTest.default, { teamId: 5, agent: { id: 8, name: 'Sales' }, hasUnsavedChanges: false, onClose() {} }))); assert.equal(signal.aborted, true); await act(async () => { resolve(response({ response: 'Old agent result' })); await pending; }); assert.doesNotMatch(text(tree), /Old agent result/); assert.equal(tree.root.findAllByType('article').length, 0); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
+test('Reset aborts in-flight Agent test and ignores late response', async () => { const restore = globals(); let tree; let resolve; let signal; globalThis.fetch = (url, options) => { signal = options.signal; return new Promise(done => { resolve = done; }); }; try { tree = await mountTest(); await act(async () => tree.root.findByProps({ 'aria-label': 'Test message' }).props.onChange({ target: { value: 'Hello' } })); let pending; await act(async () => { pending = tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); await act(async () => button(tree, 'Reset').props.onClick()); assert.equal(signal.aborted, true); await act(async () => { resolve(response({ response: 'Late answer', presentations: libraryPresentations })); await pending; }); assert.doesNotMatch(text(tree), /Late answer|01_sofa/); assert.equal(tree.root.findAllByType('article').length, 0); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
+test('switching Agent aborts request and clears old Agent results', async () => { const restore = globals(); let tree; let resolve; let signal; globalThis.fetch = (url, options) => { signal = options.signal; return new Promise(done => { resolve = done; }); }; try { tree = await mountTest(); await act(async () => tree.root.findByProps({ 'aria-label': 'Test message' }).props.onChange({ target: { value: 'Old' } })); let pending; await act(async () => { pending = tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); await act(async () => tree.update(React.createElement(agentTest.default, { teamId: 5, agent: { id: 8, name: 'Sales' }, hasUnsavedChanges: false, onClose() {} }))); assert.equal(signal.aborted, true); await act(async () => { resolve(response({ response: 'Old agent result', presentations: libraryPresentations })); await pending; }); assert.doesNotMatch(text(tree), /Old agent result|01_sofa/); assert.equal(tree.root.findAllByType('article').length, 0); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
 const Drawer = load('src/components/OKFBundleDetailDrawer.tsx', { '@/lib/api': { getApiBaseUrl: () => '' }, '@/components/KnowledgeAudio': { KnowledgeAudio: noop }, '@/components/KnowledgeImages': { KnowledgeImages: noop }, '@/lib/product-presentations': { parseKnowledgeAudio: () => [], parseKnowledgeImages: () => null } }).default;
 test('foreign knowledge remains browsable while edit, reindex and source refresh handlers are guarded', async () => { const restore = globals(); let tree; const writes = []; const concept = { id: 1, bundle_id: 3, concept_id: 'document', file_path: 'doc.md', type: 'document', title: 'Policy document', tags: [], body: 'Saved policy', frontmatter: { source_url: 'https://example.com/policy' }, links: [] }; globalThis.fetch = async (url, options) => { if (options?.method) { writes.push(options.method); return response({}); } if (url.includes('/concepts/document')) return response(concept); if (url.includes('/concepts')) return response([concept]); return response({ id: 3, name: 'knowledge', display_name: 'Knowledge', status: 'ready', concept_count: 1, link_count: 0 }); }; try { await act(async () => { tree = create(React.createElement(Drawer, { tool: tools[2], teamAgentId: 5, canEdit: false, onClose() {} })); }); const reindex = tree.root.findAllByType('button').find(node => node.children.includes('Re-index')); assert.equal(reindex.props.disabled, true); await act(async () => reindex.props.onClick()); await act(async () => button(tree, 'Documents (1)').props.onClick()); const conceptButton = tree.root.findAllByType('button').find(node => node.findAllByType('div').some(child => child.children.includes('Policy document'))); assert.equal(conceptButton.props.disabled, false); const edit = tree.root.findAllByType('button').find(node => node.children.includes('Edit')); assert.ok(edit); assert.equal(edit.props.disabled, true); await act(async () => edit.props.onClick()); const source = tree.root.findByProps({ id: 'document-source-url' }); assert.equal(source.props.disabled, true); const refresh = tree.root.findAllByType('button').find(node => node.children.includes(' Re-index URL')); assert.equal(refresh.props.disabled, true); await act(async () => refresh.props.onClick()); assert.deepEqual(writes, []); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
 
@@ -65,7 +80,7 @@ test('read-only document library keeps both Close buttons usable', async () => {
 test('Escape preserves a busy nested import dialog and closes it when idle', async () => {
   const previous = { document: globalThis.document, MutationObserver: globalThis.MutationObserver, Node: globalThis.Node, HTMLElement: globalThis.HTMLElement };
   let tree; let busy = true; let closed = 0; const listeners = new Map();
-  class ElementNode { isConnected = true; focus() {} }
+  class ElementNode { isConnected = true; focus() {} closest() { return null; } }
   globalThis.Node = ElementNode; globalThis.HTMLElement = ElementNode;
   const nested = new ElementNode();
   nested.contains = target => target === nested;
@@ -91,5 +106,77 @@ test('knowledge library displays its readable source name', async () => {
     tree = await mountLibrary();
     assert.equal(tree.root.findAllByProps({ 'aria-label': 'Open Product guide' }).length, 1);
     assert.doesNotMatch(text(tree), /Product_guide_okf_3/);
+  } finally { if (tree) await act(async () => tree.unmount()); restore(); }
+});
+
+test('Agent Test renders signed library images with source labels and suppresses generated image URLs', async () => {
+  const restore = globals(); let tree;
+  globalThis.fetch = async () => response({
+    response: 'Sofa **200 cm** ![invented](01_sofa.jpg) ![external](https://example.com/sofa.jpg)',
+    presentations: libraryPresentations,
+  });
+  try {
+    tree = await mountTest(); await send(tree, 'Show the sofa');
+    assert.deepEqual(tree.root.findAllByType('img').map(node => node.props.src), [libraryImage.image_url]);
+    assert.match(text(tree), /01_sofa.jpg/);
+    assert.equal(tree.root.findAllByType('strong')[0].children[0], '200 cm');
+    assert.equal(tree.root.findAllByProps({ 'aria-label': 'ดูภาพต้นฉบับ Sofa' }).length, 1);
+    await act(async () => button(tree, 'Reset').props.onClick());
+    assert.equal(tree.root.findAllByType('img').length, 0);
+  } finally { if (tree) await act(async () => tree.unmount()); restore(); }
+});
+test('Agent Test rejects forged library URLs and never renders raw tool image claims', async () => {
+  const restore = globals(); let tree;
+  globalThis.fetch = async () => response({ response: 'Answer ![fake](06_bed.jpg)',
+    presentations: { lookup: { ...libraryPresentations.lookup, images: [{ ...libraryImage, image_url: 'https://example.com/forged.jpg' }] } },
+    tool_outputs: [{ output: JSON.stringify(libraryPresentations.lookup) }],
+  });
+  try {
+    tree = await mountTest(); await send(tree, 'Show a bed');
+    assert.equal(tree.root.findAllByType('img').length, 0);
+    assert.equal(tree.root.findAllByProps({ 'aria-label': 'รูปภาพอ้างอิง' }).length, 0);
+    assert.match(text(tree), /Tool outputs/);
+  } finally { if (tree) await act(async () => tree.unmount()); restore(); }
+});
+test('switching Team clears previously rendered library images', async () => {
+  const restore = globals(); let tree;
+  globalThis.fetch = async () => response({ response: 'Sofa', presentations: libraryPresentations });
+  try {
+    tree = await mountTest(); await send(tree, 'Show sofa');
+    assert.equal(tree.root.findAllByType('img').length, 1);
+    await act(async () => tree.update(React.createElement(agentTest.default, { teamId: 6, agent: { id: 7, name: 'Support' }, hasUnsavedChanges: false, onClose() {} })));
+    assert.equal(tree.root.findAllByType('img').length, 0);
+  } finally { if (tree) await act(async () => tree.unmount()); restore(); }
+});
+
+test('native image dialog retains Escape and Tab without closing Workflow Test', async () => {
+  const previous = { document: globalThis.document, MutationObserver: globalThis.MutationObserver, Node: globalThis.Node, HTMLElement: globalThis.HTMLElement };
+  let tree; const listeners = new Map();
+  class ElementNode { isConnected = true; focus() {} closest(selector) { return selector === 'dialog[open]' ? this : null; } }
+  globalThis.Node = ElementNode; globalThis.HTMLElement = ElementNode;
+  const imageDialog = new ElementNode();
+  const parentDialog = { contains: () => true, getAttribute: () => null, querySelectorAll: () => [], focus() {} };
+  globalThis.document = { activeElement: imageDialog, body: { style: { overflow: '' }, querySelectorAll: () => [parentDialog] }, addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) };
+  globalThis.MutationObserver = class { observe() {} disconnect() {} };
+  const Panel = load('src/components/WorkflowPanelDialog.tsx', { 'react-dom': { createPortal: children => children } }).default;
+  try {
+    await act(async () => { tree = create(React.createElement(Panel, { title: 'Test', onClose() { assert.fail('Test must remain open'); } })); });
+    for (const key of ['Escape', 'Tab']) {
+      await act(async () => listeners.get('keydown')({ key, target: imageDialog, preventDefault() { assert.fail('Native dialog handles its own keyboard'); }, stopPropagation() {} }));
+    }
+  } finally { if (tree) await act(async () => tree.unmount()); Object.assign(globalThis, previous); }
+});
+
+test('comparison photos from separate calls share one gallery without duplicate assets', async () => {
+  const restore = globals(); let tree;
+  const bed = { ...libraryImage, asset_id: 'b'.repeat(64), title: 'Bed', source_label: '06_bed.jpg', image_url: `/api/knowledge-images/${'b'.repeat(64)}?token=signed.token` };
+  globalThis.fetch = async () => response({ response: 'Compare', presentations: {
+    ...libraryPresentations,
+    second: { ...libraryPresentations.lookup, images: [bed, libraryImage] },
+  } });
+  try {
+    tree = await mountTest(); await send(tree, 'Compare');
+    assert.equal(tree.root.findAllByProps({ 'aria-label': 'รูปภาพอ้างอิง' }).length, 1);
+    assert.deepEqual(tree.root.findAllByType('img').map(node => node.props.alt), ['Sofa', 'Bed']);
   } finally { if (tree) await act(async () => tree.unmount()); restore(); }
 });
