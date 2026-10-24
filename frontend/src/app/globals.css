@@ -1,36 +1,241 @@
 @import "tailwindcss";
 
+/* =====================================================================
+   Softnix CI, aligned with EDC1 (Softnix Data Lakehouse look).
+   Source of truth: DESIGN.md at the repo root.
+   Tailwind's default ramps are re-pointed at the Softnix palette so every
+   existing gray/blue/green/red/amber utility picks up the CI without a
+   per-file rewrite. Semantic tokens (bg-primary, text-ink, border-line …)
+   are for new code.
+   ===================================================================== */
+@theme {
+  --font-sans: "Inter", "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* semantic tokens */
+  --color-primary: #4582b8;
+  --color-primary-hover: #3e75a6;
+  --color-primary-disabled: #9fbed9;
+  --color-primary-50: #ecf4fa;
+  --color-primary-100: #d6e6f3;
+  --color-primary-700: #3a6f9e;
+  --color-ink: #101b2a;
+  --color-ink-2: #566377;
+  --color-ink-3: #6b7585;
+  --color-line: #e2e5ea;
+  --color-line-strong: #d3d8e0;
+  --color-canvas: #f9fafb;
+  --color-topbar: #fafafb;
+  --color-surface-2: #f6f8fa;
+  --color-surface-3: #f0f2f4;
+  --color-hover: #f3f5f8;
+  --color-selected: #e0eef7;
+  --color-dark: #1e273a;
+  --color-ok: #3e9f4d;
+  --color-ok-50: #e2fbe8;
+  --color-warn: #d0761f;
+  --color-warn-50: #fdf1e4;
+  --color-bad: #e74341;
+  --color-bad-50: #fdeceb;
+  --color-sx-orange: #f3903f;
+  --color-sx-yellow: #fdc70c;
+  --color-sx-lime: #a9cb2e;
+
+  /* Softnix primary ramp (blue / sky / indigo / violet / purple all land here:
+     Lakehouse has one accent, no violet) */
+  --color-blue-50: #ecf4fa;
+  --color-blue-100: #d6e6f3;
+  --color-blue-200: #b4d1ea;
+  --color-blue-300: #8ab6dc;
+  --color-blue-400: #6a9fcd;
+  --color-blue-500: #4f8cc1;
+  --color-blue-600: #4582b8;
+  --color-blue-700: #3e75a6;
+  --color-blue-800: #345f86;
+  --color-blue-900: #2b4d6c;
+  --color-blue-950: #1c3349;
+  --color-sky-50: #ecf4fa;
+  --color-sky-100: #d6e6f3;
+  --color-sky-200: #b4d1ea;
+  --color-sky-300: #8ab6dc;
+  --color-sky-400: #6a9fcd;
+  --color-sky-500: #4f8cc1;
+  --color-sky-600: #4582b8;
+  --color-sky-700: #3e75a6;
+  --color-sky-800: #345f86;
+  --color-sky-900: #2b4d6c;
+  --color-sky-950: #1c3349;
+  --color-indigo-50: #ecf4fa;
+  --color-indigo-100: #d6e6f3;
+  --color-indigo-200: #b4d1ea;
+  --color-indigo-300: #8ab6dc;
+  --color-indigo-400: #6a9fcd;
+  --color-indigo-500: #4f8cc1;
+  --color-indigo-600: #4582b8;
+  --color-indigo-700: #3e75a6;
+  --color-indigo-800: #345f86;
+  --color-indigo-900: #2b4d6c;
+  --color-indigo-950: #1c3349;
+  --color-violet-50: #ecf4fa;
+  --color-violet-100: #d6e6f3;
+  --color-violet-200: #b4d1ea;
+  --color-violet-300: #8ab6dc;
+  --color-violet-400: #6a9fcd;
+  --color-violet-500: #4f8cc1;
+  --color-violet-600: #4582b8;
+  --color-violet-700: #3e75a6;
+  --color-violet-800: #345f86;
+  --color-violet-900: #2b4d6c;
+  --color-violet-950: #1c3349;
+  --color-purple-50: #ecf4fa;
+  --color-purple-100: #d6e6f3;
+  --color-purple-200: #b4d1ea;
+  --color-purple-300: #8ab6dc;
+  --color-purple-400: #6a9fcd;
+  --color-purple-500: #4f8cc1;
+  --color-purple-600: #4582b8;
+  --color-purple-700: #3e75a6;
+  --color-purple-800: #345f86;
+  --color-purple-900: #2b4d6c;
+  --color-purple-950: #1c3349;
+
+  /* Lakehouse neutrals (navy-tinted) */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f0f2f4;
+  --color-gray-200: #e2e5ea;
+  --color-gray-300: #d3d8e0;
+  --color-gray-400: #9aa3b0;
+  --color-gray-500: #6b7585;
+  --color-gray-600: #566377;
+  --color-gray-700: #3b4656;
+  --color-gray-800: #1e273a;
+  --color-gray-900: #101b2a;
+  --color-gray-950: #0a121d;
+  --color-slate-50: #f9fafb;
+  --color-slate-100: #f0f2f4;
+  --color-slate-200: #e2e5ea;
+  --color-slate-300: #d3d8e0;
+  --color-slate-400: #9aa3b0;
+  --color-slate-500: #6b7585;
+  --color-slate-600: #566377;
+  --color-slate-700: #3b4656;
+  --color-slate-800: #1e273a;
+  --color-slate-900: #101b2a;
+  --color-slate-950: #0a121d;
+
+  /* status: success (Lakehouse green) */
+  --color-green-50: #e2fbe8;
+  --color-green-100: #c9f2d3;
+  --color-green-200: #a3e3b2;
+  --color-green-300: #74cd88;
+  --color-green-400: #4fc660;
+  --color-green-500: #3e9f4d;
+  --color-green-600: #378c44;
+  --color-green-700: #33803f;
+  --color-green-800: #286232;
+  --color-green-900: #1f4d28;
+  --color-green-950: #12301a;
+  --color-emerald-50: #e2fbe8;
+  --color-emerald-100: #c9f2d3;
+  --color-emerald-200: #a3e3b2;
+  --color-emerald-300: #74cd88;
+  --color-emerald-400: #4fc660;
+  --color-emerald-500: #3e9f4d;
+  --color-emerald-600: #378c44;
+  --color-emerald-700: #33803f;
+  --color-emerald-800: #286232;
+  --color-emerald-900: #1f4d28;
+  --color-emerald-950: #12301a;
+
+  /* status: error */
+  --color-red-50: #fdeceb;
+  --color-red-100: #fbd9d8;
+  --color-red-200: #f6b5b3;
+  --color-red-300: #f08a87;
+  --color-red-400: #ec625f;
+  --color-red-500: #e74341;
+  --color-red-600: #d23532;
+  --color-red-700: #c23432;
+  --color-red-800: #8f2422;
+  --color-red-900: #741f1e;
+  --color-red-950: #400d0c;
+
+  /* status: warning (Softnix orange family) */
+  --color-amber-50: #fdf1e4;
+  --color-amber-100: #fbe3c8;
+  --color-amber-200: #f6c897;
+  --color-amber-300: #f0a95f;
+  --color-amber-400: #f3903f;
+  --color-amber-500: #e07f2a;
+  --color-amber-600: #c96a1c;
+  --color-amber-700: #b0601a;
+  --color-amber-800: #8c4c16;
+  --color-amber-900: #713e14;
+  --color-amber-950: #3f200a;
+  --color-orange-50: #fdf1e4;
+  --color-orange-100: #fbe3c8;
+  --color-orange-200: #f6c897;
+  --color-orange-300: #f0a95f;
+  --color-orange-400: #f3903f;
+  --color-orange-500: #e07f2a;
+  --color-orange-600: #c96a1c;
+  --color-orange-700: #b0601a;
+  --color-orange-800: #8c4c16;
+  --color-orange-900: #713e14;
+  --color-orange-950: #3f200a;
+  --color-yellow-50: #fffbe8;
+  --color-yellow-100: #fff3bf;
+  --color-yellow-200: #ffe680;
+  --color-yellow-300: #fed845;
+  --color-yellow-400: #fdc70c;
+  --color-yellow-500: #e5b000;
+  --color-yellow-600: #b88a00;
+  --color-yellow-700: #8f6a00;
+  --color-yellow-800: #6e5200;
+  --color-yellow-900: #5a4300;
+  --color-yellow-950: #332600;
+
+  /* elevation: hairline-soft, as in Lakehouse */
+  --shadow-xs: 0 1px 1px rgba(16, 27, 42, 0.03);
+  --shadow-sm: 0 1px 2px rgba(16, 27, 42, 0.04);
+  --shadow: 0 1px 2px rgba(16, 27, 42, 0.05);
+  --shadow-md: 0 4px 12px rgba(16, 27, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(16, 27, 42, 0.12);
+  --shadow-xl: 0 16px 40px rgba(16, 27, 42, 0.14);
+  --shadow-2xl: 0 24px 56px rgba(16, 27, 42, 0.18);
+}
+
 :root {
   --background: #ffffff;
-  --foreground: #0D1B2A;
+  --foreground: #101b2a;
   --card-background: #ffffff;
-  --primary: #2786C2;
-  --primary-hover: #1A5A8A;
-  --border-color: #E2E8F0;
-  --softnix-off-white: #F8F9FA;
-  --softnix-ink: #0D1B2A;
-  --softnix-charcoal: #2D3F55;
-  --softnix-slate: #778DA9;
-  --softnix-stone: #CBD5E1;
-  --shadow: rgba(0, 0, 0, 0.04) 0 2px 6px 0;
-  --shadow-lg: rgba(0, 0, 0, 0.02) 0 0 0 1px, rgba(0, 0, 0, 0.04) 0 2px 6px 0, rgba(0, 0, 0, 0.1) 0 4px 8px 0;
+  --primary: #4582b8;
+  --primary-hover: #3e75a6;
+  --border-color: #e2e5ea;
+  --softnix-off-white: #f6f8fa;
+  --softnix-ink: #101b2a;
+  --softnix-charcoal: #3b4656;
+  --softnix-slate: #6b7585;
+  --softnix-stone: #d3d8e0;
+  --shadow: 0 1px 2px rgba(16, 27, 42, 0.04);
+  --shadow-lg: 0 12px 32px rgba(16, 27, 42, 0.12);
   --font-serif: "New York", serif;
-  --font-sans: "Softnix Cereal VF", Circular, -apple-system, system-ui, Roboto, "Helvetica Neue", sans-serif;
+  --font-sans: "Inter", "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  /* Softnix tier accents */
-  --brand-gradient-start: #F3903F;
-  --brand-gradient-end: #FDC70C;
-  --brand-text-dark: #0D1B2A;
+  /* Softnix brand spectrum (logo / tier accents only, never a surface) */
+  --brand-gradient-start: #f3903f;
+  --brand-gradient-end: #fdc70c;
+  --brand-text-dark: #101b2a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #111827;
+    --background: #0a121d;
     --foreground: #f9fafb;
-    --card-background: #1f2937;
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
-    --border-color: #374151;
+    --card-background: #1e273a;
+    --primary: #6a9fcd;
+    --primary-hover: #4f8cc1;
+    --border-color: #3b4656;
   }
 }
 
@@ -38,6 +243,28 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* browser surfaces carry the CI too */
+::selection {
+  background: #d6e6f3;
+  color: #101b2a;
+}
+:root {
+  accent-color: #4582b8;
+  caret-color: #4582b8;
+  scrollbar-color: #d3d8e0 transparent;
+}
+:focus-visible {
+  outline-color: #4582b8;
+}
+code, kbd, pre, samp {
+  font-family: var(--font-mono);
+}
+.tabular-nums, td {
+  font-variant-numeric: tabular-nums;
 }
 
 p {
@@ -122,8 +349,8 @@ li {
   white-space: nowrap;
 }
 
-/* Markdown Table Styles */
-table {
+/* Markdown tables (chat answers): compact grid */
+.markdown-content table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 1rem;
@@ -131,17 +358,38 @@ table {
   font-size: 0.875rem;
 }
 
-th, td {
+.markdown-content th,
+.markdown-content td {
   border: 1px solid var(--border-color);
-  padding: 0.75rem;
+  padding: 0.5rem 0.75rem;
   text-align: left;
 }
 
-th {
-  background-color: rgba(0, 0, 0, 0.05);
+.markdown-content th {
+  background-color: #f6f8fa;
   font-weight: 600;
 }
 
-.dark th {
+.dark .markdown-content th {
   background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* App tables: Lakehouse style (light header, muted 500 labels, row rules only).
+   Kept in the base layer so per-table utilities still override. */
+@layer base {
+  table {
+    border-collapse: collapse;
+  }
+  thead th {
+    background-color: #f9fafb;
+    color: #566377;
+    font-weight: 500;
+    text-align: left;
+  }
+  tbody td {
+    border-bottom: 1px solid #eceef2;
+  }
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
 }

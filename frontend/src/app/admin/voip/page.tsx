@@ -147,7 +147,7 @@ export default function VoIPPage() {
             </div>
 
             {/* Webhook Info Card */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex flex-col space-y-4">
                     <div>
                         <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
@@ -174,7 +174,7 @@ export default function VoIPPage() {
 
             {/* Provider Settings */}
             {selectedProvider ? (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 border border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-6">
                         Account Credentials
                     </h3>

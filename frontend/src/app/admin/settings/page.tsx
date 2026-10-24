@@ -196,7 +196,7 @@ function IntentRulesSection({ apiBaseUrl }: { apiBaseUrl: string }) {
                   placeholder="e.g. refund, lawyer, urgent"
                   rows={2}
                 />
-                <p className="text-[10px] text-gray-500">Separate keywords with commas</p>
+                <p className="text-[11px] text-gray-500">Separate keywords with commas</p>
               </div>
             ) : (
               <div className="text-sm text-gray-600 dark:text-gray-400 break-words">
@@ -214,7 +214,7 @@ function IntentRulesSection({ apiBaseUrl }: { apiBaseUrl: string }) {
               </div>
             )}
             {rule.description && (
-              <p className="mt-1 text-[10px] text-gray-400">{rule.description}</p>
+              <p className="mt-1 text-[11px] text-gray-400">{rule.description}</p>
             )}
           </div>
         ))}
@@ -237,6 +237,17 @@ export default function SettingsPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
+  // Browser-only values (origin, resolved API base, stored username) differ between the
+  // static prerender and the client, so read them after mount to keep hydration identical.
+  const [clientInfo, setClientInfo] = useState({ apiBase: "", origin: "", username: "" });
+
+  useEffect(() => {
+    setClientInfo({
+      apiBase: getApiBaseUrl(),
+      origin: window.location.origin,
+      username: localStorage.getItem("adminUsername") || "",
+    });
+  }, []);
 
   useEffect(() => {
     const fetchInfo = async () => {
@@ -347,7 +358,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">
           Settings
         </h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
@@ -355,28 +366,26 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-gray-700">
-        <nav className="-mb-px flex space-x-8">
+      {/* Tabs: segmented, as in EDC1 / Lakehouse */}
+      <div className="mt-4">
+        <nav role="tablist" className="inline-flex max-w-full gap-0.5 overflow-x-auto rounded-lg bg-[#eef0f3] p-[3px] dark:bg-gray-800">
           <button
+            role="tab"
+            aria-selected={activeTab === "general"}
             onClick={() => setActiveTab("general")}
-            className={`
-              py-4 px-1 border-b-2 font-medium text-sm transition-colors
-              ${activeTab === "general"
-                ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"}
-            `}
+            className={`rounded-md px-3 py-1.5 text-[13px] transition-colors ${activeTab === "general"
+              ? "bg-white font-semibold text-ink shadow-[0_1px_2px_rgba(16,27,42,0.08)] dark:bg-gray-700 dark:text-white"
+              : "font-medium text-ink-2 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"}`}
           >
             General
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "intent-rules"}
             onClick={() => setActiveTab("intent-rules")}
-            className={`
-              py-4 px-1 border-b-2 font-medium text-sm transition-colors
-              ${activeTab === "intent-rules"
-                ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"}
-            `}
+            className={`rounded-md px-3 py-1.5 text-[13px] transition-colors ${activeTab === "intent-rules"
+              ? "bg-white font-semibold text-ink shadow-[0_1px_2px_rgba(16,27,42,0.08)] dark:bg-gray-700 dark:text-white"
+              : "font-medium text-ink-2 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"}`}
           >
             Intent Detection Rules
           </button>
@@ -387,7 +396,7 @@ export default function SettingsPage() {
         {activeTab === "general" ? (
           <div className="space-y-6">
             {/* LLM Provider Settings */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-blue-200 dark:border-blue-900/50 p-6">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-blue-200 dark:border-blue-900/50 p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-lg font-medium text-gray-900 dark:text-white">
@@ -407,7 +416,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Change Password Section */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                 Change Password
               </h2>
@@ -481,7 +490,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Delete Conversation History */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-red-200 dark:border-red-800 p-6">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-red-200 dark:border-red-800 p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
                 ลบประวัติการสนทนา
               </h2>
@@ -534,7 +543,7 @@ export default function SettingsPage() {
             </div>
 
             {/* System Information */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                 System Information
               </h2>
@@ -543,13 +552,13 @@ export default function SettingsPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Backend API:</span>
                   <span className="text-gray-900 dark:text-white font-mono">
-                    {sys?.backend_url || apiBaseUrl}
+                    {sys?.backend_url || clientInfo.apiBase || "-"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Frontend:</span>
                   <span className="text-gray-900 dark:text-white font-mono">
-                    {sys?.frontend_origin || (typeof window !== 'undefined' ? window.location.origin : '')}
+                    {sys?.frontend_origin || clientInfo.origin || "-"}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -585,7 +594,7 @@ export default function SettingsPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Username:</span>
                   <span className="text-gray-900 dark:text-white">
-                    {typeof window !== "undefined" && localStorage.getItem("adminUsername")}
+                    {clientInfo.username || "-"}
                   </span>
                 </div>
               </div>
@@ -606,7 +615,7 @@ export default function SettingsPage() {
             </div>
           </div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-6">
               Intent Detection Configuration
             </h2>

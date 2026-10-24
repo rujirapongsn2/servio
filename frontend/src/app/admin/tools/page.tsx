@@ -364,7 +364,7 @@ function ToolsPageInner() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">
             {isTeamSetupMode && returnTeamName ? `${returnTeamName} — Capabilities` : UI_COPY.tools.pageTitle}
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
@@ -451,7 +451,7 @@ function ToolsPageInner() {
           </button>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
           {fileStoreTools.length === 0 ? (
             <div className="p-8 text-center">
               <Database className="mx-auto h-12 w-12 text-gray-400 mb-3" />
@@ -546,14 +546,14 @@ function ToolsPageInner() {
           </h2>
           <button
             onClick={() => setShowOKFModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
           >
             <Plus className="w-4 h-4" />
             Add Knowledge
           </button>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
           {okfTools.length === 0 ? (
             <div className="p-8 text-center">
               <BookOpen className="mx-auto h-12 w-12 text-gray-400 mb-3" />
@@ -562,7 +562,7 @@ function ToolsPageInner() {
               </p>
               <button
                 onClick={() => setShowOKFModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700"
+                className="inline-flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover"
               >
                 <Plus className="w-4 h-4" />
                 Add Knowledge
@@ -646,7 +646,7 @@ function ToolsPageInner() {
           {UI_COPY.tools.sections.externalIntegrations}
         </h2>
         {customTools.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               {UI_COPY.tools.empty.externalIntegrations}
             </p>
@@ -697,17 +697,17 @@ function ToolsPageInner() {
                             </span>
                             {/* Ownership badges */}
                             {effectiveTeamId && isOwned && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400">
                             Owned by this team
                               </span>
                             )}
                             {effectiveTeamId && isGlobal && !isOwned && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400">
                             Shared across teams
                               </span>
                             )}
                             {effectiveTeamId && !isOwned && !isGlobal && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
                             Owned by another team
                               </span>
                             )}

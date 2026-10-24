@@ -15,6 +15,9 @@ import {
   Users,
   Shield,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LogOut,
 } from "lucide-react";
 import { TeamProvider } from "@/lib/team-context";
 import TeamSwitcher from "@/components/TeamSwitcher";
@@ -186,37 +189,43 @@ function AdminLayoutInner({
   }
 
   return (
-    <div className="min-h-screen bg-white text-[#0D1B2A]" data-viewer-only={isViewerOnly ? "1" : "0"}>
+    <div className="min-h-screen bg-canvas text-ink" data-viewer-only={isViewerOnly ? "1" : "0"}>
       {isWorkflow && mobileSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
       {/* Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-[#E2E8F0] bg-white text-[#0D1B2A] transition-all duration-200 z-20 ${isWorkflow && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
+        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-line bg-white text-ink transition-all duration-200 z-20 ${isWorkflow && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
         onClick={(event) => { if (event.target instanceof Element && event.target.closest("a")) setMobileSidebarOpen(false); }}
       >
         <div className="flex flex-col h-full">
           {/* Header with logo */}
-          <div className="flex items-center justify-between h-20 px-4 border-b border-[#E2E8F0]">
-            <img
-              src="/servio_logo.png"
-              alt="Servio"
-              className={`${collapsed ? "w-[40px]" : "w-[140px]"} h-auto transition-all`}
-            />
+          {/* Brand block: Servio wordmark as the product brand, "by Softnix" endorsement (EDC1 sidebar pattern) */}
+          <div className={`flex min-h-14 items-center gap-2 ${collapsed ? "flex-col justify-center px-2 py-3" : "justify-between px-4 py-3"}`}>
+            {collapsed ? (
+              <img src="/softnix-mark.png" alt="Servio by Softnix" title="Servio by Softnix" className="h-8 w-8" />
+            ) : (
+              <Link href="/admin" className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary-100" aria-label="Servio by Softnix, go to dashboard">
+                <img src="/servio-wordmark.png" alt="Servio" className="block h-7 w-auto" />
+                <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-ink-3">
+                  by
+                  <img src="/softnix-mark.png" alt="" aria-hidden="true" className="h-3.5 w-3.5" />
+                  Softnix
+                </span>
+              </Link>
+            )}
             <Button
               size="iconSmall"
-              variant="outline"
+              variant="ghost"
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={toggleSidebar}
-              className="border-[#E2E8F0] bg-[#F8F9FA] text-[#0D1B2A] hover:bg-white"
+              className="shrink-0 text-ink-2"
             >
-              <span className={`transform transition-transform ${collapsed ? "rotate-180" : ""}`}>
-                ›
-              </span>
+              {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
             </Button>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-2.5 py-2 space-y-0.5 overflow-y-auto">
             {isOperatorOnly ? (
               <NavLink
                 href="/admin/monitor"
@@ -274,7 +283,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={Phone}
                   badge={
-                    <span className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#F3903F] text-white">
+                    <span className="ml-auto inline-flex h-[18px] items-center rounded-md bg-amber-50 px-1.5 text-[11px] font-medium text-amber-700">
                       Beta
                     </span>
                   }
@@ -306,24 +315,26 @@ function AdminLayoutInner({
           </nav>
 
           {/* User info and logout */}
-          <div className="p-4 border-t border-[#E2E8F0]">
+          <div className="border-t border-line p-2.5">
             <Link
               href="/admin/account"
-              className="flex items-center space-x-2 rounded-md p-1.5 -mx-1.5 hover:bg-[#F8F9FA] transition-colors"
+              className={`flex items-center gap-2.5 rounded-md p-1.5 hover:bg-hover transition-colors ${collapsed ? "justify-center" : ""}`}
               title="Account settings"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F8F9FA] text-sm font-semibold text-[#0D1B2A] ring-1 ring-[#E2E8F0]">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] font-semibold text-white">
                 {username.charAt(0).toUpperCase()}
               </div>
-              <div className={`text-sm font-medium text-[#2D3F55] ${collapsed ? "hidden" : "block"}`}>
+              <div className={`min-w-0 truncate text-[13px] font-semibold text-ink ${collapsed ? "hidden" : "block"}`}>
                 {username}
               </div>
             </Link>
             <button
               onClick={handleLogout}
-              className="mt-2 w-full text-sm font-medium text-[#778DA9] hover:text-[#0D1B2A] flex items-center gap-1.5"
+              title="Logout"
+              className={`mt-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors ${collapsed ? "justify-center" : ""}`}
             >
-              <span>Logout</span>
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              <span className={collapsed ? "sr-only" : ""}>Logout</span>
             </button>
           </div>
         </div>
@@ -335,13 +346,13 @@ function AdminLayoutInner({
         style={isWorkflow ? undefined : { "--admin-sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
       >
         {/* Top bar */}
-        <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-[#E2E8F0] bg-white px-4 sm:px-8">
+        <div className="sticky top-0 z-10 flex h-14 items-center justify-end border-b border-line bg-topbar px-4 sm:px-7">
           {isWorkflow && <button type="button" aria-label="Open navigation" aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />Navigation</button>}
           {shouldShowTeamContextSwitcher(pathname) && (
             <TeamSwitcher label="Team Agent" />
           )}
         </div>
-        <main className={isWorkflow ? "p-4 sm:p-6 lg:p-8" : "p-8"}>{children}</main>
+        <main className={isWorkflow ? "p-4 sm:p-6 lg:p-7" : "px-7 pt-6 pb-20"}>{children}</main>
       </div>
     </div>
   );
@@ -378,23 +389,24 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`block rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${active
-        ? "bg-[#F8F9FA] text-[#0D1B2A] shadow-[inset_3px_0_0_#2786C2]"
-        : "text-[#2D3F55] hover:bg-[#F8F9FA] hover:text-[#0D1B2A]"
+      className={`group block rounded-md px-2.5 py-[7px] text-[13.5px] transition-colors duration-150 ${active
+        ? "bg-primary-50 font-semibold text-ink [&_svg]:text-primary"
+        : "font-normal text-ink hover:bg-hover [&_svg]:text-gray-700"
         }`}
+      aria-current={active ? "page" : undefined}
       title={label || undefined}
     >
       {collapsed ? (
         <span className="inline-flex w-full justify-center font-semibold relative">
-          {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : label ? label.charAt(0) : "·"}
+          {Icon ? <Icon className="h-[18px] w-[18px]" aria-hidden="true" /> : label ? label.charAt(0) : "·"}
           {badge && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#F3903F]" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400" />
           )}
         </span>
       ) : (
         <span className="inline-flex items-center justify-between w-full">
-          <span className="inline-flex items-center space-x-3 whitespace-nowrap">
-            {Icon && <Icon className="h-5 w-5" aria-hidden="true" />}
+          <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
+            {Icon && <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />}
             <span className="inline-block">{children}</span>
           </span>
           {badge}

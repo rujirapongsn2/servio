@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-24T13:30:00+07:00",
+  "title": "Design System: Softnix Servio",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Lakehouse Blue", "tonalRamp": ["#1c3349", "#2b4d6c", "#345f86", "#3e75a6", "#4582b8", "#8ab6dc", "#d6e6f3", "#ecf4fa"] },
+      "ink": { "role": "neutral", "displayName": "Ink Navy", "tonalRamp": ["#0a121d", "#101b2a", "#1e273a", "#3b4656", "#566377", "#6b7585", "#d3d8e0", "#f9fafb"] }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 2px rgba(16,27,42,.04)", "purpose": "Resting cards." },
+      { "name": "overlay", "value": "0 12px 32px rgba(16,27,42,.12)", "purpose": "Popovers, menus, modals." }
+    ],
+    "breakpoints": [ { "name": "lg", "value": "1024px" } ]
+  },
+  "components": [
+    { "name": "Primary Button", "kind": "button", "refersTo": "button-primary", "description": "The one solid action per view.", "html": "<button class=\"ds-btn-primary\">New Agent</button>", "css": ".ds-btn-primary{background:#4582b8;color:#fff;border:1px solid #4582b8;border-radius:6px;height:34px;padding:0 14px;font:500 13px Inter,'Noto Sans Thai',system-ui,sans-serif;cursor:pointer;transition:background .15s}.ds-btn-primary:hover{background:#3e75a6;border-color:#3e75a6}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 3px #d6e6f3}" },
+    { "name": "Secondary Button", "kind": "button", "refersTo": "button-secondary", "description": "Everything that is not the primary action.", "html": "<button class=\"ds-btn-secondary\">Manage Tools</button>", "css": ".ds-btn-secondary{background:#fff;color:#101b2a;border:1px solid #d3d8e0;border-radius:6px;height:34px;padding:0 14px;font:500 13px Inter,'Noto Sans Thai',system-ui,sans-serif;cursor:pointer}.ds-btn-secondary:hover{background:#f3f5f8}.ds-btn-secondary:focus-visible{outline:none;border-color:#4582b8;box-shadow:0 0 0 3px #d6e6f3}" },
+    { "name": "Text Input", "kind": "input", "refersTo": "input", "description": "Default field.", "html": "<input class=\"ds-input\" placeholder=\"Username\">", "css": ".ds-input{height:34px;border:1px solid #d3d8e0;border-radius:6px;padding:0 10px;font:400 13.5px Inter,'Noto Sans Thai',system-ui,sans-serif;color:#101b2a;background:#fff}.ds-input:focus{outline:none;border-color:#4582b8;box-shadow:0 0 0 3px #ecf4fa}" },
+    { "name": "Nav Item", "kind": "nav", "refersTo": "nav-item-active", "description": "Sidebar link; active state is a light blue pill.", "html": "<a class=\"ds-nav ds-nav-on\">Dashboard</a><a class=\"ds-nav\">Team Agents</a>", "css": ".ds-nav{display:block;padding:7px 10px;border-radius:6px;font:400 13.5px Inter,system-ui,sans-serif;color:#101b2a;text-decoration:none}.ds-nav:hover{background:#f3f5f8}.ds-nav-on{background:#ecf4fa;font-weight:600}" },
+    { "name": "Badge", "kind": "chip", "refersTo": "badge", "description": "Status / tag pill.", "html": "<span class=\"ds-badge\">Starting Agent</span>", "css": ".ds-badge{display:inline-flex;align-items:center;height:21px;padding:0 8px;border-radius:6px;background:#ecf4fa;color:#3e75a6;font:500 11.5px Inter,system-ui,sans-serif}" },
+    { "name": "Card", "kind": "card", "refersTo": "card", "description": "White surface on the canvas.", "html": "<div class=\"ds-card\"><b>Total Agents</b><p>3</p></div>", "css": ".ds-card{background:#fff;border:1px solid #e2e5ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px rgba(16,27,42,.04);font-family:Inter,system-ui,sans-serif;color:#101b2a}" }
+  ],
+  "narrative": {
+    "northStar": "The Lakehouse Console",
+    "keyCharacteristics": [
+      "Flat colour, no gradients on UI surfaces; the orange-yellow-lime-blue spectrum stays in the logo and in chart series.",
+      "White sidebar with a right hairline, white cards on a canvas page, topbar strip with a bottom hairline.",
+      "Sentence case everywhere, including table headers and nav groups.",
+      "Inter for Latin, Noto Sans Thai for Thai, JetBrains Mono only for code and technical values."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Every solid action button is primary blue. Green, orange and violet solid buttons are drift.", "section": "colors" },
+      { "name": "The Remapped Ramp Rule", "body": "Tailwind's default ramps are re-pointed at this palette in globals.css; prefer semantic utilities in new code.", "section": "colors" }
+    ],
+    "dos": ["Do use bg-primary for the single primary action in a view.", "Do keep table headers and nav labels in sentence case.", "Do use the Softnix spectrum colours for chart series in order: blue, lime, orange, yellow."],
+    "donts": ["Don't add gradients, glass or coloured side-stripes to cards.", "Don't introduce violet/indigo accents; they map to the primary blue.", "Don't use uppercase tracked labels for table headers."]
+  }
+}

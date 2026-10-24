@@ -103,11 +103,11 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
       });
       edges.push({ id: `routing-${agent.id}`, source: "coordinator", target: String(agent.id), targetHandle: "routing", type: "smoothstep", deletable: false, focusable: false, className: "!pointer-events-none",
         label: agent.id === fallbackAgentId ? "fallback" : undefined,
-        style: { stroke: "#94a3b8", strokeDasharray: "5 5" }, markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" } });
+        style: { stroke: "#9aa3b0", strokeDasharray: "5 5" }, markerEnd: { type: MarkerType.ArrowClosed, color: "#9aa3b0" } });
       agent.handoff_agent_ids.filter((id) => memberIds.has(id)).forEach((id) => edges.push({
         id: `handoff-${agent.id}-${id}`, source: String(agent.id), target: String(id), sourceHandle: index % 3 <= agents.findIndex((target) => target.id === id) % 3 ? "handoff-out-right" : "handoff-out-left",
         targetHandle: index % 3 <= agents.findIndex((target) => target.id === id) % 3 ? "handoff-in-left" : "handoff-in-right",
-        type: "default", className: editable && !agent.shared ? undefined : "!pointer-events-none", deletable: editable && !agent.shared, focusable: editable && !agent.shared, style: { stroke: "#0284c7", strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: "#0284c7" },
+        type: "default", className: editable && !agent.shared ? undefined : "!pointer-events-none", deletable: editable && !agent.shared, focusable: editable && !agent.shared, style: { stroke: "#4582b8", strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color: "#4582b8" },
       }));
     });
     return { nodes, edges };
@@ -147,7 +147,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
         deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
         onNodeClick={(_, node) => { if (node.id !== "coordinator") onSelect(Number(node.id)); }}
         nodesFocusable={false} edgesFocusable={editable} elementsSelectable={editable} fitView fitViewOptions={fitViewOptions} minZoom={0.2} maxZoom={1.5}>
-        <Background gap={24} color="#dbe3ec" />
+        <Background gap={24} color="#e2e5ea" />
         <Controls showInteractive={false} fitViewOptions={fitViewOptions} position="bottom-right" />
       </ReactFlow>
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-600">

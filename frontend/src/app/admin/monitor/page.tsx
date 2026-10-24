@@ -205,7 +205,7 @@ export default function MonitorPage() {
                             Active Sessions ({sessions.length})
                         </h2>
                         {selectedTeam && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                            <span className="text-xs px-2 py-1 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
                                 {selectedTeam.name}
                             </span>
                         )}
@@ -238,8 +238,8 @@ export default function MonitorPage() {
                                         <div className="flex gap-1">
                                             {session.intent_group && (
                                                 <span
-                                                    className="text-[10px] px-2 py-0.5 rounded-full text-white font-medium truncate max-w-[80px]"
-                                                    style={{ backgroundColor: session.intent_color || '#999' }}
+                                                    className="text-[11px] px-2 py-0.5 rounded-md text-white font-medium truncate max-w-[80px]"
+                                                    style={{ backgroundColor: session.intent_color || '#9aa3b0' }}
                                                     title={session.intent_group}
                                                 >
                                                     {session.intent_group}
@@ -263,17 +263,17 @@ export default function MonitorPage() {
                                         {session.source === "text_widget" && (
                                             <span title="Text Chat" className="text-gray-600 dark:text-gray-400">💬</span>
                                         )}
-                                        <span className="text-[10px] text-gray-500 uppercase font-bold">
+                                        <span className="text-[11px] text-gray-500 uppercase font-bold">
                                             {session.source.replace('_', ' ')}
                                         </span>
                                         {session.channel_type && (
-                                            <span className="text-[10px] text-blue-500">{session.channel_type}</span>
+                                            <span className="text-[11px] text-blue-500">{session.channel_type}</span>
                                         )}
                                     </div>
                                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate mb-1">
                                         {session.last_message_preview || "No messages yet"}
                                     </p>
-                                    <p className="text-[10px] text-gray-400">
+                                    <p className="text-[11px] text-gray-400">
                                         Started {formatTimeAgo(session.start_time)}
                                     </p>
                                 </button>
@@ -309,7 +309,7 @@ export default function MonitorPage() {
                                 <Button
                                     variant={mode === "AI" ? "outline" : "primary"}
                                     onClick={toggleMode}
-                                    className={mode === "AI" ? "border-yellow-500 text-yellow-600 hover:bg-yellow-50" : "bg-green-600 hover:bg-green-700"}
+                                    className={mode === "AI" ? "border-yellow-500 text-yellow-600 hover:bg-yellow-50" : "bg-primary hover:bg-primary-hover"}
                                 >
                                     {mode === "AI" ? "Switch to Manual Mode" : "Switch to AI Mode"}
                                 </Button>
@@ -327,7 +327,7 @@ export default function MonitorPage() {
                                         <div className={`text-sm prose prose-sm max-w-none ${msg.role === "user" ? "prose-invert" : "dark:prose-invert"}`}>
                                             <ReactMarkdown>{renderMessageContent(msg.content)}</ReactMarkdown>
                                         </div>
-                                        <span className={`text-[10px] mt-1 block ${msg.role === "user" ? "text-blue-100" : "text-gray-400"}`}>
+                                        <span className={`text-[11px] mt-1 block ${msg.role === "user" ? "text-blue-100" : "text-gray-400"}`}>
                                             {msg.role === "user" ? "You" : msg.agent_name || "Assistant"} • {new Date(msg.timestamp * 1000).toLocaleTimeString()}
                                         </span>
                                     </div>

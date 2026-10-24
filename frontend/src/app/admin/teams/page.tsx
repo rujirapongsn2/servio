@@ -241,8 +241,8 @@ export default function TeamsPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[28px] font-bold leading-[1.43] text-[#0D1B2A]">Team Agents</h1>
-          <p className="mt-1 text-base font-medium text-[#778DA9]">
+          <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-ink">Team Agents</h1>
+          <p className="mt-1 text-base font-medium text-ink-3">
             Manage your agent teams and workspaces
           </p>
         </div>
@@ -268,21 +268,21 @@ export default function TeamsPage() {
         {teams.map((team) => (
           <div
             key={team.id}
-            className="rounded-[14px] border border-[#E2E8F0] bg-white p-6 transition-colors hover:border-[#CBD5E1]"
+            className="rounded-[14px] border border-line bg-white p-6 transition-colors hover:border-line-strong"
           >
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-base font-semibold text-[#0D1B2A]">{team.name}</h3>
-                <p className="text-sm font-medium text-[#778DA9]">{team.slug}</p>
-                <p className="mt-1 text-xs font-medium text-[#94A3B8]">
+                <h3 className="text-base font-semibold text-ink">{team.name}</h3>
+                <p className="text-sm font-medium text-ink-3">{team.slug}</p>
+                <p className="mt-1 text-xs font-medium text-gray-400">
                   Owned by: {team.owner_username || "N/A"}
                 </p>
               </div>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                   team.status === "active"
-                    ? "bg-[#F8F9FA] text-[#2786C2] ring-1 ring-[#E2E8F0]"
-                    : "bg-[#F8F9FA] text-[#778DA9] ring-1 ring-[#E2E8F0]"
+                    ? "bg-surface-2 text-primary ring-1 ring-line"
+                    : "bg-surface-2 text-ink-3 ring-1 ring-line"
                 }`}
               >
                 {team.status}
@@ -290,12 +290,12 @@ export default function TeamsPage() {
             </div>
 
             {team.description && (
-              <p className="mt-3 line-clamp-2 text-sm font-medium leading-5 text-[#2D3F55]">
+              <p className="mt-3 line-clamp-2 text-sm font-medium leading-5 text-ink-2">
                 {team.description}
               </p>
             )}
 
-            <div className="mt-5 flex items-center gap-4 text-sm font-medium text-[#778DA9]">
+            <div className="mt-5 flex items-center gap-4 text-sm font-medium text-ink-3">
               <span className="flex items-center gap-1">
                 <Users className="h-4 w-4" /> {team.member_count} agents
               </span>
@@ -306,7 +306,7 @@ export default function TeamsPage() {
               )}
             </div>
 
-            <div className="mt-5 flex items-center gap-2 border-t border-[#E2E8F0] pt-4">
+            <div className="mt-5 flex items-center gap-2 border-t border-line pt-4">
               <Button variant="outline" size="sm" onClick={() => openEdit(team.id)}>
                 Manage
               </Button>
@@ -326,13 +326,13 @@ export default function TeamsPage() {
         ))}
 
         {teamsLoading && (
-          <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] py-12 text-center text-sm font-medium text-[#778DA9]">
+          <div className="col-span-full rounded-[14px] border border-dashed border-line-strong py-12 text-center text-sm font-medium text-ink-3">
             Loading team agents...
           </div>
         )}
 
         {!teamsLoading && teams.length === 0 && (
-          <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] py-12 text-center text-sm font-medium text-[#778DA9]">
+          <div className="col-span-full rounded-[14px] border border-dashed border-line-strong py-12 text-center text-sm font-medium text-ink-3">
             No teams yet. Create your first team to get started.
           </div>
         )}
@@ -341,29 +341,29 @@ export default function TeamsPage() {
       {/* Create Modal */}
       {showCreate && (
         <div className="fixed inset-y-0 right-0 z-50 flex items-center justify-center bg-black/[0.24] px-4 [left:var(--admin-sidebar-width)]">
-          <div className="w-full max-w-md rounded-[20px] border border-[#E2E8F0] bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
-            <h2 className="mb-4 text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-[#0D1B2A]">Create Team Agent</h2>
+          <div className="w-full max-w-md rounded-[20px] border border-line bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
+            <h2 className="mb-4 text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-ink">Create Team Agent</h2>
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-[#2D3F55]">
+                <label className="mb-1 block text-sm font-medium text-ink-2">
                   Name
                 </label>
                 <input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
+                  className="w-full rounded-lg border border-line bg-white px-4 py-3 text-sm font-medium text-ink outline-none focus:border-ink focus:ring-2 focus:ring-ink"
                   placeholder="Sales Support"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-[#2D3F55]">
+                <label className="mb-1 block text-sm font-medium text-ink-2">
                   Description
                 </label>
                 <textarea
                   value={formDesc}
                   onChange={(e) => setFormDesc(e.target.value)}
-                  className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
+                  className="w-full rounded-lg border border-line bg-white px-4 py-3 text-sm font-medium text-ink outline-none focus:border-ink focus:ring-2 focus:ring-ink"
                   rows={3}
                   placeholder="Optional description..."
                 />
@@ -384,7 +384,7 @@ export default function TeamsPage() {
       {/* Edit Modal */}
       {editingTeam && (
         <div className="fixed inset-y-0 right-0 z-50 flex items-center justify-center bg-black/[0.24] px-4 [left:var(--admin-sidebar-width)]">
-          <div className="max-h-[88vh] w-full max-w-[1200px] overflow-y-auto rounded-[20px] border border-[#E2E8F0] bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
+          <div className="max-h-[88vh] w-full max-w-[1200px] overflow-y-auto rounded-[20px] border border-line bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
             <WorkflowNavigator
               backLabel="Close"
               onBack={() => setEditingTeam(null)}
@@ -397,10 +397,10 @@ export default function TeamsPage() {
               <section>
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 className="text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-[#0D1B2A]">
+                    <h2 className="text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-ink">
                       {editingTeam.name} — Members
                     </h2>
-                    <p className="mt-1 text-sm font-medium text-[#778DA9]">
+                    <p className="mt-1 text-sm font-medium text-ink-3">
                       Select members and choose the fallback agent.
                     </p>
                   </div>
@@ -426,29 +426,29 @@ export default function TeamsPage() {
                     Manage Team Capabilities
                   </Button>
                 </div>
-                <div className="overflow-hidden rounded-[14px] border border-[#E2E8F0]">
-                  <table className="w-full divide-y divide-[#E2E8F0]">
-                    <thead className="bg-[#F8F9FA]">
+                <div className="overflow-hidden rounded-[14px] border border-line">
+                  <table className="w-full divide-y divide-line">
+                    <thead className="bg-surface-2">
                       <tr>
-                        <th className="w-24 px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
+                        <th className="w-24 px-4 py-3 text-left text-[12.5px] font-semibold text-ink-3">
                           Member
                         </th>
-                        <th className="w-28 px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
+                        <th className="w-28 px-4 py-3 text-left text-[12.5px] font-semibold text-ink-3">
                           Fallback
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
+                        <th className="px-4 py-3 text-left text-[12.5px] font-semibold text-ink-3">
                           Agent
                         </th>
-                        <th className="w-36 px-4 py-3 text-right text-xs font-semibold text-[#778DA9]">
+                        <th className="w-36 px-4 py-3 text-right text-[12.5px] font-semibold text-ink-3">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#E2E8F0] bg-white">
+                    <tbody className="divide-y divide-line bg-white">
                       {agents.map((agent) => {
                         const isMember = memberAgentIds.includes(agent.id);
                         return (
-                          <tr key={agent.id} className="hover:bg-[#F8F9FA]">
+                          <tr key={agent.id} className="hover:bg-surface-2">
                             <td className="px-4 py-3">
                               <input
                                 type="checkbox"
@@ -471,8 +471,8 @@ export default function TeamsPage() {
                               />
                             </td>
                             <td className="px-4 py-3">
-                              <div className="font-semibold text-[#0D1B2A]">{agent.name}</div>
-                              <div className="text-xs font-medium text-[#778DA9]">
+                              <div className="font-semibold text-ink">{agent.name}</div>
+                              <div className="text-xs font-medium text-ink-3">
                                 {agent.model}
                                 {agent.tools.length > 0 && (
                                   <span className="ml-2 inline-flex items-center gap-0.5">
@@ -480,7 +480,7 @@ export default function TeamsPage() {
                                   </span>
                                 )}
                               </div>
-                              <div className="mt-1 line-clamp-1 text-xs font-medium text-[#9BA8B4]">
+                              <div className="mt-1 line-clamp-1 text-xs font-medium text-gray-400">
                                 {agent.instructions}
                               </div>
                             </td>
@@ -489,7 +489,7 @@ export default function TeamsPage() {
                                 <button
                                   type="button"
                                   onClick={() => openAgentTester(agent.id)}
-                                  className="rounded-full p-1.5 text-[#0D1B2A] hover:bg-[#F8F9FA]"
+                                  className="rounded-full p-1.5 text-ink hover:bg-surface-2"
                                   title="Test agent"
                                 >
                                   <Play className="h-4 w-4" />
@@ -497,7 +497,7 @@ export default function TeamsPage() {
                                 <button
                                   type="button"
                                   onClick={() => openAgentEditor(agent.id)}
-                                  className="rounded-full p-1.5 text-[#2786C2] hover:bg-[#F8F9FA]"
+                                  className="rounded-full p-1.5 text-primary hover:bg-surface-2"
                                   title="Edit agent"
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -517,7 +517,7 @@ export default function TeamsPage() {
                       })}
                       {agents.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-4 py-10 text-center text-sm font-medium text-[#778DA9]">
+                          <td colSpan={4} className="px-4 py-10 text-center text-sm font-medium text-ink-3">
                             No agents available. Create one first.
                           </td>
                         </tr>

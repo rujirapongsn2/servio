@@ -192,10 +192,10 @@ export default function ChannelsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-3 border-b border-[#E2E8F0] pb-5 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-3 border-b border-line pb-5 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-[#0D1B2A]">Channels</h1>
-          <p className="mt-1 text-sm text-[#66768D]">
+          <h1 className="text-2xl font-semibold text-ink">Channels</h1>
+          <p className="mt-1 text-sm text-ink-3">
             {selectedTeam ? `Team: ${selectedTeam.name}` : "Select a team to configure channels"}
           </p>
         </div>
@@ -228,31 +228,31 @@ export default function ChannelsPage() {
               className={[
                 "flex items-center gap-2 rounded-md border px-3 py-2 text-left transition",
                 isActive
-                  ? "border-[#2786C2] bg-[#F8FBFF]"
-                  : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]",
-                !isAvailable ? "cursor-not-allowed opacity-50 hover:border-[#E2E8F0]" : "",
+                  ? "border-primary bg-primary-50"
+                  : "border-line bg-white hover:border-line-strong",
+                !isAvailable ? "cursor-not-allowed opacity-50 hover:border-line" : "",
               ].join(" ")}
             >
               <span
                 className={[
                   "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
-                  isActive || isAvailable ? "bg-[#2786C2] text-white" : "bg-slate-100 text-slate-400",
+                  isActive || isAvailable ? "bg-primary text-white" : "bg-slate-100 text-slate-400",
                 ].join(" ")}
               >
                 {index + 1}
               </span>
-              <span className="text-sm font-medium text-[#0D1B2A]">{step}</span>
+              <span className="text-sm font-medium text-ink">{step}</span>
             </button>
           );
         })}
       </div>
 
-      <section className="rounded-lg border border-[#E2E8F0] bg-white">
+      <section className="rounded-xl border border-line bg-white">
         {activeStep === 0 && (
           <div className="space-y-5 p-5">
             <div>
-              <h2 className="text-lg font-semibold text-[#0D1B2A]">Choose Team</h2>
-              <p className="mt-1 text-sm text-[#66768D]">Select the Team Agent workspace for this channel.</p>
+              <h2 className="text-lg font-semibold text-ink">Choose Team</h2>
+              <p className="mt-1 text-sm text-ink-3">Select the Team Agent workspace for this channel.</p>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {teams.map((team) => {
@@ -264,17 +264,17 @@ export default function ChannelsPage() {
                     onClick={() => setSelectedTeamId(team.id)}
                     className={`flex min-h-[84px] w-full items-center justify-between rounded-md border px-4 py-3 text-left transition ${
                       selected
-                        ? "border-[#2786C2] bg-[#F8FBFF]"
-                        : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
+                        ? "border-primary bg-primary-50"
+                        : "border-line bg-white hover:border-line-strong"
                     }`}
                   >
                     <span>
-                      <span className="block text-sm font-semibold text-[#0D1B2A]">{team.name}</span>
+                      <span className="block text-sm font-semibold text-ink">{team.name}</span>
                       {team.description && (
-                        <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[#778DA9]">{team.description}</span>
+                        <span className="mt-1 block line-clamp-2 text-xs leading-5 text-ink-3">{team.description}</span>
                       )}
                     </span>
-                    {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-[#2786C2]" />}
+                    {selected && <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />}
                   </button>
                 );
               })}
@@ -285,8 +285,8 @@ export default function ChannelsPage() {
         {activeStep === 1 && (
           <div className="space-y-5 p-5">
             <div>
-              <h2 className="text-lg font-semibold text-[#0D1B2A]">Choose Channel Type</h2>
-              <p className="mt-1 text-sm text-[#66768D]">Pick the customer entry point you want to configure.</p>
+              <h2 className="text-lg font-semibold text-ink">Choose Channel Type</h2>
+              <p className="mt-1 text-sm text-ink-3">Pick the customer entry point you want to configure.</p>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               {CHANNELS.map((channel) => {
@@ -300,17 +300,17 @@ export default function ChannelsPage() {
                     onClick={() => setSelectedChannel(channel.id)}
                     className={`flex min-h-[120px] flex-col items-start justify-between rounded-md border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       selected
-                        ? "border-[#2786C2] bg-[#F8FBFF]"
-                        : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
+                        ? "border-primary bg-primary-50"
+                        : "border-line bg-white hover:border-line-strong"
                     }`}
                   >
                     <span className="flex items-center gap-3">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#EFF6FF] text-[#2786C2]">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary">
                         {channel.icon}
                       </span>
                       <span>
-                        <span className="block text-sm font-semibold text-[#0D1B2A]">{channel.name}</span>
-                        <span className="mt-0.5 block text-xs text-[#778DA9]">{channel.label}</span>
+                        <span className="block text-sm font-semibold text-ink">{channel.name}</span>
+                        <span className="mt-0.5 block text-xs text-ink-3">{channel.label}</span>
                       </span>
                     </span>
                     <span className={`mt-4 rounded-md border px-2 py-1 text-xs font-medium ${statusClasses(status.tone)}`}>
@@ -324,24 +324,24 @@ export default function ChannelsPage() {
         )}
 
         <div hidden={activeStep !== 2}>
-            <div className="border-b border-[#E2E8F0] px-5 py-4">
-              <h2 className="text-lg font-semibold text-[#0D1B2A]">Connect Channel</h2>
-              <p className="mt-1 text-sm text-[#778DA9]">{selectedChannelMeta.name}</p>
+            <div className="border-b border-line px-5 py-4">
+              <h2 className="text-lg font-semibold text-ink">Connect Channel</h2>
+              <p className="mt-1 text-sm text-ink-3">{selectedChannelMeta.name}</p>
             </div>
 
             {selectedChannel === "web-widget" ? (
               <div className="space-y-5 p-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[#2D3F55]">Mode</label>
+                    <label className="mb-2 block text-sm font-medium text-ink-2">Mode</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setWidgetType("voice")}
                         className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
                           widgetType === "voice"
-                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                            : "border-[#E2E8F0] text-[#526277]"
+                            ? "border-primary bg-primary-50 text-ink"
+                            : "border-line text-ink-2"
                         }`}
                       >
                         <MicIcon className="h-4 w-4" />
@@ -352,8 +352,8 @@ export default function ChannelsPage() {
                         onClick={() => setWidgetType("chat")}
                         className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium ${
                           widgetType === "chat"
-                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                            : "border-[#E2E8F0] text-[#526277]"
+                            ? "border-primary bg-primary-50 text-ink"
+                            : "border-line text-ink-2"
                         }`}
                       >
                         <WriteIcon width={16} height={16} />
@@ -363,15 +363,15 @@ export default function ChannelsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[#2D3F55]">Position</label>
+                    <label className="mb-2 block text-sm font-medium text-ink-2">Position</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setPosition("bottom-right")}
                         className={`rounded-md border px-3 py-2 text-sm font-medium ${
                           position === "bottom-right"
-                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                            : "border-[#E2E8F0] text-[#526277]"
+                            ? "border-primary bg-primary-50 text-ink"
+                            : "border-line text-ink-2"
                         }`}
                       >
                         Bottom Right
@@ -381,8 +381,8 @@ export default function ChannelsPage() {
                         onClick={() => setPosition("bottom-left")}
                         className={`rounded-md border px-3 py-2 text-sm font-medium ${
                           position === "bottom-left"
-                            ? "border-[#2786C2] bg-[#F8FBFF] text-[#0D1B2A]"
-                            : "border-[#E2E8F0] text-[#526277]"
+                            ? "border-primary bg-primary-50 text-ink"
+                            : "border-line text-ink-2"
                         }`}
                       >
                         Bottom Left
@@ -391,19 +391,19 @@ export default function ChannelsPage() {
                   </div>
                 </div>
 
-                <label className="flex items-center justify-between rounded-md border border-[#E2E8F0] px-3 py-2">
-                  <span className="text-sm font-medium text-[#2D3F55]">Allow voice/text toggle</span>
+                <label className="flex items-center justify-between rounded-md border border-line px-3 py-2">
+                  <span className="text-sm font-medium text-ink-2">Allow voice/text toggle</span>
                   <input
                     type="checkbox"
                     checked={allowToggle}
                     onChange={(event) => setAllowToggle(event.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-[#2786C2] focus:ring-[#2786C2]"
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
                 </label>
 
-                <div className="border-t border-[#E2E8F0] pt-5">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
-                    <KeyRound className="h-4 w-4 text-[#2786C2]" />
+                <div className="border-t border-line pt-5">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+                    <KeyRound className="h-4 w-4 text-primary" />
                     API Key
                   </div>
                   <ApiKeyManager onApiKeySelect={setSelectedApiKey} onSlugSelect={setSelectedSlug} />
@@ -430,22 +430,22 @@ export default function ChannelsPage() {
 
         {activeStep === 3 && (
           <div>
-            <div className="border-b border-[#E2E8F0] px-5 py-4">
-              <h2 className="text-lg font-semibold text-[#0D1B2A]">Test and Go Live</h2>
-              <p className="mt-1 text-sm text-[#778DA9]">{selectedChannelMeta.name}</p>
+            <div className="border-b border-line px-5 py-4">
+              <h2 className="text-lg font-semibold text-ink">Test and Go Live</h2>
+              <p className="mt-1 text-sm text-ink-3">{selectedChannelMeta.name}</p>
             </div>
 
             {selectedChannel === "web-widget" ? (
               <div className="grid gap-4 p-5 lg:grid-cols-2">
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
-                    <Code2 className="h-4 w-4 text-[#2786C2]" />
+                  <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+                    <Code2 className="h-4 w-4 text-primary" />
                     Install Code
                   </div>
                   <textarea
                     readOnly
                     value={embedCode}
-                    className="h-40 w-full resize-y rounded-md border border-[#E2E8F0] bg-[#0F172A] p-3 font-mono text-xs leading-5 text-slate-100 outline-none"
+                    className="h-40 w-full resize-y rounded-md border border-line bg-ink p-3 font-mono text-xs leading-5 text-slate-100 outline-none"
                   />
                   <Button onClick={handleCopyCode} size="sm" variant={copied ? "primary" : "outline"} disabled={!selectedApiKey}>
                     {copied ? "Copied" : "Copy Code"}
@@ -454,8 +454,8 @@ export default function ChannelsPage() {
 
                 <div className="space-y-4">
                   <div>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#0D1B2A]">
-                      <Link2 className="h-4 w-4 text-[#2786C2]" />
+                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+                      <Link2 className="h-4 w-4 text-primary" />
                       Direct Link
                     </div>
                     <input
@@ -463,7 +463,7 @@ export default function ChannelsPage() {
                       readOnly
                       value={shareUrl}
                       placeholder="Select an active API key"
-                      className="w-full rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm text-[#526277] outline-none"
+                      className="w-full rounded-md border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none"
                     />
                   </div>
 
@@ -496,18 +496,18 @@ export default function ChannelsPage() {
                 </div>
               </div>
             ) : (
-              <div className="p-5 text-sm text-[#526277]">
+              <div className="p-5 text-sm text-ink-2">
                 Use the saved {selectedChannelMeta.name} credentials from the previous step, then test delivery from the channel platform.
               </div>
             )}
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-[#E2E8F0] px-5 py-4">
+        <div className="flex items-center justify-between border-t border-line px-5 py-4">
           <Button type="button" variant="outline" onClick={goPrevious} disabled={activeStep === 0}>
             Previous
           </Button>
-          <div className="text-xs font-medium text-[#778DA9]">
+          <div className="text-xs font-medium text-ink-3">
             Step {activeStep + 1} of {STEPS.length}
           </div>
           {activeStep < 3 ? (

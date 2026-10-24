@@ -274,13 +274,13 @@ export default function UsersPage() {
       )}
 
       {/* Users Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teams</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">User</th>
+              <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">Teams</th>
+              <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -305,10 +305,10 @@ export default function UsersPage() {
                       user.teams.map((t) => (
                         <span
                           key={t.team_id}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
                         >
                           {t.team_name}
-                          <span className={`px-1 py-0 text-[10px] rounded-full ${roleBadge(t.role)}`}>
+                          <span className={`px-1 py-0 text-[11px] rounded-full ${roleBadge(t.role)}`}>
                             {t.role}
                           </span>
                         </span>
@@ -359,7 +359,7 @@ export default function UsersPage() {
       {/* Create User Modal */}
       {showCreate && isSuperAdmin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-xl">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl">
             <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Create User</h2>
             {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
             <div className="space-y-3">
@@ -396,7 +396,7 @@ export default function UsersPage() {
 
       {passwordModalUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md shadow-xl">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl">
             <h2 className="text-lg font-semibold mb-1 text-gray-900 dark:text-white">
               Set Password: {passwordModalUser.username}
             </h2>
@@ -438,7 +438,7 @@ export default function UsersPage() {
 
       {roleModalUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl shadow-xl">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl shadow-xl">
             <h2 className="text-lg font-semibold mb-1 text-gray-900 dark:text-white">
               Manage Roles: {roleModalUser.username}
             </h2>

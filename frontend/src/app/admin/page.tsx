@@ -20,15 +20,16 @@ type SessionsByTeamResponse = {
   teams: string[];
 };
 
+// Softnix spectrum first, then deeper tints, so stacked series stay distinct
 const TEAM_COLORS = [
-  "#2563EB",
-  "#16A34A",
-  "#EA580C",
-  "#7C3AED",
-  "#0D9488",
-  "#DB2777",
-  "#CA8A04",
-  "#4F46E5",
+  "#4582b8",
+  "#a9cb2e",
+  "#f3903f",
+  "#fdc70c",
+  "#1e273a",
+  "#8ab6dc",
+  "#33803f",
+  "#b0601a",
 ];
 
 export default function AdminDashboard() {
@@ -118,7 +119,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">Dashboard</h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Overview of your voice agent system</p>
       </div>
 
@@ -171,16 +172,16 @@ export default function AdminDashboard() {
                     margin={{ top: 6, right: 8, left: -18, bottom: 2 }}
                     barCategoryGap="28%"
                   >
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e5ea" />
                     <XAxis
                       dataKey="label"
-                      tick={{ fontSize: 12, fill: "#6B7280" }}
+                      tick={{ fontSize: 12, fill: "#6b7585" }}
                       tickLine={false}
-                      axisLine={{ stroke: "#D1D5DB" }}
+                      axisLine={{ stroke: "#d3d8e0" }}
                     />
                     <YAxis
                       allowDecimals={false}
-                      tick={{ fontSize: 12, fill: "#6B7280" }}
+                      tick={{ fontSize: 12, fill: "#6b7585" }}
                       tickLine={false}
                       axisLine={false}
                       width={30}
@@ -227,7 +228,7 @@ function StatCard({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
       <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 ${colorClasses[color as keyof typeof colorClasses]}`}>
         <span className="text-2xl font-bold">{value}</span>
       </div>
