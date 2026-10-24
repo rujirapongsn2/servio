@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import json
 import math
+import logging
 import os
 import time
 import uuid
@@ -16,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import bindparam, text
 
+from app import product_image_rerank as reranker
 from app import local_image_rag as images
 from app.db_config import get_db
 from app.orm_models import AgentTool, OKFBundle, OKFConceptIndex, TeamAgent, TeamAgentMember, TeamToolAssignment, Tool
@@ -149,6 +151,8 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
     if not bundles:
         return SearchResult("unavailable")
     rows = _nearest(bundles, client.space, vector)
+    if reranker.enabled():
+        return _reranked_search(team_id, data, rows)
     threshold = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "0.82"))
     score_gap = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "0.06"))
     if not math.isfinite(threshold) or not -1 <= threshold <= 1:
@@ -176,6 +180,68 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
         cutoff = max(threshold, matches[0].score - score_gap)
         matches = [match for match in matches if match.score >= cutoff][:limit]
     return SearchResult("matched" if matches else "no_match", tuple(matches))
+
+
+def _reranked_search(team_id: int | None, data: bytes, rows) -> SearchResult:
+    settings = reranker.RerankSettings.from_environment()
+    limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
+    current = assigned_bundles(team_id)
+    candidates = []
+    matches = {}
+    seen = set()
+    exact = []
+    query_hash = hashlib.sha256(data).hexdigest()
+    for row in rows:
+        score = float(row["score"])
+        if (row["bundle_id"] not in current or row["asset_id"] in seen
+                or not math.isfinite(score) or not -1 <= score <= 1 or score < settings.candidate_min_score):
+            continue
+        ref = KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
+        try:
+            original, _ = images._resolve_asset({"bundle": ref.bundle, "concept": ref.concept,
+                "source": ref.source, "asset": ref.asset, "team": team_id})
+        except (ValueError, OSError, KeyError):
+            continue
+        actual_hash = hashlib.sha256(original).hexdigest()
+        if actual_hash != ref.asset:
+            continue
+        seen.add(ref.asset)
+        match = SearchMatch(ref, row["title"][:1000], (row["resource"] or row["title"])[:2000],
+                            (row["description"] or "")[:8000], score)
+        if actual_hash == query_hash:
+            exact.append(match)
+        if len(candidates) < settings.candidates:
+            candidate_id = f"c{len(candidates) + 1:02d}"
+            candidates.append(reranker.VisualCandidate(candidate_id, original, score, actual_hash,
+                                                       ref.source, match.title))
+            matches[candidate_id] = match
+    if exact:
+        selected = exact[:limit]
+    elif candidates:
+        try:
+            ranked = reranker.rerank(data, tuple(candidates), settings)
+        except reranker.RerankUnavailable:
+            logging.getLogger(__name__).warning("Product image comparison unavailable")
+            return SearchResult("unavailable")
+        selected = [matches[candidate_id] for candidate_id in ranked]
+    else:
+        selected = []
+    current = assigned_bundles(team_id)
+    if not current:
+        return SearchResult("unavailable")
+    valid = []
+    for match in selected:
+        ref = match.reference
+        if ref.bundle not in current:
+            continue
+        try:
+            original, _ = images._resolve_asset({"bundle": ref.bundle, "concept": ref.concept,
+                "source": ref.source, "asset": ref.asset, "team": team_id})
+        except (ValueError, OSError, KeyError):
+            continue
+        if hashlib.sha256(original).hexdigest() == ref.asset:
+            valid.append(match)
+    return SearchResult("matched" if valid else "no_match", tuple(valid[:limit]))
 
 
 def resolve_inquiry(team_id: int | None, ref: KnowledgeCardRef) -> tuple[str, str]:

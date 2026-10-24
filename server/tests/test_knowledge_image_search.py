@@ -562,3 +562,65 @@ def test_native_search_capacity_is_bounded_and_released_after_cancellation(socke
         assert socket.sent[-1]["request_id"] == "after"
 
     asyncio.run(run())
+
+
+def test_reranking_accepts_new_photo_same_type_and_rejects_higher_scoring_wrong_type(runtime, nearest_rows, monkeypatch):
+    nearest_rows.extend([
+        {**add_concept(runtime, "sofa", "green"), "score": .91},
+        {**add_concept(runtime, "bookshelf", "blue"), "score": .64},
+    ])
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    seen = []
+    monkeypatch.setattr(search.reranker, "rerank", lambda query, candidates, settings: seen.append(candidates) or ("c02",))
+    result = search.search_image(1, request())
+    assert [match.title for match in result.matches] == ["bookshelf"]
+    assert len(seen[0]) == 2
+
+
+def test_reranking_exact_valid_original_bypasses_model(runtime, nearest_rows, monkeypatch):
+    nearest_rows.append(add_concept(runtime, "bookshelf", "red"))
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    monkeypatch.setattr(search.reranker, "rerank", lambda *_: pytest.fail("Exact original needs no model"))
+    assert search.search_image(1, request()).status == "matched"
+    (runtime[1] / "bookshelf.md").write_text("stale source")
+    assert search.search_image(1, request()).status == "no_match"
+
+
+def test_reranking_rechecks_revocation_and_source_changes_after_inference(runtime, nearest_rows, monkeypatch):
+    nearest_rows.append(add_concept(runtime, "bookshelf", "blue"))
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    def mutate(*_):
+        (runtime[1] / "bookshelf.md").write_text("stale source")
+        return ("c01",)
+    monkeypatch.setattr(search.reranker, "rerank", mutate)
+    assert search.search_image(1, request()).status == "no_match"
+    nearest_rows.clear()
+    nearest_rows.append(add_concept(runtime, "replacement", "green"))
+    def revoke(*_):
+        with runtime[0]() as db: db.query(AgentTool).delete()
+        return ("c01",)
+    monkeypatch.setattr(search.reranker, "rerank", revoke)
+    assert search.search_image(1, request()).status == "unavailable"
+
+
+def test_reranking_unavailable_never_falls_back_to_broad_candidates(runtime, nearest_rows, monkeypatch):
+    nearest_rows.append(add_concept(runtime, "sofa", "blue"))
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    def unavailable(*_): raise search.reranker.RerankUnavailable("not configured")
+    monkeypatch.setattr(search.reranker, "rerank", unavailable)
+    result = search.search_image(1, request())
+    assert result.status == "unavailable" and result.matches == ()
+
+
+def test_reranking_resolves_stale_rows_before_candidate_cap(runtime, nearest_rows, monkeypatch):
+    nearest_rows.extend([
+        add_concept(runtime, "stale", "green"),
+        {**add_concept(runtime, "bookshelf", "blue"), "score": .6},
+    ])
+    (runtime[1] / "stale.md").write_text("source changed")
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_CANDIDATES", "1")
+    seen = []
+    monkeypatch.setattr(search.reranker, "rerank", lambda query, candidates, settings: seen.append(candidates) or ("c01",))
+    assert [match.title for match in search.search_image(1, request()).matches] == ["bookshelf"]
+    assert [candidate.title for candidate in seen[0]] == ["bookshelf"]

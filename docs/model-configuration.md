@@ -55,7 +55,7 @@ All three vector stores require **768 dimensions**. When changing embedding weig
 
 The separate audio processor uses `KNOWLEDGE_AUDIO_WHISPER_CLI`, `KNOWLEDGE_AUDIO_WHISPER_MODEL`, `KNOWLEDGE_AUDIO_VAD_MODEL` and `KNOWLEDGE_AUDIO_ASR_REVISION` in its own process environment. Restart that processor after changing them. `AUDIO_PROCESSOR_BASE_URL` tells the backend where it runs.
 
-Image query filtering uses `MULTIMODAL_IMAGE_QUERY_MIN_SCORE`, `MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP` and `MULTIMODAL_IMAGE_QUERY_MAX_RESULTS`. Keep their validated values when changing unrelated model defaults. The application currently has no runtime reranker integration.
+Image query filtering uses `MULTIMODAL_IMAGE_QUERY_MIN_SCORE`, `MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP` and `MULTIMODAL_IMAGE_QUERY_MAX_RESULTS`. Keep their validated values when changing unrelated model defaults. Category-aware image search can use the configured Image Q&A model to verify product types and rerank candidates. See [Configure product image matching](image-product-matching.md). The separate embedding reranker service is not used by this path.
 
 ## Apply configuration
 
