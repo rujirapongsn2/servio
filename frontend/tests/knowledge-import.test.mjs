@@ -220,3 +220,65 @@ test('queued file sizes remain readable for bytes, kilobytes and megabytes', asy
     await TestRenderer.act(async () => renderer.unmount());
   }
 });
+
+function sizedFile(name, bytes) {
+  const file = new File(['content'], name, { lastModified: 1 });
+  Object.defineProperty(file, 'size', { value: bytes });
+  return file;
+}
+
+test('file upload aggregate limit blocks review and direct submission before any request', async () => {
+  const requests = [];
+  const renderer = await create(async (url) => { requests.push(url); return response(ready); });
+  try {
+    await pick(renderer, 'Add documents', [sizedFile('first.txt', 30 * 1024 * 1024), sizedFile('second.txt', 21 * 1024 * 1024)]);
+    assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, true, '51 MB across valid files must block review');
+    assert.match(text(renderer), /50 MB total per upload/);
+    assert.match(text(renderer), /51 MB selected/);
+    assert.match(text(renderer), /Remove files.*50 MB/i);
+    await TestRenderer.act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(requests.length, 1, 'over-limit submission must not send a preview or import request');
+  } finally {
+    await TestRenderer.act(async () => renderer.unmount());
+  }
+});
+
+test('incremental mixed selections count unique files, allow exactly 50 MB and recover after removal', async () => {
+  const preview = { source_count: 2, concept_count: 2, warnings: [], documents: [] };
+  const requests = [];
+  const renderer = await create(async (url) => { requests.push(url); return response(url.includes('preview') ? preview : ready); });
+  try {
+    const document = sizedFile('policy.txt', 30 * 1024 * 1024);
+    await pick(renderer, 'Add documents', [document]);
+    await pick(renderer, 'Add audio', [sizedFile('speech.wav', 20 * 1024 * 1024)]);
+    await pick(renderer, 'Add documents', [document]);
+    assert.match(text(renderer), /2 files/);
+    assert.match(text(renderer), /50 MB selected/);
+    assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, false);
+    await TestRenderer.act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(requests.filter((url) => url.includes('preview')).length, 1);
+    assert.ok(button(renderer, 'Add Knowledge'));
+    await pick(renderer, 'Add images', [sizedFile('scan.png', 1)]);
+    assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, true, 'one byte above the aggregate limit must block import');
+    await TestRenderer.act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(requests.length, 2);
+    for (const mode of ['Paste Text', 'URLs', 'Prepared OKF archive']) {
+      await TestRenderer.act(async () => button(renderer, mode).props.onClick());
+      assert.doesNotMatch(text(renderer), /Remove files.*50 MB/i);
+      if (mode !== 'Prepared OKF archive') {
+        await TestRenderer.act(async () => renderer.root.findByType('textarea').props.onChange({ target: { value: mode === 'URLs' ? 'https://example.com' : 'Policy text' } }));
+        assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, false);
+      }
+    }
+    await pick(renderer, 'Add prepared OKF archive', [sizedFile('prepared.zip', 50 * 1024 * 1024)]);
+    assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, false);
+    await TestRenderer.act(async () => button(renderer, 'Files').props.onClick());
+    assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, true);
+    await TestRenderer.act(async () => renderer.root.findByProps({ 'aria-label': 'Remove scan.png' }).props.onClick());
+    assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, false);
+    assert.doesNotMatch(text(renderer), /Remove files.*50 MB/i);
+    assert.match(text(renderer), /50 MB selected/);
+  } finally {
+    await TestRenderer.act(async () => renderer.unmount());
+  }
+});

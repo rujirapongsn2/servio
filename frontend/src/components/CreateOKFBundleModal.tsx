@@ -108,6 +108,8 @@ const MODE_OPTIONS = [
   { id: "urls", label: "URLs", Icon: Globe },
 ] satisfies Array<{ id: ImportMode; label: string; Icon: typeof FileText }>;
 
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 export default function CreateOKFBundleModal({
   teamAgentId,
   assignAgentId,
@@ -177,7 +179,9 @@ export default function CreateOKFBundleModal({
   const accept = mode === "archive" ? FILE_EXTENSIONS.archive : [FILE_EXTENSIONS.document, FILE_EXTENSIONS.archive,
     capabilities.status === "loaded" && capabilities.value.images.status === "ready" ? FILE_EXTENSIONS.image : "",
     capabilities.status === "loaded" && capabilities.value.audio.status === "ready" ? FILE_EXTENSIONS.audio : ""].filter(Boolean).join(",");
-  const selectedIssues = mode === "files" || mode === "archive" ? files.map((file) => fileIssue(file, capabilities, mode === "archive")).filter(Boolean) : [];
+  const selectedBytes = files.reduce((total, file) => total + file.size, 0);
+  const uploadIssue = mode === "files" && selectedBytes > MAX_UPLOAD_BYTES ? "Remove files to keep this upload at or below 50 MB." : null;
+  const selectedIssues = mode === "files" || mode === "archive" ? [...files.map((file) => fileIssue(file, capabilities, mode === "archive")).filter(Boolean), ...(uploadIssue ? [uploadIssue] : [])] : [];
 
   const resetSource = (nextMode: ImportMode) => {
     setMode(nextMode);
@@ -390,7 +394,7 @@ export default function CreateOKFBundleModal({
   if (!portalHost) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex h-dvh w-screen items-center justify-center bg-black/50 p-4">
       <div role="dialog" aria-modal={true} aria-busy={importing || previewing} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
         <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div>
@@ -532,8 +536,10 @@ export default function CreateOKFBundleModal({
                   <input type="file" aria-label={mode === "archive" ? "Add prepared OKF archive" : "Add knowledge files"} accept={accept} multiple={mode !== "archive"} className="sr-only" disabled={importing || previewing} onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
                   <Upload className="h-5 w-5 shrink-0" />{mode === "archive" ? "Choose OKF archive · ZIP, TAR, TGZ" : "Drop files here or browse"}
                 </label>
+                {mode === "files" && <p className="mt-1 text-xs text-gray-500">50 MB total per upload</p>}
                 {files.length > 0 && <div className="mt-3">
-                  <div className="mb-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{files.length} file{files.length === 1 ? "" : "s"}</span><button type="button" onClick={clearFiles} disabled={importing || previewing} className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"><Trash2 className="h-3.5 w-3.5" />Clear all</button></div>
+                  <div className="mb-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{files.length} file{files.length === 1 ? "" : "s"} · {formatFileSize(selectedBytes)} selected</span><button type="button" onClick={clearFiles} disabled={importing || previewing} className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"><Trash2 className="h-3.5 w-3.5" />Clear all</button></div>
+                  {uploadIssue && <p role="alert" className="mb-2 text-sm text-red-700 dark:text-red-300">{uploadIssue}</p>}
                   <div className="max-h-72 space-y-2 overflow-y-auto">{files.map((file) => <FilePreview key={fileKey(file)} file={file} issue={fileIssue(file, capabilities, mode === "archive")} disabled={importing || previewing} onRemove={() => removeFile(file)} />)}</div>
                 </div>}
               </div>

@@ -18,6 +18,25 @@ export KNOWLEDGE_AUDIO_ASR_REVISION=whisper-medium-WEIGHTS_SHA-silero-v6.2.0-WEI
 
 The launcher uses `server/.venv/bin/python`. Set `KNOWLEDGE_AUDIO_PYTHON` to use another Python environment with the backend dependencies installed. The processor listens on `127.0.0.1:8094`. Keep this service on a trusted local interface. It accepts raw audio bytes at `/preview`, `/extract`, and `/normalize`.
 
+### Keep the Mac mini processor running
+
+The Mac mini uses the user LaunchAgent `ai.softnix.servio.audio-processor`, installed at `~/Library/LaunchAgents/ai.softnix.servio.audio-processor.plist`. It starts after login and restarts the processor if it exits. It does not start before a user logs in after reboot.
+
+The plist sets the repository's Python executable and server working directory, the local Whisper and VAD paths, the ASR revision, and a `PATH` that includes `/opt/homebrew/bin` for FFmpeg. Current model assets are under `.audit/knowledge-audio/asr`; retain that directory while the service uses those paths. Update the plist before moving the repository, virtual environment, or model files.
+
+Check the service and its dependencies:
+
+```sh
+launchctl print gui/$(id -u)/ai.softnix.servio.audio-processor
+curl --fail http://127.0.0.1:8094/health
+```
+
+Health must return `ready: true`. Logs are under `.audit/knowledge-upload-limits/audio-processor.*.log`. To restart the loaded service after a code change:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/ai.softnix.servio.audio-processor
+```
+
 ## Start native audio embeddings
 
 Use the BF16 model and matching BF16 projector from [ggml-org/embeddinggemma-2-GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF). Keep both files from the same pinned revision. For example, revision `bfcd298762cc34d0357ece5ebdd31791a3a374d8` contains `embeddinggemma-2-BF16.gguf` and `mmproj-embeddinggemma-2-BF16.gguf`.
@@ -63,6 +82,7 @@ Queries combine native audio ranking and transcript ranking by canonical segment
 ## Limits
 
 - The maximum upload is 50 MiB with one WAV or MP3 audio stream.
+- All files in one Add Knowledge upload together must fit within 50 MiB, including documents, images, and audio. The interface shows the selected total and blocks review until excess files are removed.
 - The default duration limit is 600 seconds. `KNOWLEDGE_AUDIO_MAX_SECONDS` can lower it.
 - The default segment length is 20 seconds with 2 seconds of overlap. `KNOWLEDGE_AUDIO_SEGMENT_SECONDS` permits 5 to 60 seconds. `KNOWLEDGE_AUDIO_OVERLAP_SECONDS` permits 0 to 10 seconds, capped at half the segment length.
 - The processor accepts one inference or decode operation at a time. A busy processor returns 429. Import or refresh fails clearly and can be retried.
