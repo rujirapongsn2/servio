@@ -15,6 +15,8 @@ from typing import Dict, Any, Optional, List
 from google import genai
 from google.genai import types
 
+from app.model_settings import gemini_file_search_model
+
 
 # MIME type mappings for common file extensions
 MIME_TYPES = {
@@ -68,19 +70,19 @@ def get_mime_type(file_path: str) -> str:
 class GeminiFileSearchService:
     """Service for managing Gemini File Search operations"""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize the Gemini File Search service.
 
         Args:
             api_key: Google Gemini API key (if None, loads from environment)
-            model: Model to use for generation (default: gemini-2.5-flash)
+            model: Model to use for generation (defaults to GEMINI_FILE_SEARCH_MODEL)
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
 
-        self.model = model
+        self.model = model or gemini_file_search_model()
         self.client = genai.Client(api_key=self.api_key)
 
     def create_store(self, display_name: str) -> Dict[str, Any]:

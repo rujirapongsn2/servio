@@ -1,4 +1,18 @@
-export const DEFAULT_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"];
+export interface AgentModelDefaults {
+  default_agent_model: string;
+  agent_models: string[];
+}
+
+export function parseAgentModelDefaults(value: unknown): AgentModelDefaults {
+  if (typeof value !== "object" || value === null ||
+    !("default_agent_model" in value) || typeof value.default_agent_model !== "string" || !value.default_agent_model.trim() ||
+    !("agent_models" in value) || !Array.isArray(value.agent_models) ||
+    !value.agent_models.every((item: unknown) => typeof item === "string" && !!item.trim())) {
+    throw new Error("Invalid model defaults");
+  }
+  const defaultModel = value.default_agent_model.trim();
+  return { default_agent_model: defaultModel, agent_models: Array.from(new Set([defaultModel, ...value.agent_models.map((item: string) => item.trim())])) };
+}
 
 export function parseModelIds(data: unknown, registered: boolean): string[] {
   if (!Array.isArray(data)) throw new Error("Invalid model list");

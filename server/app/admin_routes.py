@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from app import database
+from app import database, model_settings
 from app.auth import get_current_user, verify_password, create_access_token
 from app.db_config import get_db
 from app.models import (
@@ -799,6 +799,12 @@ async def update_team_users(
 
 
 # Agent endpoints
+@router.get("/model-defaults")
+async def get_model_defaults(current_user: str = Depends(get_current_user)):
+    return {"default_agent_model": model_settings.default_agent_model(),
+            "agent_models": model_settings.default_agent_models()}
+
+
 @router.get("/agents", response_model=List[AgentResponse])
 async def get_agents(
     team_agent_id: Optional[int] = None,
@@ -1115,15 +1121,15 @@ async def optimize_prompt(
 ):
     """Optimize agent instructions using AI"""
     require_team_access(current_user, team_agent_id, "admin")
-    import os
     from openai import OpenAI
     from app import provider_service, database
 
     try:
         # Determine which provider and model to use
-        api_key = os.getenv("OPENAI_API_KEY")
-        base_url = None
-        model = request.model or "gpt-4o-mini"
+        options = model_settings.client_options("PROMPT_OPTIMIZE")
+        api_key = options["api_key"]
+        base_url = options["base_url"]
+        model = request.model.strip() or model_settings.optimize_model()
 
         if request.llm_provider_id:
             with database.get_db() as db:
@@ -2256,8 +2262,7 @@ async def create_file_store(
             tool_config = {
                 "type": "gemini_file_search",
                 "description": f"Search documents in {request.display_name}",
-                "gemini_store_id": gemini_store_id,
-                "model": "gemini-2.5-flash"
+                "gemini_store_id": gemini_store_id
             }
             created_tool_id = database.create_custom_tool(
                 tool_name,

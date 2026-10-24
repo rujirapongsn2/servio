@@ -16,6 +16,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.model_settings import default_agent_model
+
 
 class Base(DeclarativeBase):
     """Base class for all ORM models"""
@@ -108,7 +110,7 @@ class Agent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     instructions: Mapped[str] = mapped_column(Text, nullable=False)
-    model: Mapped[str] = mapped_column(String(100), default="gpt-4o-mini")
+    model: Mapped[str] = mapped_column(String(100), default=default_agent_model)
     llm_provider_id: Mapped[Optional[int]] = mapped_column(ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True)
     is_starting_agent: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

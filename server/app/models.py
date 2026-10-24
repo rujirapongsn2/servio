@@ -2,6 +2,7 @@ from typing import List, Optional, Dict, Any, Literal, Annotated
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
+from app.model_settings import default_agent_model
 from app.knowledge_image_presentations import KnowledgeImages
 from app.knowledge_audio_presentations import KnowledgeMedia
 
@@ -61,7 +62,7 @@ class AgentResponse(BaseModel):
 class CreateAgentRequest(BaseModel):
     name: str
     instructions: str
-    model: str = "gpt-4o-mini"
+    model: str = Field(default_factory=default_agent_model)
     llm_provider_id: Optional[int] = None
     tool_ids: List[int] = []
     handoff_agent_ids: List[int] = []

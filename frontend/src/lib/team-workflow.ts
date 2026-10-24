@@ -19,6 +19,7 @@ export interface WorkflowTool {
 export interface TeamWorkflow {
   team_id: number;
   team_name: string;
+  default_agent_model?: string;
   can_edit: boolean;
   fallback_agent_id: number | null;
   agents: WorkflowAgent[];
@@ -67,6 +68,7 @@ function isTool(value: unknown): value is WorkflowTool {
 
 export function parseTeamWorkflow(value: unknown): TeamWorkflow {
   if (!isRecord(value) || !isId(value.team_id) || typeof value.team_name !== "string" ||
+    (value.default_agent_model !== undefined && typeof value.default_agent_model !== "string") ||
     typeof value.can_edit !== "boolean" || !isNullableId(value.fallback_agent_id) ||
     !Array.isArray(value.agents) || !value.agents.every(isAgent) ||
     !Array.isArray(value.tools) || !value.tools.every(isTool) ||
@@ -75,6 +77,7 @@ export function parseTeamWorkflow(value: unknown): TeamWorkflow {
   }
   return {
     team_id: value.team_id, team_name: value.team_name, can_edit: value.can_edit,
+    default_agent_model: typeof value.default_agent_model === "string" ? value.default_agent_model.trim() : "",
     fallback_agent_id: value.fallback_agent_id, agents: value.agents,
     tools: value.tools, providers: value.providers,
   };

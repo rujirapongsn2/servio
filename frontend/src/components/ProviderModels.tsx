@@ -15,6 +15,12 @@ type RegisteredModel = {
   enabled: boolean;
 };
 type ImageDefaults = { image_ocr: number | null; image_qa: number | null };
+type ImageSource = { source: "database" | "environment"; model_id: string | null; configured: boolean };
+type ImageSources = Record<keyof ImageDefaults, ImageSource>;
+const databaseSources: ImageSources = {
+  image_ocr: { source: "database", model_id: null, configured: false },
+  image_qa: { source: "database", model_id: null, configured: false },
+};
 type ModelForm = {
   id: number | null;
   model_id: string;
@@ -45,6 +51,23 @@ function parseDefaults(value: unknown): ImageDefaults {
   }
   throw new Error("Invalid image model defaults response");
 }
+function parseSource(value: unknown): ImageSource {
+  if (typeof value === "object" && value !== null && "source" in value
+    && (value.source === "database" || value.source === "environment")
+    && "model_id" in value && (value.model_id === null || typeof value.model_id === "string")
+    && "configured" in value && typeof value.configured === "boolean") {
+    return { source: value.source, model_id: value.model_id, configured: value.configured };
+  }
+  throw new Error("Invalid image model source response");
+}
+function parseSources(value: unknown): ImageSources {
+  if (typeof value === "object" && value !== null && "sources" in value
+    && typeof value.sources === "object" && value.sources !== null
+    && "image_ocr" in value.sources && "image_qa" in value.sources) {
+    return { image_ocr: parseSource(value.sources.image_ocr), image_qa: parseSource(value.sources.image_qa) };
+  }
+  throw new Error("Invalid image model sources response");
+}
 async function apiRequest(path: string, method = "GET", body?: object): Promise<unknown> {
   const response = await fetch(`${getApiBaseUrl()}/api/admin${path}`, {
     method,
@@ -63,6 +86,7 @@ export function ProviderModels({ provider, providers, onClose }: { provider: Pro
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [models, setModels] = useState<RegisteredModel[]>([]);
   const [defaults, setDefaults] = useState<ImageDefaults>({ image_ocr: null, image_qa: null });
+  const [sources, setSources] = useState<ImageSources>(databaseSources);
   const [form, setForm] = useState<ModelForm | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +102,7 @@ export function ProviderModels({ provider, providers, onClose }: { provider: Pro
     ]);
     setModels(catalogs.flat());
     setDefaults(parseDefaults(imageDefaults));
+    setSources(parseSources(imageDefaults));
     setReady(true);
   }, [providers]);
 
@@ -171,14 +196,16 @@ export function ProviderModels({ provider, providers, onClose }: { provider: Pro
             <div className="grid gap-3 sm:grid-cols-2">
               {(["image_ocr", "image_qa"] satisfies (keyof ImageDefaults)[]).map((purpose) => (
                 <div key={purpose}><label htmlFor={`default-${purpose}`} className="mb-1 block text-sm font-medium">{purpose === "image_ocr" ? "JPG/PNG OCR" : "Image Q&A"}</label>
-                  <select id={`default-${purpose}`} value={defaults[purpose] ?? ""} disabled={busy} onChange={(event) => setDefaults({ ...defaults, [purpose]: event.target.value ? Number(event.target.value) : null })} className={fieldClass}>
+                  <select id={`default-${purpose}`} value={sources[purpose].source === "environment" ? "environment" : defaults[purpose] ?? ""} disabled={busy || sources[purpose].source === "environment"} onChange={(event) => setDefaults({ ...defaults, [purpose]: event.target.value ? Number(event.target.value) : null })} className={fieldClass}>
+                    {sources[purpose].source === "environment" && <option value="environment">{sources[purpose].model_id || "Not configured"}</option>}
                     <option value="">Not configured</option>
                     {visionModels.map((model) => <option key={model.id} value={model.id}>{providers.find((item) => item.id === model.provider_id)?.name} · {model.display_name || model.model_id}</option>)}
                   </select>
+                  {sources[purpose].source === "environment" && <p className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">Managed in .env · {sources[purpose].configured ? sources[purpose].model_id : "Not configured"}</p>}
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex justify-end"><Button type="button" disabled={busy} onClick={() => void mutate(() => apiRequest("/image-model-defaults", "PUT", defaults), "Image defaults saved")}>Save Defaults</Button></div>
+            <div className="mt-3 flex justify-end"><Button type="button" disabled={busy || Object.values(sources).every((source) => source.source === "environment")} onClick={() => void mutate(() => apiRequest("/image-model-defaults", "PUT", defaults), "Image defaults saved")}>Save Defaults</Button></div>
           </section>
         </div>
       )}

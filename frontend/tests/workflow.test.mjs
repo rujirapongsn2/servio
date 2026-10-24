@@ -101,6 +101,7 @@ function agentSetup(t, { isNew = false, autoSelect = true } = {}) {
 function providerSelect(renderer) { return renderer.root.findAllByType('select')[0]; }
 function agentFetch(delays = {}) {
   return async (url, options) => {
+    if (url === '/api/admin/model-defaults') return delays.defaults?.() ?? response({ default_agent_model: 'runtime-agent-model', agent_models: ['runtime-agent-model', 'runtime-second-model'] });
     if (options?.method === 'PUT') return response({ message: 'Agent updated' });
     if (url.endsWith('/registered-models')) return delays.registered?.(url) ?? response([]);
     if (url.endsWith('/models')) return delays.models?.(url) ?? response([{ id: url.includes('/99/') ? 'new-model' : 'old-model' }]);
@@ -316,7 +317,7 @@ for (const nextProvider of ['default', '']) {
     assert.ok(!modelIds(renderer).includes('stale-model'));
     assert.equal(renderer.root.findAllByProps({ role: 'status' }).length, 0);
     assert.equal(modelSelect(renderer).props.disabled, nextProvider === '');
-    if (nextProvider === 'default') assert.ok(modelIds(renderer).includes('gpt-4o-mini'));
+    if (nextProvider === 'default') assert.ok(modelIds(renderer).includes('runtime-agent-model'));
     assert.equal(renderer.root.findAllByProps({ id: 'custom-model-id' }).length, 0);
   });
 }
@@ -354,4 +355,36 @@ test('Workflow agent setup keeps its destination through provider and capability
   await act(async () => renderer.update(React.createElement(env.Agent)));
   await submitAgent(renderer);
   assert.equal(env.routes.at(-1), '/admin/teams/1/workflow');
+});
+
+
+test('new legacy Agent uses runtime model default after choosing Default provider', async (t) => {
+  const env = agentSetup(t, { isNew: true, autoSelect: false });
+  global.fetch = agentFetch();
+  const renderer = await env.mount(env.Agent);
+  await selectValue(providerSelect(renderer), 'default');
+  assert.equal(modelSelect(renderer).props.value, 'runtime-agent-model');
+  assert.ok(modelIds(renderer).includes('runtime-second-model'));
+});
+
+test('late runtime defaults cannot overwrite a newly typed model ID', async (t) => {
+  const env = agentSetup(t, { isNew: true, autoSelect: false });
+  const pending = deferred();
+  global.fetch = agentFetch({ defaults: () => pending.promise });
+  const renderer = await env.mount(env.Agent);
+  await selectValue(providerSelect(renderer), 'default');
+  await selectValue(modelSelect(renderer), '__custom_model__');
+  await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), 'my/model');
+  await act(async () => pending.resolve(response({ default_agent_model: 'runtime-late', agent_models: ['runtime-late'] })));
+  assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/model');
+});
+
+test('unavailable runtime defaults leave manual model entry usable', async (t) => {
+  const env = agentSetup(t, { isNew: true, autoSelect: false });
+  global.fetch = agentFetch({ defaults: () => ({ ok: false }) });
+  const renderer = await env.mount(env.Agent);
+  await selectValue(providerSelect(renderer), 'default');
+  assert.match(text(renderer.root.findByProps({ role: 'status' })), /Enter a model ID/);
+  await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), 'my/manual-model');
+  assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/manual-model');
 });

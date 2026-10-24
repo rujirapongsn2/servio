@@ -16,7 +16,7 @@ export interface WorkflowReadyState {
 
 export function createNewWorkflowAgent(workflow: TeamWorkflow): WorkflowNewAgent {
   return { requestId: crypto.randomUUID(), draft: {
-    name: "", instructions: "", model: "gpt-4o-mini", llm_provider_id: null,
+    name: "", instructions: "", model: workflow.default_agent_model ?? "", llm_provider_id: null,
     tool_ids: workflow.tools.filter((tool) => tool.name === "DateTimeTool").map((tool) => tool.id),
     handoff_agent_ids: [], is_fallback: workflow.agents.length === 0,
     expected_updated_at: null, expected_fallback_agent_id: workflow.fallback_agent_id,

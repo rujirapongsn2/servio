@@ -42,7 +42,7 @@ Usage:
 Commands:
   install               Install dependencies, configure, build, and start
   start [service]       Start services in the background
-  restart [service]     Restart running services
+  restart [service]     Recreate services and apply .env changes
   rebuild [service]     Rebuild image(s), then recreate services
   stop [service]        Stop services
   status [service]      Show service status
@@ -1042,11 +1042,12 @@ cmd_restart() {
   local services
   services="$(compose_services_exact "$TARGET")"
 
-  info "Restarting Servio ($TARGET)..."
+  info "Recreating Servio ($TARGET) with current configuration..."
   if [ "$TARGET" = "all" ]; then
-    run_compose restart
+    run_compose up -d --force-recreate
   else
-    run_compose_with_optional_services "$services" restart
+    run_compose_with_optional_services "$services" up -d --force-recreate --no-deps
+    refresh_proxy_if_needed "$TARGET"
   fi
   show_urls
 }

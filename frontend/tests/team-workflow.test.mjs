@@ -41,7 +41,7 @@ function response(data, status = 200) { return { ok: status < 400, status, json:
 function text(node) { return typeof node === 'string' ? node : (node.children ?? []).map(text).join(' '); }
 function button(renderer, label) { return renderer.root.findAllByType('button').find((node) => text(node).trim() === label); }
 function snapshot() {
-  return { team_id: 1, team_name: 'Support', can_edit: true, fallback_agent_id: 1,
+  return { team_id: 1, team_name: 'Support', default_agent_model: 'runtime-agent-model', can_edit: true, fallback_agent_id: 1,
     agents: [
       { id: 1, name: 'Support agent', instructions: 'Handle support', model: 'test-model', llm_provider_id: null, tool_ids: [1], handoff_agent_ids: [2], shared: false, updated_at: '2026-10-23T01:00:00' },
       { id: 2, name: 'Sales agent', instructions: 'Handle sales', model: 'test-model', llm_provider_id: 1, tool_ids: [], handoff_agent_ids: [], shared: false, updated_at: '2026-10-23T01:00:00' },
@@ -62,6 +62,7 @@ function setup(t, saved = snapshot()) {
   global.window = { addEventListener() {}, removeEventListener() {}, confirm: () => true, location: { search: '', reload() {} } };
   global.document = { addEventListener() {}, removeEventListener() {} };
   global.fetch = async (url, init) => {
+    if (url.endsWith('/model-defaults')) return response({ default_agent_model: 'runtime-agent-model', agent_models: ['runtime-agent-model', 'runtime-second-model'] });
     if (url.endsWith('/auth/me')) return response({is_super_admin: true});
     if (url.endsWith('/models')) return response([{ id: 'discovered-model' }]);
     if (url.endsWith('/registered-models')) return response([{ model_id: 'registered-model', enabled: true, capabilities: ['text'] }]);
@@ -572,4 +573,62 @@ test('deleting a non-fallback Agent retains the existing team fallback', async (
   await act(async () => button(renderer, 'Confirm permanent delete').props.onClick());
   assert.equal(env.saves[0].replacement_fallback_agent_id, 1);
   assert.deepEqual(renderer.root.findByType('workflow-graph').props.agents.map(agent => agent.id), [1]);
+});
+
+
+test('Workflow creates with runtime defaults and preserves restored custom drafts', async (t) => {
+  const data = snapshot(); data.agents = []; data.fallback_agent_id = null;
+  const env = setup(t, data); let renderer = await env.mount();
+  await act(async () => button(renderer, 'Create agent').props.onClick());
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'runtime-agent-model');
+  assert.deepEqual(renderer.root.findByProps({ id: 'workflow-models' }).findAllByType('option').map(node => node.props.value), ['runtime-agent-model', 'runtime-second-model']);
+  await change(renderer, 'workflow-model', 'saved/custom-model');
+  await act(async () => renderer.unmount());
+  data.default_agent_model = 'changed-server-default';
+  renderer = await env.mount();
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'saved/custom-model');
+});
+
+test('Workflow without a runtime default leaves the new model blank', () => {
+  const load = modules();
+  const data = snapshot(); delete data.default_agent_model;
+  const parsed = load('src/lib/team-workflow.ts').parseTeamWorkflow(data);
+  const draft = load('src/lib/workflow-authoring.ts').createNewWorkflowAgent(parsed);
+  assert.equal(draft.draft.model, '');
+  assert.throws(() => load('src/lib/team-workflow.ts').parseTeamWorkflow({ ...data, default_agent_model: 42 }), /Invalid workflow/);
+});
+
+test('runtime model defaults validate the boundary and preserve arbitrary IDs', () => {
+  const parse = modules()('src/lib/provider-models.ts').parseAgentModelDefaults;
+  assert.deepEqual(parse({ default_agent_model: ' local/model-v9 ', agent_models: [' other/v3 ', 'local/model-v9'] }), {
+    default_agent_model: 'local/model-v9', agent_models: ['local/model-v9', 'other/v3'],
+  });
+  for (const invalid of [null, [], { default_agent_model: '', agent_models: [] }, { default_agent_model: 'id', agent_models: [1] }]) {
+    assert.throws(() => parse(invalid), /Invalid model defaults/);
+  }
+});
+
+test('late Workflow defaults cannot replace options for a different provider', async (t) => {
+  const env = setup(t);
+  const originalFetch = global.fetch;
+  let finish;
+  global.fetch = (url, init) => url.endsWith('/model-defaults') ? new Promise(resolve => { finish = resolve; }) : originalFetch(url, init);
+  const renderer = await env.mount();
+  await change(renderer, 'workflow-provider', '1');
+  await change(renderer, 'workflow-model', 'typed/custom-model');
+  await act(async () => finish(response({ default_agent_model: 'late/default', agent_models: ['late/default'] })));
+  const options = renderer.root.findByProps({ id: 'workflow-models' }).findAllByType('option').map(node => node.props.value);
+  assert.deepEqual(options.sort(), ['discovered-model', 'registered-model']);
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'typed/custom-model');
+});
+
+test('Workflow keeps manual model entry usable when defaults are unavailable', async (t) => {
+  const env = setup(t);
+  const originalFetch = global.fetch;
+  global.fetch = (url, init) => url.endsWith('/model-defaults') ? Promise.resolve(response({ detail: 'Unavailable' }, 503)) : originalFetch(url, init);
+  const renderer = await env.mount();
+  assert.ok(renderer.root.findAllByProps({ role: 'status' }).some(node => /enter a model ID/.test(text(node))));
+  await change(renderer, 'workflow-model', 'manual/local-model');
+  await save(renderer);
+  assert.equal(env.saves[0].model, 'manual/local-model');
 });

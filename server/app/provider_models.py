@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
+from app.model_settings import setting
 from app.db_config import get_db
 from app.orm_models import ImageModelDefault, LLMProvider, ProviderModel
 
@@ -35,6 +36,44 @@ class ImageDefaultsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_ocr: int | None = Field(ge=1)
     image_qa: int | None = Field(ge=1)
+
+
+class ImageModelSource(BaseModel):
+    source: Literal["database", "environment"]
+    model_id: str | None
+    configured: bool
+
+
+class ImageDefaultsResponse(ImageDefaultsInput):
+    sources: dict[ImagePurpose, ImageModelSource]
+
+
+def _task_source(purpose: str) -> str:
+    source = setting(f"{purpose.upper()}_MODEL_SOURCE", "database")
+    if source not in {"database", "environment"}:
+        raise ValueError(f"{purpose.upper()}_MODEL_SOURCE must be database or environment")
+    return source
+
+
+def _environment_task_model(purpose: str) -> dict | None:
+    prefix = purpose.upper()
+    model = setting(f"{prefix}_MODEL")
+    base_url = setting(f"{prefix}_BASE_URL")
+    api_key = setting(f"{prefix}_API_KEY")
+    if not all((model, base_url, api_key)):
+        return None
+    return {"model_id": model, "base_url": base_url, "api_key": api_key, "catalog_id": None}
+
+
+def get_defaults_response() -> dict:
+    defaults = get_defaults()
+    sources = {}
+    for purpose in PURPOSES:
+        source = _task_source(purpose)
+        config = get_task_model(purpose)
+        sources[purpose] = {"source": source, "model_id": config["model_id"] if config else None,
+                            "configured": config is not None}
+    return {**defaults, "sources": sources}
 
 
 def _serialize(model: ProviderModel) -> dict:
@@ -126,6 +165,8 @@ def get_task_model(purpose: str) -> dict | None:
     """Resolve credentials only for internal execution; never return to the UI."""
     if purpose not in PURPOSES:
         raise ValueError("Unknown image model purpose")
+    if _task_source(purpose) == "environment":
+        return _environment_task_model(purpose)
     with get_db() as db:
         selected = db.query(ProviderModel, LLMProvider).join(
             ImageModelDefault, ImageModelDefault.model_catalog_id == ProviderModel.id

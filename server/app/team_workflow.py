@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app import database
+from app.model_settings import default_agent_model
 from app.models import CreateWorkflowAgentRequest, CreateWorkflowToolRequest, UpdateWorkflowAgentRequest, UpdateWorkflowMembersRequest, DeleteWorkflowAgentRequest
 from app.orm_models import Admin, TeamToolAssignment, WorkflowCreationReceipt, Agent, AgentHandoff, AgentTool, LLMProvider, OKFBundle, TeamAgent, TeamAgentMember, TeamUserMembership, Tool
 
@@ -37,6 +38,7 @@ def get_snapshot(team_id: int) -> dict[str, Any] | None:
         display_names = {tool.id: knowledge_names.get(tool.config["okf_bundle_id"], tool.name) for tool in knowledge_tools}
         return {
             "team_id": team.id,
+            "default_agent_model": default_agent_model(),
             "team_name": team.name,
             "fallback_agent_id": next((member.agent_id for member in members if member.role == "starting"), None),
             "agents": [{

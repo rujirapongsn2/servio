@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 from agents import Agent, WebSearchTool, function_tool, OpenAIChatCompletionsModel
 from agents.tool import UserLocation
 from app.softnix_api import query_softnix_genai, SoftnixAPIError
+from app import model_settings
 
 # MCP SDK imports
 try:
@@ -64,7 +65,7 @@ def get_tool_citations() -> List[str]:
 
 triage_agent = Agent(
     name="Coordinator Agent",
-    model="gpt-4o-mini",
+    model=model_settings.coordinator_model(),
     instructions=f"""You are the coordinator for all conversations.
 - Greet the user and handle their request directly.
 - If specialized agents exist in the database, transfer to the best match immediately without any preamble, confirmation, or speaking to the user.
@@ -286,7 +287,7 @@ def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
 
     gemini_store_id = config.get("gemini_store_id", "")
     description = config.get("description", f"Search documents using {tool_name}")
-    model = config.get("model", "gemini-2.5-flash")
+    model = config.get("model") or model_settings.gemini_file_search_model()
 
     # Create the function dynamically
     def dynamic_gemini_tool(query: str):
@@ -641,7 +642,7 @@ def build_agent_from_db(
                 handoffs.append(handoff_agent)
 
     # Configure Model
-    model = agent_data.get("model", "gpt-4o-mini")
+    model = agent_data.get("model") or model_settings.default_agent_model()
     
     # Configure custom LLM provider if set
     llm_provider = agent_data.get("llm_provider")
@@ -853,7 +854,7 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
         )
         return Agent(
             name="Coordinator Agent",
-            model=triage_agent.model,
+            model=model_settings.coordinator_model(),
             instructions=empty_team_instructions,
             handoffs=[],
         )
@@ -888,9 +889,16 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
             f"{routing_guide}\n\n"
             "After transferring, let the selected agent answer the user."
         )
+        routing_model = default_member_agent.model
+        override = model_settings.setting("COORDINATOR_MODEL")
+        if override:
+            routing_model = (
+                OpenAIChatCompletionsModel(model=override, openai_client=routing_model._client)
+                if isinstance(routing_model, OpenAIChatCompletionsModel) else override
+            )
         return Agent(
             name="Coordinator Agent",
-            model=getattr(default_member_agent, "model", triage_agent.model),
+            model=routing_model,
             instructions=coordinator_instructions,
             handoffs=db_agents,
         )
@@ -922,7 +930,7 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
 
     triage = Agent(
         name="Coordinator Agent",
-        model=triage_agent.model,
+        model=model_settings.coordinator_model(),
         instructions=triage_agent.instructions + extra,
         handoffs=[],
     )

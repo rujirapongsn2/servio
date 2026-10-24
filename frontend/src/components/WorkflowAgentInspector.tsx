@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BookOpen, Bot, Expand, GitBranch, LockKeyhole, Plus, Save, Star, Wrench, X, Play, Sparkles, Trash2 } from "lucide-react";
-import { DEFAULT_MODELS, parseModelIds } from "@/lib/provider-models";
+import { parseAgentModelDefaults, parseModelIds } from "@/lib/provider-models";
 import { isKnowledgeTool, workflowRequest, type TeamWorkflow, type WorkflowAgentDraft } from "@/lib/team-workflow";
 import type { WorkflowEditor } from "@/lib/workflow-authoring";
 
@@ -56,11 +56,6 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
 
   useEffect(() => {
     const controller = new AbortController();
-    if (draft.llm_provider_id === null) {
-      setModels(DEFAULT_MODELS);
-      setModelStatus("");
-      return () => controller.abort();
-    }
     setModels([]);
     setModelStatus("Loading models…");
     const load = async (endpoint: string, registered: boolean) => {
@@ -69,7 +64,13 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
       if (!controller.signal.aborted) setModels((previous) => Array.from(new Set([...previous, ...ids])));
       return ids;
     };
-    void Promise.allSettled([load("models", false), load("registered-models", true)]).then((results) => {
+    const requests = draft.llm_provider_id === null ? [
+      workflowRequest("/model-defaults", { signal: controller.signal }).then((data) => {
+        const defaults = parseAgentModelDefaults(data);
+        if (!controller.signal.aborted) setModels(defaults.agent_models);
+      }),
+    ] : [load("models", false), load("registered-models", true)];
+    void Promise.allSettled(requests).then((results) => {
       if (controller.signal.aborted) return;
       setModelStatus(results.some((result) => result.status === "rejected") ? "Some models unavailable. You can enter a model ID." : "");
     });
@@ -138,7 +139,7 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
               <input id="workflow-agent-name" required maxLength={255} pattern={".*\\S.*"} value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} className={inputClass} /></div>
             <div><div className="mb-1 flex items-center justify-between"><label htmlFor="workflow-provider" className="block text-sm font-medium">Provider</label>{onCreateProvider && <button type="button" onClick={onCreateProvider} aria-label="Create provider" title="Create provider" className="rounded p-1 text-sky-700"><Plus className="h-4 w-4" /></button>}</div>
               <select id="workflow-provider" value={draft.llm_provider_id ?? "default"}
-                onChange={(event) => onChange({ ...draft, llm_provider_id: event.target.value === "default" ? null : Number(event.target.value), model: "" })} className={inputClass}>
+                onChange={(event) => onChange({ ...draft, llm_provider_id: event.target.value === "default" ? null : Number(event.target.value), model: event.target.value === "default" ? workflow.default_agent_model ?? "" : "" })} className={inputClass}>
                 <option value="default">Default (OpenAI)</option>
                 {workflow.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
                 {draft.llm_provider_id !== null && !workflow.providers.some((provider) => provider.id === draft.llm_provider_id) && <option value={draft.llm_provider_id}>Current provider</option>}

@@ -1,7 +1,7 @@
 import json
-import os
 from typing import Optional
 from openai import AsyncOpenAI
+from app.model_settings import client_options, intent_model
 from app.session_manager import session_manager
 
 # Standard Intent Groups with default keywords (Thai + English)
@@ -40,8 +40,8 @@ STANDARD_INTENT_GROUPS = [
 
 class IntentService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = "gpt-4o-mini"
+        self.client = AsyncOpenAI(**client_options("INTENT"))
+        self.model = intent_model()
 
         
         # Define the classification rules based on INTENT_MONITOR.md
@@ -97,7 +97,6 @@ Output JSON format only:
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": json.dumps(recent_history)}
                 ],
-                temperature=0.1,
                 response_format={"type": "json_object"}
             )
             

@@ -49,9 +49,9 @@ def delete_model(provider_id: int, catalog_id: int, user: str = Depends(require_
     return {"message": "Registered model deleted"}
 
 
-@router.get("/image-model-defaults", response_model=catalog.ImageDefaultsInput)
+@router.get("/image-model-defaults", response_model=catalog.ImageDefaultsResponse)
 def get_defaults(user: str = Depends(get_current_user)):
-    return catalog.get_defaults()
+    return _call(catalog.get_defaults_response)
 
 
 @router.put("/image-model-defaults", response_model=catalog.ImageDefaultsInput)

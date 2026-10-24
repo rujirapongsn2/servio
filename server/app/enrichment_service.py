@@ -4,12 +4,12 @@ Analyzes conversations to extract insights, sentiment, topics, and quality metri
 """
 
 import json
-import os
 from typing import Dict, Any, Optional
 from datetime import datetime
 import asyncio
 
 from openai import AsyncOpenAI
+from app.model_settings import client_options, enrichment_model
 
 from app import database
 
@@ -77,8 +77,8 @@ class EnrichmentService:
     """Service for enriching conversations with LLM analysis"""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = "gpt-4o-mini"  # Cost-effective model for analysis
+        self.client = AsyncOpenAI(**client_options("ENRICHMENT"))
+        self.model = enrichment_model()
         self.version = "v1.0"
 
     async def enrich_conversation(self, conversation_id: int) -> Optional[Dict[str, Any]]:
@@ -192,7 +192,6 @@ class EnrichmentService:
                         "content": prompt
                     }
                 ],
-                temperature=0.3,  # Lower temperature for consistent analysis
                 response_format={"type": "json_object"}  # Ensure JSON response
             )
 

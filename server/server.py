@@ -1,3 +1,7 @@
+from app.environment import load_environment
+
+load_environment()
+
 import time
 from collections.abc import AsyncIterator
 from logging import getLogger
@@ -11,13 +15,9 @@ import secrets
 
 from agents import Runner, trace
 from agents.voice import (
-    TTSModelSettings,
     VoiceStreamEventAudio,
-    VoicePipeline,
-    VoicePipelineConfig,
     VoiceWorkflowBase,
 )
-from openai import AsyncOpenAI
 import numpy as np
 from app.agent_config import get_runtime_starting_agent
 from app.auth import get_current_user, decode_access_token
@@ -42,13 +42,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import os
 
 
-from dotenv import load_dotenv
 from pathlib import Path
-
-# Try Docker environment first, then local .env
-if not os.getenv("OPENAI_API_KEY"):
-    env_path = Path(__file__).parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path, override=True)
+from app.voice_config import create_voice_pipeline, create_welcome_speech
 
 app = FastAPI()
 
@@ -385,13 +380,8 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
                          audio_buffer = []
                          continue
 
-                    output = await VoicePipeline(
-                        workflow=workflow,
-                        config=VoicePipelineConfig(
-                            tts_settings=TTSModelSettings(
-                                buffer_size=512, transform_data=transform_data
-                            )
-                        ),
+                    output = await create_voice_pipeline(
+                        workflow, transform_data=transform_data
                     ).run(audio_input)
                     async for event in output.stream():
                         await connection.send_audio_chunk(event)
@@ -503,16 +493,8 @@ async def twilio_stream_endpoint(websocket: WebSocket):
                 welcome_text = twilio_config["welcome_message"]
                 print(f"Playing Welcome Message: {welcome_text}")
                 try:
-                    client = AsyncOpenAI()
-                    # Generate speech using OpenAI TTS (alloy is a good general purpose voice)
-                    # response_format='pcm' returns 16-bit PCM at 24kHz
-                    response = await client.audio.speech.create(
-                        model="tts-1",
-                        voice="alloy",
-                        input=welcome_text,
-                        response_format="pcm"
-                    )
-                    
+                    response = await create_welcome_speech(welcome_text)
+
                     # Read binary content
                     audio_bytes = response.content
                     
@@ -624,13 +606,8 @@ async def twilio_stream_endpoint(websocket: WebSocket):
                         
                         # Run pipeline
                         print("Running VoicePipeline...")
-                        output = await VoicePipeline(
-                            workflow=workflow,
-                            config=VoicePipelineConfig(
-                                tts_settings=TTSModelSettings(
-                                    buffer_size=512, transform_data=lambda x: x
-                                )
-                            ),
+                        output = await create_voice_pipeline(
+                            workflow, transform_data=lambda x: x
                         ).run(audio_input)
                         
                         print("Streaming response...")

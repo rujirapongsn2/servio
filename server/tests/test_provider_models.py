@@ -111,7 +111,7 @@ def test_default_requires_enabled_vision_and_update_is_atomic(registry, capabili
     bad = create(client, model_id="ineligible", capabilities=capabilities, enabled=enabled).json()["id"]
     assert defaults(client, good, good).status_code == 200
     assert defaults(client, None, bad).status_code == 400
-    assert client.get("/api/admin/image-model-defaults", headers=headers()).json() == {
+    assert catalog.get_defaults() == {
         "image_ocr": good, "image_qa": good}
     assert defaults(client, 999, None).status_code == 400
 
@@ -126,7 +126,7 @@ def test_ineligible_model_update_clears_defaults(registry, update):
     assert client.put(f"/api/admin/llm-providers/1/registered-models/{row['id']}",
                       headers=headers(), json=payload).status_code == 200
     assert catalog.get_task_model("image_ocr") is None
-    assert client.get("/api/admin/image-model-defaults", headers=headers()).json() == {
+    assert catalog.get_defaults() == {
         "image_ocr": None, "image_qa": None}
 
 
@@ -170,3 +170,71 @@ def test_reads_require_login_and_mutations_require_super_admin(registry):
         ("PUT", "/image-model-defaults", {"image_ocr": None, "image_qa": None}),
     ]:
         assert client.request(method, "/api/admin" + path, headers=headers("viewer"), json=body).status_code == 403
+
+
+def test_environment_override_is_explicit_scoped_and_redacted(registry, monkeypatch):
+    client, _ = registry
+    selected = create(client).json()["id"]
+    defaults(client, selected, selected)
+    monkeypatch.setenv("IMAGE_OCR_MODEL_SOURCE", " environment ")
+    monkeypatch.setenv("IMAGE_OCR_MODEL", " local-vision ")
+    monkeypatch.setenv("IMAGE_OCR_BASE_URL", "http://localhost:9911/v1")
+    monkeypatch.setenv("IMAGE_OCR_API_KEY", "not-required")
+    config = catalog.get_task_model("image_ocr")
+    assert config == {"model_id": "local-vision", "base_url": "http://localhost:9911/v1",
+                      "api_key": "not-required", "catalog_id": None}
+    assert catalog.get_task_model("image_qa")["catalog_id"] == selected
+    response = client.get("/api/admin/image-model-defaults", headers=headers())
+    assert response.status_code == 200
+    assert response.json()["sources"]["image_ocr"] == {
+        "source": "environment", "model_id": "local-vision", "configured": True}
+    assert "not-required" not in response.text
+    assert "localhost" not in response.text
+    assert "private-key" not in response.text
+    assert set(defaults(client, None, selected).json()) == {"image_ocr", "image_qa"}
+    assert catalog.get_task_model("image_ocr") == config
+
+
+def test_incomplete_environment_never_falls_back_to_database_or_global_credentials(registry, monkeypatch):
+    client, _ = registry
+    selected = create(client).json()["id"]
+    defaults(client, selected, selected)
+    monkeypatch.setenv("IMAGE_OCR_MODEL_SOURCE", "environment")
+    monkeypatch.setenv("IMAGE_OCR_MODEL", "env-vision")
+    monkeypatch.setenv("IMAGE_OCR_BASE_URL", "http://localhost:9911/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "global-must-not-be-used")
+    monkeypatch.delenv("IMAGE_OCR_API_KEY", raising=False)
+    assert catalog.get_task_model("image_ocr") is None
+    response = client.get("/api/admin/image-model-defaults", headers=headers()).json()
+    assert response["sources"]["image_ocr"]["configured"] is False
+    assert response["image_ocr"] == selected
+    monkeypatch.setenv("IMAGE_OCR_MODEL_SOURCE", "typo")
+    with pytest.raises(ValueError, match="must be database or environment"):
+        catalog.get_task_model("image_ocr")
+    assert client.get("/api/admin/image-model-defaults", headers=headers()).status_code == 400
+
+
+def test_ocr_environment_cache_tracks_model_endpoint_and_preserves_disabled_state(registry, monkeypatch):
+    from app import knowledge_vision as vision
+    vision._cached_ocr.cache_clear()
+    monkeypatch.setenv("IMAGE_OCR_MODEL_SOURCE", "environment")
+    monkeypatch.setenv("IMAGE_OCR_MODEL", "env-vision")
+    monkeypatch.setenv("IMAGE_OCR_BASE_URL", "http://localhost:9911/v1")
+    monkeypatch.setenv("IMAGE_OCR_API_KEY", "not-required")
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED", "false")
+    calls = []
+    monkeypatch.setattr(vision, "_complete", lambda config, *args, **kwargs: calls.append(config) or config["model_id"])
+    assert vision.extract_text_with_status(b"image").status == "not_requested"
+    assert calls == []
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED", "true")
+    assert vision.extract_text(b"image")[0] == "env-vision"
+    assert vision.extract_text(b"image")[0] == "env-vision"
+    assert len(calls) == 1
+    monkeypatch.setenv("IMAGE_OCR_MODEL", "env-vision-next")
+    assert vision.extract_text(b"image")[0] == "env-vision-next"
+    assert len(calls) == 2
+    assert calls[-1]["catalog_id"] is None
+    monkeypatch.delenv("IMAGE_OCR_API_KEY")
+    assert vision.extract_text_with_status(b"image").status == "unavailable"
+    assert len(calls) == 2
+    vision._cached_ocr.cache_clear()

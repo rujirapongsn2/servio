@@ -8,7 +8,7 @@ import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { Sparkles, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
-import { DEFAULT_MODELS, parseModelIds } from "@/lib/provider-models";
+import { parseAgentModelDefaults, parseModelIds } from "@/lib/provider-models";
 
 interface Tool {
   id: number;
@@ -101,6 +101,7 @@ export default function AgentEditorPage() {
   const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null);
   const appliedProviderSelection = useRef<string | null>(null);
   const modelRequestId = useRef(0);
+  const modelEditVersion = useRef(0);
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -169,15 +170,41 @@ export default function AgentEditorPage() {
       .join(" ");
   };
 
-  const fetchModels = useCallback(async (providerId: number | null | undefined, currentModel = "") => {
+  const fetchModels = useCallback(async (providerId: number | null | undefined, currentModel = "", applyDefault = false) => {
     const requestId = ++modelRequestId.current;
     setModelsError("");
-    setCustomModel(providerId === null && !!currentModel && !DEFAULT_MODELS.includes(currentModel));
-    setAvailableModels(providerId === null ? DEFAULT_MODELS : []);
-    setFetchingModels(typeof providerId === "number");
-    if (typeof providerId !== "number") return;
+    const editVersion = modelEditVersion.current;
+    setCustomModel(false);
+    setAvailableModels([]);
+    setFetchingModels(providerId !== undefined);
+    if (providerId === undefined) return;
 
     const token = localStorage.getItem("adminToken");
+    if (providerId === null) {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/admin/model-defaults`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Failed to load model defaults");
+        const defaults = parseAgentModelDefaults(await response.json());
+        if (requestId !== modelRequestId.current) return;
+        setAvailableModels(defaults.agent_models);
+        if (editVersion === modelEditVersion.current) {
+          setCustomModel(!!currentModel && !defaults.agent_models.includes(currentModel));
+          if (isNew && applyDefault && !currentModel) {
+            setFormData((previous) => previous.llm_provider_id === null && !previous.model ?
+              { ...previous, model: defaults.default_agent_model } : previous);
+          }
+        }
+      } catch {
+        if (requestId !== modelRequestId.current) return;
+        setModelsError("Models unavailable. Enter a model ID.");
+        if (editVersion === modelEditVersion.current) setCustomModel(true);
+      } finally {
+        if (requestId === modelRequestId.current) setFetchingModels(false);
+      }
+      return;
+    }
     const load = async (endpoint: string, registered: boolean) => {
       const response = await fetch(`${apiBaseUrl}/api/admin/llm-providers/${providerId}/${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -195,7 +222,7 @@ export default function AgentEditorPage() {
     const failed = results.filter((result) => result.status === "rejected").length;
     setModelsError(failed === 2 ? "Models unavailable. Enter a model ID." : failed ? "Some models could not be loaded." : "");
     setFetchingModels(false);
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, isNew]);
 
   useEffect(() => () => { modelRequestId.current += 1; }, []);
 
@@ -555,7 +582,8 @@ export default function AgentEditorPage() {
       model: "", // Reset model when provider changes
     });
 
-    fetchModels(finalProviderId);
+    modelEditVersion.current += 1;
+    fetchModels(finalProviderId, "", true);
   };
 
   const handleOptimizePrompt = async () => {
@@ -704,6 +732,7 @@ export default function AgentEditorPage() {
                 id="agent-model"
                 value={customModel ? CUSTOM_MODEL : formData.model}
                 onChange={(e) => {
+                  modelEditVersion.current += 1;
                   const custom = e.target.value === CUSTOM_MODEL;
                   setCustomModel(custom);
                   setFormData({ ...formData, model: custom ? "" : e.target.value });
@@ -734,7 +763,7 @@ export default function AgentEditorPage() {
                     required
                     pattern={".*\\S.*"}
                     value={formData.model}
-                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                    onChange={(e) => { modelEditVersion.current += 1; setFormData({ ...formData, model: e.target.value }); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
                   />
                 </div>

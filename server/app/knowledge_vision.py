@@ -47,7 +47,7 @@ def _complete(config: dict, prompt: str, images: list[bytes], *, ocr: bool = Fal
 
 
 @lru_cache(maxsize=8)
-def _cached_ocr(catalog_id: int, model_id: str, base_url: str, data: bytes) -> str:
+def _cached_ocr(catalog_id: int | None, model_id: str, base_url: str, data: bytes) -> str:
     from app.provider_models import get_task_model
     config = get_task_model('image_ocr')
     if not config or (config['catalog_id'], config['model_id'], config['base_url']) != (catalog_id, model_id, base_url):

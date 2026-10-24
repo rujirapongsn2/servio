@@ -22,6 +22,8 @@ Servio คือระบบผู้ช่วยบริการลูกค�
 
 Servio ถูกออกแบบมาให้เป็นโซลูชัน Customer Support ที่พร้อมใช้งานในระดับ Production (Production-Ready) และสามารถปรับแต่งหรือต่อยอดให้เข้ากับความต้องการของธุรกิจคุณได้
 
+การตั้งค่าโมเดลสำหรับ production ดู [Configure production models](docs/model-configuration.md) และไฟล์ [.env.example](.env.example)
+
 ## สารบัญ
 
 - [คุณสมบัติหลัก](#คุณสมบัติหลัก)
