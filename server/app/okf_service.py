@@ -1195,6 +1195,8 @@ class OKFService:
                 )
             concepts = q.order_by(OKFConceptIndex.title).limit(min(limit, 500)).all()
             rows = [self._concept_to_dict(concept) for concept in concepts]
+            for concept, row in zip(concepts, rows):
+                row["has_image"] = bool(self._concept_image_frontmatter(bundle, concept))
             if tag:
                 tag_lower = tag.lower()
                 rows = [row for row in rows if tag_lower in [t.lower() for t in row.get("tags", [])]]
@@ -1214,8 +1216,70 @@ class OKFService:
             frontmatter, body = _parse_frontmatter(markdown, concept.file_path)
             data["frontmatter"] = frontmatter
             data["body"] = body
+            data["has_image"] = bool(self._concept_image_frontmatter(bundle, concept))
             data["links"] = self._links_for_concept(db, bundle_id, concept_id)
             return data
+
+    def _concept_image_frontmatter(self, bundle: OKFBundle, concept: OKFConceptIndex) -> Optional[Dict[str, Any]]:
+        """Read image metadata from a confined, unchanged source without opening assets."""
+        try:
+            relative = _safe_relative_path(concept.file_path)
+            if relative is None or relative.suffix != ".md":
+                return None
+            source = Path(bundle.storage_path)
+            path = source / relative
+            _ensure_within(source, path)
+            if any(parent.is_symlink() for parent in (path, *path.parents) if parent.is_relative_to(source)):
+                return None
+            markdown = path.read_text(encoding="utf-8")
+            if hashlib.sha256(markdown.encode("utf-8")).hexdigest() != concept.content_hash:
+                return None
+            frontmatter, _ = _parse_frontmatter(markdown, concept.file_path)
+            asset_id = frontmatter.get("image_asset_id")
+            asset_path = frontmatter.get("image_asset_path")
+            if not isinstance(asset_id, str) or not re.fullmatch(r"[0-9a-f]{64}", asset_id):
+                return None
+            if not isinstance(asset_path, str) or not asset_path:
+                return None
+            relative_asset = _safe_relative_path(asset_path)
+            if relative_asset is None or not relative_asset.parts or relative_asset.parts[0] != "assets":
+                return None
+            _ensure_within(source / "assets", source / relative_asset)
+            return frontmatter
+        except (OSError, ValueError, TypeError, RuntimeError):
+            return None
+
+    def read_concept_image(
+        self, bundle_id: int, concept_id: str, team_agent_id: Optional[int], thumbnail: bool = False,
+    ) -> Optional[tuple[bytes, str]]:
+        """Read an authorized original or an in-memory document preview."""
+        from app.local_image_rag import _asset
+
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                return None
+            concept = db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id, concept_id=concept_id).first()
+            if not concept:
+                return None
+            frontmatter = self._concept_image_frontmatter(bundle, concept)
+            if not frontmatter:
+                return None
+            try:
+                _, data, mime = _asset(Path(bundle.storage_path), frontmatter)
+                if thumbnail:
+                    import io
+                    from PIL import Image, ImageOps
+
+                    with Image.open(io.BytesIO(data)) as original:
+                        preview = ImageOps.exif_transpose(original).convert("RGB")
+                        preview.thumbnail((160, 160))
+                        output = io.BytesIO()
+                        preview.save(output, format="JPEG")
+                    return output.getvalue(), "image/jpeg"
+                return data, mime
+            except (OSError, ValueError, TypeError, SyntaxError, RuntimeError):
+                return None
 
     def update_concept(
         self, bundle_id: int, concept_id: str, team_agent_id: Optional[int],

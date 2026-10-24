@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Edit3,
   FileText,
@@ -17,6 +19,7 @@ import {
 } from "lucide-react";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
+import { KnowledgeDocumentImage } from "@/components/KnowledgeDocumentImage";
 import { parseKnowledgeAudio, parseKnowledgeImages, type KnowledgeAudioClip, type KnowledgeImage } from "@/lib/product-presentations";
 import { getApiBaseUrl } from "@/lib/api";
 
@@ -65,6 +68,7 @@ interface OKFConcept {
   markdown?: string | null;
   frontmatter?: Record<string, unknown> | null;
   body?: string | null;
+  has_image?: boolean;
   links: Array<{
     label?: string;
     target: string;
@@ -131,11 +135,13 @@ export default function OKFBundleDetailDrawer({
   const [conceptQuery, setConceptQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [conceptLoading, setConceptLoading] = useState(false);
+  const conceptRequest = useRef(0);
   const [reindexing, setReindexing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testQuery, setTestQuery] = useState("");
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
+  const [showImageText, setShowImageText] = useState(false);
   const [showRawIssues, setShowRawIssues] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditingConcept, setIsEditingConcept] = useState(false);
@@ -206,6 +212,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const loadConcept = async (conceptId: string | null) => {
+    const request = ++conceptRequest.current;
     if (!bundleId || !conceptId) {
       setSelectedConcept(null);
       return;
@@ -220,6 +227,7 @@ export default function OKFBundleDetailDrawer({
       );
       if (!response.ok) throw new Error("Failed to load concept detail");
       const concept: OKFConcept = await response.json();
+      if (request !== conceptRequest.current) return;
       setSelectedConcept(concept);
       setSourceUrl(typeof concept.frontmatter?.source_url === "string" ? concept.frontmatter.source_url : "");
       setEditTitle(concept.title || "");
@@ -227,9 +235,10 @@ export default function OKFBundleDetailDrawer({
       setEditTags((concept.tags || []).join(", "));
       setEditBody(concept.body || "");
     } catch (err) {
+      if (request !== conceptRequest.current) return;
       setError(err instanceof Error ? err.message : "Failed to load concept detail");
     } finally {
-      setConceptLoading(false);
+      if (request === conceptRequest.current) setConceptLoading(false);
     }
   };
 
@@ -240,9 +249,11 @@ export default function OKFBundleDetailDrawer({
   useEffect(() => {
     loadConcept(selectedConceptId);
     setShowAdvancedDetails(false);
+    setShowImageText(false);
     setIsEditingConcept(false);
     setSaveMessage(null);
     setSaveError(null);
+    return () => { conceptRequest.current += 1; };
   }, [selectedConceptId, bundleId, teamAgentId]);
 
   const handleReindex = async () => {
@@ -415,7 +426,7 @@ export default function OKFBundleDetailDrawer({
     }
   };
 
-  return (
+  const drawer = (
     <div role="dialog" aria-modal="true" aria-label="Knowledge details" tabIndex={-1} className="fixed inset-0 z-50 bg-black/40">
       <div className="absolute inset-y-0 right-0 flex w-full max-w-6xl flex-col bg-white shadow-2xl dark:bg-gray-900">
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-gray-800">
@@ -431,9 +442,6 @@ export default function OKFBundleDetailDrawer({
                 </span>
               )}
             </div>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Review documents, ask a question, and check whether this knowledge is ready for agents.
-            </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -469,7 +477,7 @@ export default function OKFBundleDetailDrawer({
                 type="button"
                 onClick={() => setActiveTab(id as DetailTab)}
                 className={[
-                  "border-b-2 px-3 py-3 text-sm font-semibold",
+                  "shrink-0 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-semibold",
                   activeTab === id
                     ? "border-emerald-600 text-emerald-700 dark:text-emerald-300"
                     : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
@@ -530,12 +538,13 @@ export default function OKFBundleDetailDrawer({
               )}
 
               {activeTab === "documents" && (
-                <div className="grid min-h-[560px] gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-800">
+                <div className="grid min-w-0 gap-4 lg:min-h-[560px] lg:grid-cols-[280px_minmax(0,1fr)]">
+                  <div className="min-w-0 self-start overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
                     <div className="border-b border-gray-200 p-3 dark:border-gray-800">
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                         <input
+                          aria-label="Search documents"
                           value={conceptQuery}
                           onChange={(event) => setConceptQuery(event.target.value)}
                           placeholder="Search documents"
@@ -543,21 +552,25 @@ export default function OKFBundleDetailDrawer({
                         />
                       </div>
                     </div>
-                    <div className="max-h-[620px] overflow-y-auto">
+                    <div className="max-h-[32dvh] overflow-y-auto lg:max-h-[620px]">
                       {filteredConcepts.map((concept) => (
                         <button
                           key={concept.concept_id}
                           type="button"
                           onClick={() => setSelectedConceptId(concept.concept_id)}
+                          aria-pressed={selectedConceptId === concept.concept_id}
                           disabled={ refreshingSource || reindexing || savingConcept}
                           className={[
                             "block w-full border-b border-gray-100 p-3 text-left last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800",
                             selectedConceptId === concept.concept_id ? "bg-emerald-50 dark:bg-emerald-900/20" : "",
                           ].join(" ")}
                         >
-                          <div className="line-clamp-1 text-sm font-semibold text-gray-900 dark:text-white">
-                            {concept.title || concept.concept_id}
-                          </div>
+                          <div className="flex items-center gap-3">
+                            {concept.has_image && bundleId && <KnowledgeDocumentImage bundleId={bundleId} conceptId={concept.concept_id} title={concept.title || concept.concept_id} teamAgentId={teamAgentId} thumbnail />}
+                            <div className="min-w-0 flex-1">
+                            <div className="line-clamp-1 text-sm font-semibold text-gray-900 dark:text-white">
+                              {concept.title || concept.concept_id}
+                            </div>
                           <div className="mt-1 line-clamp-1 text-xs text-gray-500">{concept.resource || concept.file_path}</div>
                           <div className="mt-2 flex flex-wrap gap-1">
                             {(concept.tags || []).slice(0, 2).map((tag) => (
@@ -565,6 +578,8 @@ export default function OKFBundleDetailDrawer({
                                 {tag}
                               </span>
                             ))}
+                          </div>
+                            </div>
                           </div>
                         </button>
                       ))}
@@ -574,7 +589,7 @@ export default function OKFBundleDetailDrawer({
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-800">
+                  <div className="min-w-0 rounded-lg border border-gray-200 dark:border-gray-800">
                     {conceptLoading ? (
                       <div className="flex items-center justify-center py-20 text-sm text-gray-500">
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -619,7 +634,9 @@ export default function OKFBundleDetailDrawer({
                           </div>
                         )}
 
-                        {selectedConcept.description && (
+                        {selectedConcept.has_image && bundleId && <KnowledgeDocumentImage key={`${bundleId}:${selectedConcept.concept_id}`} bundleId={bundleId} conceptId={selectedConcept.concept_id} title={selectedConcept.title || selectedConcept.concept_id} teamAgentId={teamAgentId} />}
+
+                        {selectedConcept.description && !selectedConcept.has_image && (
                           <div className="rounded-md bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-200">
                             {selectedConcept.description}
                           </div>
@@ -633,7 +650,9 @@ export default function OKFBundleDetailDrawer({
                           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                             <div>
                               <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                                Content Preview
+                                {selectedConcept.has_image ? <button type="button" onClick={() => setShowImageText((value) => !value)} aria-expanded={showImageText || isEditingConcept} aria-controls="knowledge-image-text" className="inline-flex items-center gap-2 rounded focus-visible:outline-emerald-500">
+                                  Extracted text <ChevronDown className={`h-4 w-4 ${showImageText || isEditingConcept ? "rotate-180" : ""}`} aria-hidden="true" />
+                                </button> : "Content Preview"}
                               </div>
                               {saveMessage && !isEditingConcept && (
                                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -685,7 +704,7 @@ export default function OKFBundleDetailDrawer({
                             </div>
                           </div>
                           {isEditingConcept ? (
-                            <div className="space-y-4 p-4">
+                            <div id={selectedConcept.has_image ? "knowledge-image-text" : undefined} className="space-y-4 p-4">
                               <div className="grid gap-3 md:grid-cols-2">
                                 <label className="block text-sm font-semibold text-gray-900 dark:text-white">
                                   Title
@@ -724,8 +743,8 @@ export default function OKFBundleDetailDrawer({
                                 />
                               </label>
                             </div>
-                          ) : (
-                            <div className="max-h-[520px] overflow-y-auto whitespace-pre-wrap p-4 text-sm leading-7 text-gray-800 dark:text-gray-100">
+                          ) : (!selectedConcept.has_image || showImageText) && (
+                            <div id={selectedConcept.has_image ? "knowledge-image-text" : undefined} className="max-h-[520px] overflow-y-auto whitespace-pre-wrap p-4 text-sm leading-7 text-gray-800 dark:text-gray-100">
                               {selectedConcept.body || "No readable content found."}
                             </div>
                           )}
@@ -878,6 +897,7 @@ export default function OKFBundleDetailDrawer({
       </div>
     </div>
   );
+  return typeof document !== "undefined" && document.body ? createPortal(drawer, document.body) : drawer;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

@@ -321,6 +321,7 @@ class OKFConceptResponse(BaseModel):
     tags: List[str] = []
     timestamp: Optional[str] = None
     updated_at: Optional[str] = None
+    has_image: bool = False
     markdown: Optional[str] = None
     frontmatter: Optional[Dict[str, Any]] = None
     body: Optional[str] = None

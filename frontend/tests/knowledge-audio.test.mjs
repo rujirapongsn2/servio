@@ -63,7 +63,7 @@ for (const { body, isAudio } of [{ body: '[00:00] Cats purr.', isAudio: true }, 
   test(`document editor handles metadata save with ${body ? 'ready' : 'empty'} ${isAudio ? 'audio' : 'ordinary'} body`, async () => {
     const { default: Drawer } = load('src/components/OKFBundleDetailDrawer.tsx', {
       '@/components/KnowledgeAudio': { KnowledgeAudio: () => null },
-      '@/components/KnowledgeImages': { KnowledgeImages: () => null },
+      '@/components/KnowledgeDocumentImage': { KnowledgeDocumentImage: () => null }, '@/components/KnowledgeImages': { KnowledgeImages: () => null },
       '@/lib/product-presentations': parser,
       '@/lib/api': { getApiBaseUrl: () => '' },
     });

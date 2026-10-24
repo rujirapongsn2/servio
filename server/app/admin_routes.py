@@ -1967,6 +1967,29 @@ async def get_okf_bundle(
     return bundle
 
 
+@router.get("/okf-bundles/{bundle_id}/image")
+async def get_okf_concept_image(
+    bundle_id: int,
+    concept_id: str,
+    team_agent_id: Optional[int] = None,
+    thumbnail: bool = False,
+    current_user: str = Depends(get_current_user),
+):
+    """Read a document image using the same viewer access as its concept."""
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
+    image = await run_in_threadpool(
+        OKFService().read_concept_image, bundle_id, concept_id, team_agent_id, thumbnail,
+    )
+    if image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF image not found")
+    data, mime = image
+    return Response(content=data, media_type=mime, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+    })
+
+
 @router.get("/okf-bundles/{bundle_id}/concepts", response_model=List[OKFConceptResponse])
 async def get_okf_concepts(
     bundle_id: int,
