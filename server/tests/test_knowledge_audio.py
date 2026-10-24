@@ -168,12 +168,14 @@ def test_bound_unsigned_refs_hydrate_only_current_source(store,tmp_path):
     ref['segment_id']='s9999';assert hydrate_knowledge_media(unsigned,1,bundle['id']) is None
 
 
-@pytest.mark.parametrize('failure',['processor','embedding','replace'])
+@pytest.mark.parametrize('failure',['processor','timeout','embedding','replace'])
 def test_failed_refresh_preserves_source_and_index(store,tmp_path,monkeypatch,failure):
     bundle,claims,root=imported(store,tmp_path)
     before={p.relative_to(root):p.read_bytes() for p in root.rglob('*') if p.is_file()}
-    def fail(*a,**kw):raise RuntimeError('offline')
-    monkeypatch.setattr(contract,'process_audio',fail if failure=='processor' else lambda data,**kw:metadata(data,'Changed transcript'))
+    def fail(*a,**kw):
+        if failure=='timeout':raise contract.AudioProcessingError(contract.TIMEOUT_ERRORS['transcription'])
+        raise RuntimeError('offline')
+    monkeypatch.setattr(contract,'process_audio',fail if failure in {'processor','timeout'} else lambda data,**kw:metadata(data,'Changed transcript'))
     monkeypatch.setattr(audio,'ensure_schema',lambda:None)
     monkeypatch.setattr(audio,'build_records',fail if failure=='embedding' else lambda *a:[])
     monkeypatch.setattr(audio,'replace_records',fail if failure=='replace' else lambda *a:None)

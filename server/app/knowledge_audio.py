@@ -1,11 +1,47 @@
 from __future__ import annotations
 import hashlib
 import os
+import logging
+import math
+import time
 from typing import Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MAX_BYTES = 50 * 1024 * 1024
+ASR_TIMEOUT_MAX = 1800
+UPLOAD_TIMEOUT = 60
+PROBE_TIMEOUT = 120
+DECODE_TIMEOUT = 120
+RESPONSE_MARGIN = 60
+HTTP_TIMEOUT_MIN = ASR_TIMEOUT_MAX + UPLOAD_TIMEOUT + PROBE_TIMEOUT + DECODE_TIMEOUT + RESPONSE_MARGIN + 1
+logger = logging.getLogger(__name__)
+TIMEOUT_ERRORS = {
+    stage: f'Local audio {stage} timed out; previous source retained'
+    for stage in ('upload', 'probe', 'decode', 'transcription', 'request')
+}
+
+
+class AudioProcessingError(ValueError):
+    pass
+
+
+def timeout_budget(name, default, low, high):
+    try:
+        requested = float(os.getenv(name, str(default)))
+        if not math.isfinite(requested):
+            raise ValueError
+    except ValueError:
+        raise AudioProcessingError('Invalid local audio timeout configuration') from None
+    effective = min(high, max(low, requested))
+    if effective != requested:
+        logger.warning('Audio timeout adjusted setting=%s effective_seconds=%s', name, effective)
+    return effective
+
+
+def asr_timeout():
+    return timeout_budget('KNOWLEDGE_AUDIO_ASR_TIMEOUT_SECONDS', 1200, 1, ASR_TIMEOUT_MAX)
+
 
 
 def enabled():
@@ -60,10 +96,25 @@ def process_audio(data: bytes, *, preview=False, normalize=False):
     if not base.startswith(('http://', 'https://')):
         raise ValueError('Audio processor must use HTTP(S)')
     endpoint = 'normalize' if normalize else ('preview' if preview else 'extract')
-    timeout = min(1800, max(1, float(os.getenv('KNOWLEDGE_AUDIO_TIMEOUT_SECONDS', '1200'))))
-    response = httpx.post(base + '/' + endpoint, content=data, headers={'Content-Type': 'application/octet-stream'}, timeout=timeout)
+    timeout = timeout_budget('KNOWLEDGE_AUDIO_TIMEOUT_SECONDS', 2220, HTTP_TIMEOUT_MIN, 3600)
+    started = time.monotonic()
+    try:
+        response = httpx.post(base + '/' + endpoint, content=data, headers={'Content-Type': 'application/octet-stream'}, timeout=timeout)
+    except httpx.TimeoutException:
+        logger.warning('Audio timeout stage=request endpoint=%s elapsed_seconds=%.2f budget_seconds=%s', endpoint, time.monotonic() - started, timeout)
+        raise AudioProcessingError(TIMEOUT_ERRORS['request']) from None
+    except httpx.HTTPError:
+        logger.warning('Audio request failed endpoint=%s elapsed_seconds=%.2f', endpoint, time.monotonic() - started)
+        raise AudioProcessingError('Local audio processor unavailable; previous source retained') from None
     if response.status_code != 200:
-        raise ValueError('Local audio processing failed; previous source retained')
+        logger.warning('Audio processor rejected endpoint=%s status=%s elapsed_seconds=%.2f', endpoint, response.status_code, time.monotonic() - started)
+        try:
+            detail = response.json().get('detail')
+        except (ValueError, AttributeError):
+            detail = None
+        if isinstance(detail, str) and detail in TIMEOUT_ERRORS.values():
+            raise AudioProcessingError(detail)
+        raise AudioProcessingError('Local audio processing failed; previous source retained')
     if len(response.content) > 40 * 1024 * 1024:
         raise ValueError('Audio processor response exceeds limit')
     payload = response.json()

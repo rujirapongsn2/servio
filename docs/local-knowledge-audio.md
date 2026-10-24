@@ -4,7 +4,7 @@ WAV and MP3 uploads become OKF sources with original assets and timestamped loca
 
 ## Start the local processor
 
-Install `ffmpeg` and `ffprobe`. Build the official whisper.cpp CLI with CPU support and download a local Whisper model and Silero VAD model. The processor requires VAD and never falls back to a hosted ASR service.
+Install `ffmpeg` and `ffprobe`. Build the official whisper.cpp CLI with CPU support, or Metal support for Apple Silicon. Download a local Whisper model and Silero VAD model. The processor requires VAD and never falls back to a hosted ASR service.
 
 Set absolute paths and exact weight revisions in your shell.
 
@@ -16,13 +16,28 @@ export KNOWLEDGE_AUDIO_ASR_REVISION=whisper-medium-WEIGHTS_SHA-silero-v6.2.0-WEI
 ./scripts/run_audio_processor.sh
 ```
 
+For Metal transcription, point `KNOWLEDGE_AUDIO_WHISPER_CLI` to a Metal-enabled build and set `KNOWLEDGE_AUDIO_USE_GPU=true` in the processor environment. The default is `false`, which explicitly disables GPU use. Accepted values are `true`/`1`/`yes` and `false`/`0`/`no`. Enabling this flag permits the CLI to use its compiled GPU backend; verify actual Metal initialization in a direct CLI acceptance run. It does not enable GPU offload for native audio embeddings.
+
+To build Metal support from an existing whisper.cpp checkout, use a separate build directory. Keep the existing CPU build available for rollback.
+
+```sh
+export WHISPER_CPP_SRC=/absolute/path/whisper.cpp
+cmake -S "$WHISPER_CPP_SRC" -B "$WHISPER_CPP_SRC/build-metal" -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+cmake --build "$WHISPER_CPP_SRC/build-metal" --config Release --target whisper-cli -j 2
+export KNOWLEDGE_AUDIO_WHISPER_CLI="$WHISPER_CPP_SRC/build-metal/bin/whisper-cli"
+export KNOWLEDGE_AUDIO_USE_GPU=true
+./scripts/run_audio_processor.sh
+```
+
+Keep the model, VAD, and revision exports above when running these commands. To return to CPU execution, select the previous CLI path and set `KNOWLEDGE_AUDIO_USE_GPU=false`.
+
 The launcher uses `server/.venv/bin/python`. Set `KNOWLEDGE_AUDIO_PYTHON` to use another Python environment with the backend dependencies installed. The processor listens on `127.0.0.1:8094`. Keep this service on a trusted local interface. It accepts raw audio bytes at `/preview`, `/extract`, and `/normalize`.
 
 ### Keep the Mac mini processor running
 
 The Mac mini uses the user LaunchAgent `ai.softnix.servio.audio-processor`, installed at `~/Library/LaunchAgents/ai.softnix.servio.audio-processor.plist`. It starts after login and restarts the processor if it exits. It does not start before a user logs in after reboot.
 
-The plist sets the repository's Python executable and server working directory, the local Whisper and VAD paths, the ASR revision, and a `PATH` that includes `/opt/homebrew/bin` for FFmpeg. Current model assets are under `.audit/knowledge-audio/asr`; retain that directory while the service uses those paths. Update the plist before moving the repository, virtual environment, or model files.
+The plist also needs `KNOWLEDGE_AUDIO_USE_GPU=true` for Metal transcription, a Metal-enabled `KNOWLEDGE_AUDIO_WHISPER_CLI`, and the desired `KNOWLEDGE_AUDIO_ASR_TIMEOUT_SECONDS`. Shell exports do not change a loaded LaunchAgent. The plist sets the repository's Python executable and server working directory, the local Whisper and VAD paths, the ASR revision, and a `PATH` that includes `/opt/homebrew/bin` for FFmpeg. Current model assets are under `.audit/knowledge-audio/asr`; retain that directory while the service uses those paths. Update the plist before moving the repository, virtual environment, or model files.
 
 Check the service and its dependencies:
 
@@ -31,7 +46,7 @@ launchctl print gui/$(id -u)/ai.softnix.servio.audio-processor
 curl --fail http://127.0.0.1:8094/health
 ```
 
-Health must return `ready: true`. Logs are under `.audit/knowledge-upload-limits/audio-processor.*.log`. To restart the loaded service after a code change:
+Health must return `ready: true`. Its `use_gpu` field reports the configured flag, rather than proof of GPU initialization. Logs are under `.audit/knowledge-upload-limits/audio-processor.*.log`. To restart the loaded service after a code change:
 
 ```sh
 launchctl kickstart -k gui/$(id -u)/ai.softnix.servio.audio-processor
@@ -60,6 +75,7 @@ Set these backend environment values.
 ```dotenv
 LOCAL_KNOWLEDGE_AUDIO_ENABLED=true
 AUDIO_PROCESSOR_BASE_URL=http://host.docker.internal:8094
+KNOWLEDGE_AUDIO_TIMEOUT_SECONDS=2220
 AUDIO_EMBEDDING_BASE_URL=http://host.docker.internal:8093/v1
 AUDIO_EMBEDDING_MODEL=servio-embeddinggemma2-audio
 AUDIO_EMBEDDING_REVISION=EXACT_WEIGHTS_SHA-EXACT_AUDIO_PROJECTOR_SHA
@@ -86,11 +102,13 @@ Queries combine native audio ranking and transcript ranking by canonical segment
 - The default duration limit is 600 seconds. `KNOWLEDGE_AUDIO_MAX_SECONDS` can lower it.
 - The default segment length is 20 seconds with 2 seconds of overlap. `KNOWLEDGE_AUDIO_SEGMENT_SECONDS` permits 5 to 60 seconds. `KNOWLEDGE_AUDIO_OVERLAP_SECONDS` permits 0 to 10 seconds, capped at half the segment length.
 - The processor accepts one inference or decode operation at a time. A busy processor returns 429. Import or refresh fails clearly and can be retried.
-- ASR runs with two CPU threads, automatic language detection, GPU disabled, and required local VAD. `KNOWLEDGE_AUDIO_ASR_TIMEOUT_SECONDS` defaults to 1200 seconds and caps at 1800 seconds.
+- ASR uses two CPU threads, automatic language detection, and required local VAD. `KNOWLEDGE_AUDIO_USE_GPU` defaults to `false`; `true` allows a GPU-capable Whisper build to use its GPU backend. `KNOWLEDGE_AUDIO_ASR_TIMEOUT_SECONDS` defaults to 1200 seconds and clamps to 1 through 1800 seconds in the processor.
+- Backend HTTP timeout `KNOWLEDGE_AUDIO_TIMEOUT_SECONDS` defaults to 2220 seconds and clamps to 2161 through 3600 seconds. The floor exceeds the processor's maximum ASR budget of 1800 seconds plus upload 60, probe 120, decode 120, and response margin 60. It covers the maximum even when backend and processor environments differ. Old values such as 1200 are raised to the floor with a warning. Preview and normalization use the same HTTP budget but skip ASR. Invalid or non-finite timeout settings fail safely.
+- Import timeout errors identify upload, probe, decode, transcription, or the backend request stage. Refresh retains its existing generic error message. Logs include elapsed time and the effective timeout without subprocess output. A transcription timeout comes from the processor; a request timeout means the backend stopped waiting. Failed refreshes retain the previous source and index.
 - Playback links expire after 15 minutes. Each request checks current team access, source hash, original asset hash, and contained paths without symlinks. Full and single byte-range requests are supported.
 - Transcript accuracy depends on the recording and local model. Recognized Thai and English samples do not guarantee correct facts in every recording.
 
-Changing the ASR model, VAD model, segmentation, or preprocessing requires a source refresh. Changing native weights or projector requires a new `AUDIO_EMBEDDING_REVISION` and vector reindex. The fingerprint includes the model alias, explicit weight revision, query prefix, preprocessing, segmentation, and ASR revision.
+Changing the ASR model, VAD model, segmentation, or preprocessing requires a source refresh. Switching CPU/Metal execution alone keeps the same fingerprint and does not require a refresh; newly generated transcripts may differ slightly. Changing native weights or projector requires a new `AUDIO_EMBEDDING_REVISION` and vector reindex. The fingerprint includes the model alias, explicit weight revision, query prefix, preprocessing, segmentation, and ASR revision.
 
 ## Verify changes
 
