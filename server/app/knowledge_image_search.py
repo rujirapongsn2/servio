@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import bindparam, text
 
 from app import product_image_rerank as reranker
@@ -38,6 +38,12 @@ class ImageSearchRequest(BaseModel):
     type: Literal["knowledge.image.search"]
     request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     image: SearchImage
+    query: str = Field(default="", max_length=2000)
+
+    @field_validator("query")
+    @classmethod
+    def trim_query(cls, value: str) -> str:
+        return value.strip()
 
     def image_bytes(self) -> bytes:
         try:
@@ -128,15 +134,19 @@ def assigned_bundles(team_id: int | None) -> set[int]:
         return result
 
 
-def _nearest(bundle_ids: set[int], space: str, vector: list[float]):
-    statement = text("""SELECT v.bundle_id,v.concept_id,v.asset_id,v.source_hash,
-        k.title,k.resource,k.description,1-(v.embedding <=> CAST(:vector AS vector)) AS score
+def _nearest(bundle_ids: set[int], space: str, vector: list[float], text_vector: list[float] | None = None):
+    text_score = ",1-(v.embedding <=> CAST(:text_vector AS vector)) AS text_score" if text_vector is not None else ""
+    statement = text(f"""SELECT v.bundle_id,v.concept_id,v.asset_id,v.source_hash,
+        k.title,k.resource,k.description,1-(v.embedding <=> CAST(:vector AS vector)) AS score{text_score}
         FROM okf_image_vectors v JOIN okf_concept_index k ON k.bundle_id=v.bundle_id
           AND k.concept_id=v.concept_id AND k.content_hash=v.source_hash
         WHERE v.bundle_id IN :bundles AND v.space=:space
         ORDER BY v.embedding <=> CAST(:vector AS vector),v.bundle_id,v.concept_id LIMIT 100""").bindparams(bindparam("bundles", expanding=True))
+    parameters = {"bundles": sorted(bundle_ids), "space": space, "vector": images._literal(vector)}
+    if text_vector is not None:
+        parameters["text_vector"] = images._literal(text_vector)
     with images.engine.connect() as conn:
-        return conn.execute(statement, {"bundles": sorted(bundle_ids), "space": space, "vector": images._literal(vector)}).mappings().all()
+        return conn.execute(statement, parameters).mappings().all()
 
 
 def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResult:
@@ -147,12 +157,14 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
     images.ensure_schema()
     client = images.LocalImageEmbeddingClient()
     vector = client.image(data)
+    use_reranker = reranker.enabled()
+    text_vector = client.query(request.query) if request.query and not use_reranker else None
     bundles &= assigned_bundles(team_id)
     if not bundles:
         return SearchResult("unavailable")
-    rows = _nearest(bundles, client.space, vector)
-    if reranker.enabled():
-        return _reranked_search(team_id, data, rows)
+    rows = _nearest(bundles, client.space, vector, text_vector) if text_vector is not None else _nearest(bundles, client.space, vector)
+    if use_reranker:
+        return _reranked_search(team_id, data, rows, request.query) if request.query else _reranked_search(team_id, data, rows)
     threshold = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "0.82"))
     score_gap = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "0.06"))
     if not math.isfinite(threshold) or not -1 <= threshold <= 1:
@@ -161,6 +173,7 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
         raise ValueError("Invalid image similarity score gap")
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
     matches = []
+    text_scores = {}
     seen = set()
     current = assigned_bundles(team_id)
     for row in rows:
@@ -175,14 +188,19 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
             continue
         matches.append(SearchMatch(ref, row["title"][:1000], (row["resource"] or row["title"])[:2000], (row["description"] or "")[:8000], score))
         seen.add(ref.asset)
+        if text_vector is not None:
+            text_scores[ref.asset] = float(row["text_score"])
     matches.sort(key=lambda match: match.score, reverse=True)
     if matches:
         cutoff = max(threshold, matches[0].score - score_gap)
-        matches = [match for match in matches if match.score >= cutoff][:limit]
+        matches = [match for match in matches if match.score >= cutoff]
+        if text_vector is not None:
+            matches.sort(key=lambda match: (text_scores[match.reference.asset], match.score), reverse=True)
+        matches = matches[:limit]
     return SearchResult("matched" if matches else "no_match", tuple(matches))
 
 
-def _reranked_search(team_id: int | None, data: bytes, rows) -> SearchResult:
+def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") -> SearchResult:
     settings = reranker.RerankSettings.from_environment()
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
     current = assigned_bundles(team_id)
@@ -215,11 +233,11 @@ def _reranked_search(team_id: int | None, data: bytes, rows) -> SearchResult:
             candidates.append(reranker.VisualCandidate(candidate_id, original, score, actual_hash,
                                                        ref.source, match.title))
             matches[candidate_id] = match
-    if exact:
+    if exact and not query:
         selected = exact[:limit]
     elif candidates:
         try:
-            ranked = reranker.rerank(data, tuple(candidates), settings)
+            ranked = reranker.rerank(data, tuple(candidates), settings, query=query) if query else reranker.rerank(data, tuple(candidates), settings)
         except reranker.RerankUnavailable:
             logging.getLogger(__name__).warning("Product image comparison unavailable")
             return SearchResult("unavailable")

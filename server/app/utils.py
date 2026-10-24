@@ -132,7 +132,7 @@ class WebsocketHelper:
         session = session_manager.sessions.get(self.session_id)
         if session is None or session.mode != "MANUAL":
             return False
-        user_input = "ค้นหาสินค้าจากรูปภาพ"
+        user_input = "ค้นหาสินค้าจากรูปภาพ" + (f"\n{request.query}" if request.query else "")
         await self.show_user_input(user_input)
         await session_manager.update_session(self.session_id, {"content": user_input}, is_user=True)
         await self.websocket.send_json({"type": "knowledge.image.error", "request_id": request.request_id,
@@ -140,6 +140,8 @@ class WebsocketHelper:
         return True
 
     async def search_knowledge_image(self, request: ImageSearchRequest, generation: int):
+        user_input = "ค้นหาสินค้าจากรูปภาพ" + (f"\n{request.query}" if request.query else "")
+
         def bounded_search():
             if not _IMAGE_SEARCH_WORKERS.acquire(blocking=False):
                 return None
@@ -167,21 +169,21 @@ class WebsocketHelper:
                 while len(self.presentations) > 50:
                     del self.presentations[next(iter(self.presentations))]
                 self.history.extend([
-                    {"type": "message", "role": "user", "content": "ค้นหาสินค้าจากรูปภาพ"},
+                    {"type": "message", "role": "user", "content": user_input},
                     {"type": "message", "role": "assistant", "id": message_id, "content": [{"type": "output_text", "text": presentation.summary, "annotations": []}]},
                 ])
             else:
                 content = "ไม่พบสินค้าที่ใกล้เคียง ลองรูปอื่น" if result.status == "no_match" else "การค้นหาด้วยรูปภาพยังไม่พร้อมใช้งาน"
                 self.history.extend([
-                    {"type": "message", "role": "user", "content": "ค้นหาสินค้าจากรูปภาพ"},
+                    {"type": "message", "role": "user", "content": user_input},
                     {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": content, "annotations": []}]},
                 ])
             from app.session_manager import session_manager
 
             summary = presentation.summary if result.status == "matched" else content
-            self.analytics.track_message(role="user", content="ค้นหาสินค้าจากรูปภาพ", agent_name=self.latest_agent.name)
+            self.analytics.track_message(role="user", content=user_input, agent_name=self.latest_agent.name)
             self.analytics.track_message(role="assistant", content=summary, agent_name=self.latest_agent.name)
-            await session_manager.update_session(self.session_id, {"content": "ค้นหาสินค้าจากรูปภาพ"}, is_user=True)
+            await session_manager.update_session(self.session_id, {"content": user_input}, is_user=True)
             await session_manager.update_session(self.session_id, {"content": summary}, is_user=False)
             if generation != self.image_search_session.generation:
                 return

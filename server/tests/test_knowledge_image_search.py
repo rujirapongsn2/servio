@@ -478,7 +478,8 @@ def test_search_history_converts_through_installed_chat_completions_sdk(socket_r
 
 
 @pytest.mark.parametrize("inflight", [False, True])
-def test_manual_mode_records_input_without_automated_cards(socket_runtime, monkeypatch, inflight):
+@pytest.mark.parametrize("caption", ["", "blue shelves"])
+def test_manual_mode_records_input_without_automated_cards(socket_runtime, monkeypatch, inflight, caption):
     import asyncio
     import threading
     from types import SimpleNamespace
@@ -498,7 +499,7 @@ def test_manual_mode_records_input_without_automated_cards(socket_runtime, monke
 
     async def set_manual(_):
         rt.manager.sessions[rt.connections[0].session_id] = SimpleNamespace(mode="AI" if inflight else "MANUAL")
-        return request().model_dump()
+        return caption_request(caption).model_dump()
 
     async def finish(socket):
         if inflight:
@@ -519,6 +520,9 @@ def test_manual_mode_records_input_without_automated_cards(socket_runtime, monke
     assert len(calls) == int(inflight)
     assert rt.manager.update_session.await_args.kwargs == {"is_user": True}
     assert [item["role"] for item in rt.connections[0].history] == ["user"]
+    user_content = rt.connections[0].history[0]["content"]
+    assert user_content == "ค้นหาสินค้าจากรูปภาพ" + (f"\n{caption}" if caption else "")
+    assert rt.manager.update_session.await_args.args[1]["content"] == user_content
     assert rt.connections[0].presentations == {}
     assert not any(item["type"] == "knowledge.image.result" for item in socket.sent)
     error = next(item for item in socket.sent if item.get("code") == "manual_mode")
@@ -624,3 +628,183 @@ def test_reranking_resolves_stale_rows_before_candidate_cap(runtime, nearest_row
     monkeypatch.setattr(search.reranker, "rerank", lambda query, candidates, settings: seen.append(candidates) or ("c01",))
     assert [match.title for match in search.search_image(1, request()).matches] == ["bookshelf"]
     assert [candidate.title for candidate in seen[0]] == ["bookshelf"]
+
+
+def caption_request(query):
+    return search.ImageSearchRequest.model_validate({**request().model_dump(), "query": query})
+
+
+def test_image_caption_is_optional_trimmed_bounded_and_strict():
+    assert request().query == ""
+    assert caption_request("  blue shelves  ").query == "blue shelves"
+    assert caption_request(" \n\t ").query == ""
+    assert len(caption_request("x" * 2000).query) == 2000
+    for invalid in [None, True, 42, "x" * 2001]:
+        with pytest.raises(ValidationError):
+            caption_request(invalid)
+
+
+def test_caption_sorts_only_image_eligible_authorized_pool(runtime, monkeypatch):
+    rows = [
+        {**add_concept(runtime, "inaccessible", "black"), "bundle_id": 2, "score": .99, "text_score": 1.0},
+        {**add_concept(runtime, "best-image", "red"), "score": .94, "text_score": .1},
+        {**add_concept(runtime, "blue", "blue"), "score": .90, "text_score": .9},
+        {**add_concept(runtime, "outside-gap", "green"), "score": .86, "text_score": .99},
+        {**add_concept(runtime, "below-threshold", "pink"), "score": .79, "text_score": 1.0},
+    ]
+    calls = []
+    class Client:
+        space = "test"
+        def image(self, _): return [1.0] * 768
+        def query(self, query):
+            calls.append(query)
+            return [2.0] * 768
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", Client)
+    def nearest(bundles, space, vector, text_vector):
+        assert bundles == {1} and space == "test"
+        assert vector == [1.0] * 768 and text_vector == [2.0] * 768
+        return rows
+    monkeypatch.setattr(search, "_nearest", nearest)
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "false")
+    result = search.search_image(1, caption_request(" blue "))
+    assert calls == ["blue"]
+    assert [(match.title, match.score) for match in result.matches] == [("blue", .90), ("best-image", .94)]
+
+
+def test_caption_embedding_failure_is_not_silently_ignored(runtime, monkeypatch):
+    class Client:
+        space = "test"
+        def image(self, _): return [1.0] * 768
+        def query(self, _): raise ValueError("embedding unavailable")
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", Client)
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "false")
+    monkeypatch.setattr(search, "_nearest", lambda *_: pytest.fail("Do not search without requested caption"))
+    with pytest.raises(ValueError, match="embedding unavailable"):
+        search.search_image(1, caption_request("blue"))
+
+
+def test_caption_embedding_revocation_is_rechecked_before_nearest(runtime, monkeypatch):
+    class Client:
+        space = "test"
+        def image(self, _): return [1.0] * 768
+        def query(self, _):
+            with runtime[0]() as db: db.query(AgentTool).delete()
+            return [2.0] * 768
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", Client)
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "false")
+    monkeypatch.setattr(search, "_nearest", lambda *_: pytest.fail("Assignment was revoked"))
+    assert search.search_image(1, caption_request("blue")).status == "unavailable"
+
+
+def test_caption_disables_exact_image_bypass_and_reaches_reranker(runtime, nearest_rows, monkeypatch):
+    nearest_rows.append(add_concept(runtime, "bookshelf", "red"))
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    seen = []
+    def rank(data, candidates, settings, query=""):
+        seen.append(query)
+        return ("c01",)
+    monkeypatch.setattr(search.reranker, "rerank", rank)
+    assert search.search_image(1, caption_request("blue")).status == "matched"
+    assert seen == ["blue"]
+
+
+@pytest.mark.parametrize("status", ["matched", "no_match", "unavailable"])
+def test_caption_is_one_user_turn_in_history_analytics_and_monitoring(socket_runtime, monkeypatch, status):
+    import asyncio
+    from unittest.mock import Mock
+    rt = socket_runtime
+    tracked = Mock()
+    monkeypatch.setattr(rt.utils.AnalyticsService, "track_message", tracked)
+    ref = search.KnowledgeCardRef(1, "mug", "hash", "asset")
+    result = search.SearchResult(status, (search.SearchMatch(ref, "Mug", "source", "Description", .9),) if status == "matched" else ())
+    received = []
+    monkeypatch.setattr(rt.utils, "search_image", lambda _, request: received.append(request.query) or result)
+    monkeypatch.setattr(images, "_grant", lambda *_: "signed")
+    async def check(socket):
+        await wait_for(lambda: any(item["type"] == "knowledge.image.result" for item in socket.sent))
+        history = rt.connections[0].history
+        users = [item["content"] for item in history if item["role"] == "user"]
+        assert len(users) == 1 and "blue shelves" in users[0]
+        assert received == ["blue shelves"] and rt.workflows == []
+        assert [call.kwargs["content"] for call in tracked.call_args_list if call.kwargs["role"] == "user"] == users
+        assert rt.manager.update_session.await_args_list[0].args[1]["content"] == users[0]
+        assert rt.manager.update_session.await_count == 2
+        return {"type": "history.update", "inputs": []}
+    asyncio.run(rt.endpoint(rt.Socket([caption_request(" blue shelves ").model_dump(), check]), api_key="test"))
+
+
+def test_socket_rejects_overlong_caption_before_search(socket_runtime, monkeypatch):
+    import asyncio
+    rt = socket_runtime
+    monkeypatch.setattr(rt.utils, "search_image", lambda *_: pytest.fail("Invalid caption reached search"))
+    payload = {**request().model_dump(), "query": "x" * 2001}
+    socket = rt.Socket([payload])
+    asyncio.run(rt.endpoint(socket, api_key="test"))
+    assert any(item.get("type") == "knowledge.image.error" and item.get("retryable") is False for item in socket.sent)
+    assert rt.workflows == []
+
+
+def test_whitespace_caption_uses_unchanged_image_only_call(runtime, monkeypatch):
+    row = add_concept(runtime)
+    class Client:
+        space = "test"
+        def image(self, _): return [1.0] * 768
+        def query(self, _): pytest.fail("Whitespace caption is image-only")
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", Client)
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "false")
+    monkeypatch.setattr(search, "_nearest", lambda bundles, space, vector: [row])
+    assert search.search_image(1, caption_request(" \t\n")).status == "matched"
+
+
+def test_caption_ranks_before_result_cap_and_breaks_text_ties_by_image_score(runtime, monkeypatch):
+    colors = ["red", "green", "blue", "yellow", "pink", "white", "black"]
+    rows = [{**add_concept(runtime, f"item-{i}", color), "score": .95 - i * .005,
+             "text_score": .1 if i < 5 else .9} for i, color in enumerate(colors)]
+    class Client:
+        space = "test"
+        def image(self, _): return [1.0] * 768
+        def query(self, _): return [2.0] * 768
+    monkeypatch.setattr(images, "LocalImageEmbeddingClient", Client)
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "false")
+    monkeypatch.setattr(search, "_nearest", lambda *_: rows)
+    assert [match.title for match in search.search_image(1, caption_request("blue")).matches] == [
+        "item-5", "item-6", "item-0", "item-1", "item-2"]
+
+
+@pytest.mark.parametrize("caption", ["", "blue shelves"])
+def test_nearest_caption_score_keeps_image_candidate_selection(monkeypatch, caption):
+    from types import SimpleNamespace
+    calls = []
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def execute(self, statement, parameters):
+            calls.append((str(statement), parameters))
+            return self
+        def mappings(self): return self
+        def all(self): return []
+    monkeypatch.setattr(images, "engine", SimpleNamespace(connect=Connection))
+    text_vector = [0.0] * 768 if caption else None
+    search._nearest({2, 1}, "test", [1.0] * 768, text_vector)
+    sql, parameters = calls[0]
+    assert "ORDER BY v.embedding <=> CAST(:vector AS vector),v.bundle_id,v.concept_id LIMIT 100" in sql
+    assert "WHERE v.bundle_id IN" in sql and "v.space=:space" in sql
+    assert parameters["bundles"] == [1, 2]
+    assert ("AS text_score" in sql) == bool(caption)
+    assert ("text_vector" in parameters) == bool(caption)
+    if caption:
+        assert "1-(v.embedding <=> CAST(:text_vector AS vector)) AS text_score" in sql
+
+
+def test_caption_embedding_error_uses_existing_socket_unavailable_flow(socket_runtime, monkeypatch):
+    import asyncio
+    rt = socket_runtime
+    def unavailable(*_): raise ValueError("text embedding unavailable")
+    monkeypatch.setattr(rt.utils, "search_image", unavailable)
+    async def check(socket):
+        await wait_for(lambda: any(item["type"] == "knowledge.image.error" for item in socket.sent))
+        error = next(item for item in socket.sent if item["type"] == "knowledge.image.error")
+        assert error["code"] == "unavailable" and error["retryable"] is True
+        assert rt.connections[0].history == []
+        return {"type": "history.update", "inputs": []}
+    asyncio.run(rt.endpoint(rt.Socket([caption_request("blue").model_dump(), check]), api_key="test"))

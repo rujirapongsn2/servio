@@ -74,15 +74,25 @@ test('search socket requests are bounded to one pending image and ignore reset/d
     const socket = sockets[0];
     await act(async () => { socket.handlers.open(); socket.emit({ type: 'session.config', knowledge_image_search_enabled: true }); });
     assert.equal(state.imageSearchAvailable, true);
-    await act(async () => { assert.equal(state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }), true); assert.equal(state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }), false); });
+    const beforeInvalid = socket.sent.length;
+    await act(async () => assert.equal(state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }, 'x'.repeat(2001)), false));
+    assert.equal(socket.sent.length, beforeInvalid);
+    const send = socket.send;
+    socket.send = () => { throw new Error('closed during send'); };
+    await act(async () => assert.equal(state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }, 'Retry query'), false));
+    assert.equal(state.imageSearchState.kind, 'error');
+    assert.equal(state.isLoading, false);
+    socket.send = send;
+    await act(async () => { assert.equal(state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }, '  red mug  '), true); assert.equal(state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }), false); });
     const command = socket.sent.at(-1);
-    assert.equal(command.type, 'knowledge.image.search');
+    assert.deepEqual(command, { type: 'knowledge.image.search', request_id: command.request_id, image: { mime: 'image/png', base64: 'YWJj' }, query: 'red mug' });
     assert.deepEqual(state.history, []);
     await act(async () => socket.emit({ type: 'knowledge.image.error', request_id: command.request_id, code: 'unavailable', message: 'Retry search', retryable: true }));
     assert.equal(state.imageSearchState.kind, 'error');
     assert.equal(state.isLoading, false);
     await act(async () => state.sendImageSearch({ mime: 'image/png', base64: 'YWJj' }));
     const active = socket.sent.at(-1);
+    assert.equal(Object.hasOwn(active, 'query'), false);
     assert.notEqual(active.request_id, command.request_id);
     await act(async () => socket.emit({ type: 'history.updated', reason: 'knowledge.image.result', request_id: active.request_id, inputs: [{ type: 'message', role: 'assistant', id: 'msg_' + '1'.repeat(32), content: carousel.summary }], presentations: { ['msg_' + '1'.repeat(32)]: carousel } }));
     await act(async () => socket.emit({ type: 'knowledge.image.result', request_id: active.request_id, status: 'matched' }));
@@ -104,7 +114,7 @@ test('search socket requests are bounded to one pending image and ignore reset/d
   } finally { globalThis.WebSocket = original; }
 });
 
-test('composer previews one image, preserves typed text, removes/replaces and clears only on completion', async () => {
+test('composer accepts optional image query, retains rejected/failed drafts and clears accepted text once', async () => {
   const original = { Image: globalThis.Image, FileReader: globalThis.FileReader, create: URL.createObjectURL, revoke: URL.revokeObjectURL };
   let revoked = [];
   globalThis.Image = class { naturalWidth = 10; naturalHeight = 10; set src(_) { this.onload(); } };
@@ -115,21 +125,44 @@ test('composer previews one image, preserves typed text, removes/replaces and cl
     const { ImageSearchComposer } = load('src/components/ImageSearchComposer.tsx');
     const sent = [];
     const text = [];
-    const props = { available: true, disabled: false, searchState: { kind: 'idle' }, onImageSearch: (image) => { sent.push(image); return true; }, onTextMessage: (value) => text.push(value) };
+    let accepted = false;
+    const props = { available: true, disabled: false, searchState: { kind: 'idle' }, onImageSearch: (image, query) => { sent.push({ image, query }); return accepted; }, onTextMessage: (value) => text.push(value) };
     let renderer;
     await act(async () => { renderer = create(React.createElement(ImageSearchComposer, props)); });
     const field = () => renderer.root.findAllByType('input').find((input) => input.props.type === 'text');
     const picker = () => renderer.root.findAllByType('input').find((input) => input.props.type === 'file');
     await act(async () => field().props.onChange({ target: { value: 'Keep this question' } }));
     await act(async () => picker().props.onChange({ target: { files: [{ name: 'first.png', type: 'image/png', size: 120 }], value: 'x' } }));
-    assert.equal(field().props.disabled, true);
+    assert.equal(field().props.disabled, false);
+    assert.equal(field().props.maxLength, 2000);
+    await act(async () => field().props.onChange({ target: { value: '  Keep this question  ' } }));
     assert.equal(renderer.root.findByType('img').props.src, 'blob:first.png');
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
-    assert.deepEqual(sent, [{ mime: 'image/png', base64: 'cGljdHVyZQ==' }]);
+    assert.deepEqual(sent, [{ image: { mime: 'image/png', base64: 'cGljdHVyZQ==' }, query: 'Keep this question' }]);
+    assert.equal(field().props.value, '  Keep this question  ');
+    assert.equal(renderer.root.findAllByType('img').length, 1);
+    accepted = true;
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} });
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} });
+    });
+    assert.equal(sent.length, 2);
+    assert.equal(field().props.value, '');
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(sent.length, 2);
     assert.deepEqual(text, []);
     await act(async () => renderer.update(React.createElement(ImageSearchComposer, { ...props, searchState: { kind: 'error', message: 'Service unavailable', retryable: true } })));
     assert.equal(renderer.root.findAllByType('img').length, 1);
     assert.match(JSON.stringify(renderer.toJSON()), /Service unavailable/);
+    assert.equal(field().props.value, 'Keep this question');
+    assert.equal(field().props.disabled, false);
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(sent.at(-1).query, 'Keep this question');
+    assert.equal(field().props.value, '');
+    await act(async () => renderer.update(React.createElement(ImageSearchComposer, { ...props, disabled: true, searchState: { kind: 'error', message: 'Disconnected', retryable: true } })));
+    assert.equal(field().props.value, 'Keep this question');
+    assert.equal(renderer.root.findByType('img').props.src, 'blob:first.png');
+    await act(async () => renderer.update(React.createElement(ImageSearchComposer, { ...props, searchState: { kind: 'error', message: 'Disconnected', retryable: true } })));
     await act(async () => picker().props.onChange({ target: { files: [{ name: 'second.png', type: 'image/png', size: 120 }], value: 'x' } }));
     assert.ok(revoked.includes('blob:first.png'));
     assert.equal(renderer.root.findByType('img').props.src, 'blob:second.png');
@@ -142,7 +175,11 @@ test('composer previews one image, preserves typed text, removes/replaces and cl
     assert.equal(renderer.root.findAllByType('img').length, 0);
     assert.match(JSON.stringify(renderer.toJSON()), /10 MB/);
     await act(async () => picker().props.onChange({ target: { files: [{ name: 'last.png', type: 'image/png', size: 120 }], value: 'x' } }));
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    assert.equal(sent.at(-1).query, '');
+    await act(async () => field().props.onChange({ target: { value: 'New follow-up' } }));
     await act(async () => renderer.update(React.createElement(ImageSearchComposer, { ...props, searchState: { kind: 'complete', status: 'matched' } })));
+    assert.equal(field().props.value, 'New follow-up');
     assert.equal(renderer.root.findAllByType('img').length, 0);
     await act(async () => renderer.unmount());
     assert.ok(revoked.includes('blob:last.png'));

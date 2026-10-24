@@ -305,7 +305,7 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
                         request = ImageSearchRequest.model_validate(message)
                     except ValidationError:
                         await websocket.send_json({"type": "knowledge.image.error", "request_id": request_id, "code": "invalid_image",
-                            "message": "ใช้รูป JPG หรือ PNG ขนาดไม่เกิน 10 MB", "retryable": False})
+                            "message": "ใช้รูป JPG หรือ PNG ขนาดไม่เกิน 10 MB และข้อความไม่เกิน 2,000 ตัวอักษร", "retryable": False})
                         continue
                     try:
                         generation = connection.image_search_session.begin(request.request_id)

@@ -168,15 +168,24 @@ export function useWebsocket({
     websocket.current.send(JSON.stringify({ type: "product.inquire", call_id: callId, product_id: productId }));
   }
 
-  function sendImageSearch(image: { mime: "image/jpeg" | "image/png"; base64: string }): boolean {
+  function sendImageSearch(image: { mime: "image/jpeg" | "image/png"; base64: string }, query = ""): boolean {
+    query = query.trim();
+    if (query.length > 2000) return false;
     if (websocket.current?.readyState !== WebSocket.OPEN || isLoading || imageRequest.current || !imageSearchAvailable) return false;
     const requestId = crypto.randomUUID();
     imageRequest.current = requestId;
     setImageSearchState({ kind: "pending", requestId });
     setProductActionError(null);
     setIsLoading(true);
-    websocket.current.send(JSON.stringify({ type: "knowledge.image.search", request_id: requestId, image }));
-    return true;
+    try {
+      websocket.current.send(JSON.stringify({ type: "knowledge.image.search", request_id: requestId, image, ...(query ? { query } : {}) }));
+      return true;
+    } catch {
+      imageRequest.current = null;
+      setIsLoading(false);
+      setImageSearchState({ kind: "error", message: "ส่งรูปภาพไม่สำเร็จ กรุณาลองใหม่", retryable: true });
+      return false;
+    }
   }
 
   function sendKnowledgeInquiry(messageId: string, cardId: string) {
