@@ -242,6 +242,8 @@ npm run build
 
 ## คู่มือเพิ่มเติม
 
+- [ติดตั้ง Production แบบแยกเครื่อง Servio และ Embedding](docs/production-split-deployment.md)
+
 - [โมเดลและ Provider](docs/model-configuration.md)
 - [Local Knowledge และ pgvector](docs/LOCAL_KNOWLEDGE_PGVECTOR.md)
 - [ขอบเขต Legacy Gemini](docs/LOCAL_KNOWLEDGE_NO_GEMINI_MIGRATION.md)
