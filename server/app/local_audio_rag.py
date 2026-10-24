@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 import httpx
+from app.embedding_auth import headers as embedding_headers
 import jwt
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import Response
@@ -30,6 +31,7 @@ class LocalAudioEmbeddingClient:
         if not base.startswith(('http://', 'https://')):
             raise ValueError('AUDIO_EMBEDDING_BASE_URL must use HTTP(S)')
         self.url = base + '/embeddings'
+        self._headers = embedding_headers('AUDIO_EMBEDDING_API_KEY')
         self.model = os.getenv('AUDIO_EMBEDDING_MODEL', 'servio-embeddinggemma2-audio')
         self.query_prefix = os.getenv('AUDIO_QUERY_PREFIX', 'task: search result | query: ')
         self.revision = os.getenv('AUDIO_EMBEDDING_REVISION', '')
@@ -41,7 +43,7 @@ class LocalAudioEmbeddingClient:
         return hashlib.sha256(json.dumps([self.model, self.query_prefix, self.revision, fingerprint, 'native-pcm16-mono16k-v1']).encode()).hexdigest()
 
     def _request(self, value):
-        response = httpx.post(self.url, json={'model': self.model, 'input': [value]}, timeout=self.timeout)
+        response = httpx.post(self.url, json={'model': self.model, 'input': [value]}, timeout=self.timeout, **({"headers": self._headers} if self._headers else {}))
         response.raise_for_status()
         data = response.json()['data']
         if len(data) != 1 or data[0].get('index') != 0:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from app.embedding_auth import headers as embedding_headers
 from sqlalchemy import text as sql_text
 
 from app.db_config import engine, get_db
@@ -101,13 +102,14 @@ class EmbeddingError(RuntimeError):
 
 
 class LocalEmbeddingClient:
-    """OpenAI-compatible /v1/embeddings client; no API key."""
+    """OpenAI-compatible /v1/embeddings client with optional Bearer authentication."""
 
     def __init__(self) -> None:
         base = _setting("EMBEDDING_BASE_URL", "http://host.docker.internal:8090/v1").rstrip("/")
         if not base.startswith("http://") and not base.startswith("https://"):
             raise ValueError("EMBEDDING_BASE_URL must be an HTTP(S) URL")
         self.url = base + "/embeddings"
+        self._headers = embedding_headers('EMBEDDING_API_KEY')
         self.model = model_name()
         self.query_prefix = _prefix("EMBEDDING_QUERY_PREFIX", DEFAULT_QUERY_PREFIX)
         self.document_prefix = _prefix("EMBEDDING_DOCUMENT_PREFIX", DEFAULT_DOCUMENT_PREFIX)
@@ -128,6 +130,7 @@ class LocalEmbeddingClient:
                     self.url,
                     json={"model": self.model, "input": inputs},
                     timeout=self.timeout,
+                    **({"headers": self._headers} if self._headers else {}),
                 )
                 if response.status_code >= 500:
                     raise httpx.HTTPStatusError(

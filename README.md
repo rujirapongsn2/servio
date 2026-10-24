@@ -1,839 +1,255 @@
-# Servio - ระบบผู้ช่วยบริการลูกค้า (Customer Support Agent)
+# Servio — AI Service Agents
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-![FastAPI](https://img.shields.io/badge/Built_with-FastAPI-yellow)
-![NextJS](https://img.shields.io/badge/Built_with-NextJS-blue)
-![OpenAI API](https://img.shields.io/badge/Powered_by-OpenAI_API-orange)
+Servio เป็นระบบผู้ช่วยบริการลูกค้าผ่าน Web Chat และเสียง ใช้ FastAPI, OpenAI Agents SDK, Next.js และ PostgreSQL พร้อม pgvector จัดการ Team Agents, Integrations, Local Knowledge และช่องทางสนทนาผ่านหน้า Admin
 
-Servio คือระบบผู้ช่วยบริการลูกค้าที่รองรับการสั่งงานด้วยเสียงอันทรงพลัง สร้างขึ้นด้วย [Agents SDK](https://openai.github.io/openai-agents-python) ของ OpenAI และ Python ส่วน Backend ใช้ FastAPI ที่รองรับ WebSocket ในขณะที่ Frontend สร้างด้วย Next.js เพื่อมอบประสบการณ์การใช้งานที่ลื่นไหลทั้งในรูปแบบเสียงและข้อความ
+## ความสามารถปัจจุบัน
 
-## คุณสมบัติหลัก
+- **Team Workflow**: สร้าง Agent บน Canvas กำหนด Provider, Model ID, Tools, Knowledge และ Handoffs พร้อม Private chat สำหรับทดลองทีมและ Agent
+- **LLM Providers**: เชื่อมต่อผู้ให้บริการที่รองรับ OpenAI-compatible API เพิ่ม Model ID และกำหนดโมเดลสำหรับ OCR และ Image Q&A
+- **Local Knowledge**: นำเข้าเอกสาร ข้อความ หลาย URL รูปภาพ และเสียง จัดการสิทธิ์ตามทีม แก้ไขแหล่งข้อมูลและนำเข้าใหม่ได้
+- **Hybrid Search**: รวม Semantic Search และ Keyword Search ด้วย Reciprocal Rank Fusion (RRF) บน PostgreSQL และ pgvector
+- **Web Chat**: แสดงคำตอบพร้อมภาพและเสียงอ้างอิง รองรับแนบภาพพร้อมข้อความเพื่อค้นหาสินค้า และแสดง Carousel พร้อมปุ่มดูรายละเอียดและสอบถามสินค้านี้
+- **Integrations**: Custom API พร้อมแปลง cURL เป็นช่องกรอกข้อมูล และ MCP รวมถึงผลลัพธ์สินค้าแบบ `structuredContent`
+- **Channels**: สร้าง Web Chat และโค้ด Widget สำหรับเว็บไซต์ พร้อมการสนทนาแบบข้อความและเสียง
 
-- **ระบบสั่งงานด้วยเสียงและแชท** - รองรับทั้งการสนทนาด้วยเสียง (Push-to-talk) และการพิมพ์ข้อความ
-- **ระบบ Multi-Agent** - มี AI Agent เฉพาะทางหลายตัวที่ทำงานร่วมกันและส่งต่อการสนทนาได้อย่างราบรื่น
-- **Admin Dashboard** - แผงควบคุมสำหรับผู้ดูแลระบบเพื่อจัดการ Agent เครื่องมือ และการตั้งค่าต่างๆ ครบจบในที่เดียว
-- **Widget Embedding** - โค้ด Widget สำหรับนำไปติดหน้าเว็บไซต์ได้ง่าย รองรับทั้ง Chat และ Voice
-- **Custom Tools Integration** - รองรับการเชื่อมต่อกับ API ภายนอก, MCP tools และ Gemini File Search
-- **Dynamic Agent Configuration** - สร้างและตั้งค่า Agent ผ่านหน้า Admin ได้ทันทีโดยไม่ต้องแก้โค้ด
-- **Real-time Monitoring** - ติดตามสถานะเซสชันและการทำงานของ Agent ได้แบบเรียลไทม์
-- **Multi-turn Conversations** - รองรับการสนทนาโต้ตอบต่อเนื่อง โดยระบบจะจำบริบทก่อนหน้าได้
-- **Streaming Responses** - แสดงผลข้อความและเสียงแบบ Streaming เพื่อการตอบสนองที่รวดเร็ว
-- **Softnix Integration** - มีระบบเชื่อมต่อกับ Softnix GenAI knowledge base ในตัว
+Local Knowledge เป็นระบบหลัก ส่วน Gemini Document Search เป็น Legacy และปิดการสร้างใหม่เป็นค่าเริ่มต้น
 
-Servio ถูกออกแบบมาให้เป็นโซลูชัน Customer Support ที่พร้อมใช้งานในระดับ Production (Production-Ready) และสามารถปรับแต่งหรือต่อยอดให้เข้ากับความต้องการของธุรกิจคุณได้
+## เริ่มติดตั้งด้วย Docker
 
-การตั้งค่าโมเดลสำหรับ production ดู [Configure production models](docs/model-configuration.md) และไฟล์ [.env.example](.env.example)
+ต้องมี Git, Docker Engine และ Docker Compose ส่วน Embedding, Vision และ Audio Processor เป็นบริการแยกที่ต้องจัดเตรียมเมื่อเปิดฟีเจอร์นั้น
 
-## สารบัญ
-
-- [คุณสมบัติหลัก](#คุณสมบัติหลัก)
-- [สถาปัตยกรรม Multi-Agent](#สถาปัตยกรรม-multi-agent)
-- [File Store Agents](#file-store-agents)
-- [การนำ Widget ไปใช้งาน](#การนำ-widget-ไปใช้งาน)
-- [ความต้องการของระบบ](#ความต้องการของระบบ)
-- [เริ่มต้นใช้งาน](#เริ่มต้นใช้งาน)
-  - [การใช้งานผ่าน Docker (แนะนำ)](#การใช้งานผ่าน-docker-แนะนำ-)
-  - [การติดตั้งแบบ Manual (สำหรับนักพัฒนา)](#การติดตั้งแบบ-manual-สำหรับนักพัฒนา)
-- [การ Deploy ด้วย Docker](#การ-deploy-ด้วย-docker)
-  - [คู่มือ Production Deployment](#คู่มือ-production-deployment)
-- [การใช้งาน Admin & Agents](#การใช้งาน-admin--agents)
-- [Screenshots & GIFs](#screenshots--gifs)
-- [Contributing](#contributing)
-- [License](#license)
-
-## สถาปัตยกรรม Multi-Agent
-
-ตัวอย่างแอปพลิเคชันนี้รองรับ **Multi-Agent** โดยมี **Coordinator Agent** เป็นค่าตั้งต้นเพียงตัวเดียว (built-in) ทำหน้าที่เปิดบทสนทนาและตอบเองได้ทันที เมื่อคุณสร้าง Agent เพิ่มในฐานข้อมูล Coordinator จะดึงขึ้นมาเป็น handoffs ให้อัตโนมัติ
-
-### โครงสร้าง Agent ปัจจุบัน
-
-#### **Coordinator Agent** (ตัวประสานงานหลัก) 🎯
-- **บทบาท**: จุดเริ่มทุกการสนทนา ทักทาย รับเรื่อง และโอนต่อให้ผู้เชี่ยวชาญจากฐานข้อมูลถ้ามี
-- **คำสั่ง**: "คุณเป็นผู้ประสานงาน จัดการคำถามเองก่อน และถ้ามี Agent เฉพาะทางในระบบ ให้โอนต่อให้เหมาะสม"
-- **เครื่องมือพื้นฐาน**: ไม่มี (ตอบเองด้วยโมเดล)
-- **handoffs**: จะถูกเติมด้วย Agent ที่สร้างใน Admin (เช่น Sales, Support, IT, Dtwin ฯลฯ)
-
-### ตัวอย่างการเพิ่ม Agent ในฐานข้อมูล
-- สร้าง "Softnix Sales Agent" พร้อม tool `get_softnix_info` → Coordinator โอนให้เมื่อลูกค้าถามเรื่องสินค้า
-- สร้าง "Support Agent" พร้อมเครื่องมือสั่งซื้อ/คืนเงิน → Coordinator โอนให้เมื่อพูดถึงคำสั่งซื้อ
-- สร้าง "IT Agent" → Coordinator โอนให้เมื่อถามเรื่องปัญหาระบบ
-
-### การทำงานของระบบส่งต่อ Agent (Handoffs)
-
-เมื่อ Coordinator ตัดสินใจโอนสาย จะเห็นข้อความ "**Transferred to [Agent Name]**" ในการสนทนา ซึ่งหมายถึงเปลี่ยนผู้ตอบเป็น Agent ปลายทาง
-
-**ขั้นตอนทางเทคนิค**:
-1. Agent ปัจจุบัน (เริ่มจาก Coordinator) ตัดสินใจโอนสาย → `output.last_agent` เปลี่ยนค่า
-2. Backend อัปเดต `self.latest_agent = output.last_agent`
-3. WebSocket ส่งข้อความแจ้งชื่อ `agent_name` ใหม่
-4. Frontend แสดงข้อความ "Transferred to [Agent Name]"
-5. Coordinator จะรวม Agent จาก Database เป็นปลายทางให้อัตโนมัติ (เช่น Dtwin, Sales, Support)
-
-### แผนผังการทำงาน (Flow Diagram)
-
-```
-                    ┌─────────────────────┐
-                    │  เริ่มการสนทนา        │
-                    │ (Coordinator Agent) │
-                    └──────────┬──────────┘
-                               │
-                        ลูกค้าพูดว่าอะไร?
-                               │
-        ┌───────────────┬─────────────┬───────────────┐
-        ▼               ▼             ▼
-┌───────────────┐  ┌──────────────┐  ┌───────────────┐
-│ Sales Agent   │  │ Support Agent│  │   Dtwin Agent │
-│   (จาก DB)    │  │    (จาก DB)  │  │     (จาก DB) │
-└───────────────┘  └──────────────┘  └───────────────┘
-
-เส้นทาง:
-• คำถาม Softnix → Softnix Sales Agent
-• คำแนะนำแฟชั่น → Stylist Agent
-• ปัญหาคำสั่งซื้อ/คืนเงิน → Customer Support Agent
-• คำถาม DTWIN → Dtwin Agent (จาก Database)
-• Agent อื่นๆ ใน DB จะปรากฏเป็นเส้นทางเพิ่มเติมตามที่ตั้งค่าใน Admin
-```
-
-### ทำไมต้อง Multi-Agent?
-
-✅ **ความเชี่ยวชาญเฉพาะด้าน** - แต่ละ Agent เก่งในเรื่องของตัวเอง
-✅ **คำตอบแม่นยำขึ้น** - ใช้เครื่องมือที่ตรงจุด
-✅ **การส่งต่อที่ยืดหยุ่น** - ส่งงานต่อตามบริบทการคุย
-✅ **ขยายงานง่าย** - เพิ่ม Agent ใหม่ได้ตลอดเวลา
-
-### การปรับแต่ง Agent
-
-แก้ไขไฟล์ `server/app/agent_config.py` เพื่อ:
-- เพิ่ม Agent ใหม่พร้อมเครื่องมือพิเศษ
-- แก้ไขคำสั่งและพฤติกรรมของ Agent
-- ตั้งค่าความสัมพันธ์การส่งต่องาน
-- เพิ่ม Custom Function Tools
-
-## การนำ Widget ไปใช้งาน
-
-Servio มี Widget ที่คุณสามารถนำไปแปะหน้าเว็บไซต์ได้ทันที เพื่อให้ลูกค้าเข้าถึง AI Agent ของคุณได้ง่ายๆ
-
-### วิธีติดตั้งด่วน (Quick Start)
-
-1. **สร้างโค้ด Widget**: ไปที่ Admin Console → Tools → Widget
-2. **ตั้งค่า Widget**:
-   - เลือกประเภท: `voice` (พร้อมปุ่ม Push-to-talk) หรือ `chat` (พิมพ์คุยอย่างเดียว)
-   - เลือกตำแหน่ง: ขวาล่าง (`bottom-right`) หรือ ซ้ายล่าง (`bottom-left`)
-   - ตั้งค่า Server URL (ค่าเริ่มต้น: `https://localhost`)
-3. **คัดลอกและนำไปใช้**: นำโค้ดที่ได้ไปวางใน HTML ของเว็บไซต์คุณ
-
-### ตัวอย่างโค้ด Widget
-
-```html
-<!-- Servio Chat Widget -->
-<script
-  src="https://localhost/embed.js"
-  data-type="chat"
-  data-position="bottom-right"
-  data-server-url="https://localhost">
-</script>
-```
-
-### ประเภทของ Widget
-
-**Chat Widget** (`data-type="chat"`):
-- อินเทอร์เฟซแบบแชทข้อความ
-- ไม่ต้องขอสิทธิ์ไมโครโฟน
-- เหมาะสำหรับผู้ใช้ Desktop หรือสถานการณ์ที่ไม่สะดวกใช้เสียง
-
-**Voice Widget** (`data-type="voice"`):
-- คุยด้วยเสียงแบบ Push-to-talk
-- จะขอสิทธิ์เข้าถึงไมโครโฟน
-- เหมาะสำหรับการใช้งานแบบ Hands-free
-
-### การปรับแต่ง
-
-ตัว Widget จะทำสิ่งเหล่านี้ให้อัตโนมัติ:
-- ปรับ Branding ตาม Agent (แสดงชื่อและโลโก้)
-- เข้ากับธีมของคุณ (รองรับ Light/Dark mode)
-- ตอบสนองต่อการสัมผัสด้วย Visual Feedback
-- แสดงประวัติการสนทนาพร้อมจัดรูปแบบสวยงาม
-- จัดการเรื่องการส่งต่อ Agent ให้เนียนไปกับการคุย
-
-## File Store Agents
-
-แอปฯ นี้มาพร้อมระบบ **File Store Agent** ที่ช่วยให้คุณสร้าง Agent ค้นหาเอกสารได้ โดยใช้พลังของ Google Gemini File Search API ทำให้ AI ตอบคำถามจากเอกสารที่คุณอัปโหลดได้
-
-### File Store Agents คืออะไร?
-
-คือ Agent พิเศษที่สามารถค้นหาและดึงข้อมูลจากชุดเอกสารที่คุณอัปโหลด โดยใช้ความสามารถ RAG (Retrieval-Augmented Generation) ของ Gemini เพื่อให้คำตอบที่ถูกต้องพร้อมอ้างอิงแหล่งที่มา
-
-### คุณสมบัติเด่น
-
-✅ **Multi-File Upload** - อัปโหลดทีละหลายไฟล์ได้ (PDF, TXT, MD, DOC, DOCX)
-✅ **Drag-and-Drop Interface** - ลากไฟล์มาวางเพื่ออัปโหลดได้ง่ายๆ
-✅ **Auto-Tool Creation** - สร้างเครื่องมือค้นหาให้อัตโนมัติทันทีที่สร้าง File Store
-✅ **File Management** - เพิ่มหรือลบไฟล์ได้ตลอดเวลา
-✅ **Detailed Testing** - ทดสอบการค้นหาพร้อมดูแหล่งอ้างอิงและ Metadata
-✅ **Thai Filename Support** - รองรับชื่อไฟล์ภาษาไทยอัตโนมัติ
-✅ **Progress Tracking** - มีแถบแสดงความคืบหน้าขณะอัปโหลด
-
-### วิธีสร้าง File Store Agent
-
-1. **ไปที่ Admin Console**
-   - เข้าไปที่ `http://localhost:3001/admin` (หรือพอร์ตที่คุณตั้งไว้)
-   - คลิกเมนู "Agents" ด้านข้าง
-   - เลือกแท็บ "File Store Agents"
-
-2. **สร้าง File Store ใหม่**
-   - คลิกปุ่ม "New File Store"
-   - ตั้งชื่อที่สื่อความหมาย (เช่น "Product Documentation")
-   - อัปโหลดเอกสาร (รองรับหลายไฟล์)
-   - ติ๊กถูก "Create Tool Automatically" (ค่าเริ่มต้น: เปิด)
-   - คลิก "Create File Store"
-
-3. **Tool จะถูกสร้างให้อัตโนมัติ**
-   - ชื่อ Tool: `{store_name}_search`
-   - Tool นี้จะพร้อมให้ทุก Agent ในระบบเลือกใช้ได้
-   - Agent จะใช้ Tool นี้ค้นหาข้อมูลในเอกสารชุดนั้น
-
-4. **ทดสอบ File Store ของคุณ**
-   - คลิกปุ่มสีเขียว "Play" ข้างๆ File Store
-   - พิมพ์คำถามเกี่ยวกับเอกสาร
-   - ดูคำตอบของ AI ซึ่งจะประกอบด้วย:
-     - คำตอบจากเนื้อหาในเอกสาร
-     - แหล่งอ้างอิง (Grounding sources) ว่าเอามาจากไฟล์ไหน
-     - เวลาที่ใช้ตอบและ Metadata
-
-5. **จัดการไฟล์**
-   - คลิกปุ่มสีฟ้า "Upload" เพื่อจัดการไฟล์
-   - ดูรายชื่อไฟล์ทั้งหมด
-   - อัปโหลดเพิ่ม หรือลบไฟล์บางตัวออก
-
-### ตัวอย่างการใช้งาน (Use Cases)
-
-**Product Documentation** (คู่มือสินค้า)
-```
-Store: "Product Manuals"
-Files: product_guide.pdf, faq.pdf, specifications.pdf
-Use case: ให้ Customer support agent ตอบคำถามเชิงเทคนิค
-```
-
-**HR Knowledge Base** (ฝ่ายบุคคล)
-```
-Store: "HR Policies"
-Files: employee_handbook.pdf, leave_policy.pdf, benefits.pdf
-Use case: ให้ HR Chatbot ตอบคำถามเรื่องสวัสดิการพนักงาน
-```
-
-**Legal Documents** (กฎหมาย)
-```
-Store: "Legal Contracts"
-Files: contract_template.pdf, terms.pdf, privacy_policy.pdf
-Use case: ให้ผู้ช่วยกฎหมายช่วยดูเงื่อนไขในสัญญา
-```
-
-### การนำ Tool ไปใช้กับ Agent
-
-เมื่อสร้าง File Store แบบเปิด auto-tool แล้ว คุณสามารถนำ Tool ไปใส่ให้ Agent ตัวไหนก็ได้:
-
-1. ไปที่แท็บ "Agents" ใน Admin
-2. สร้างหรือแก้ไข Agent
-3. ในส่วน "Tools" ให้เลือก Tool ที่ถูกสร้างขึ้น (เช่น "product_docs_search")
-4. กด Save Agent
-
-เพียงเท่านี้ เมื่อผู้ใช้คุยกับ Agent ตัวนั้น มันก็จะสามารถค้นหาเอกสารของคุณเพื่อมาตอบคำถามได้!
-
-### การตั้งค่า API
-
-การใช้ File Store Agents จำเป็นต้องมี Gemini API key:
-
-1. ขอ API key ที่: https://ai.google.dev/
-2. ใส่ในไฟล์ `.env`:
-   ```bash
-   GEMINI_API_KEY=your_api_key_here
-   ```
-
-### รายละเอียดทางเทคนิค
-
-- **Backend**: `server/app/gemini_service.py` จัดการการเชื่อมต่อ Gemini API ทั้งหมด
-- **Database**: เก็บ Metadata ของ File Store และรายการไฟล์ใน PostgreSQL
-- **File Upload**: รองรับไฟล์ได้สูงสุด 10MB ต่อไฟล์ (ตั้งค่าเพิ่มได้)
-- **Supported Formats**: PDF, TXT, MD, DOC, DOCX
-- **Unicode Support**: ระบบจัดการชื่อไฟล์ที่ไม่ใช่ภาษาอังกฤษให้อัตโนมัติ
-
-### การแก้ไขปัญหาเบื้องต้น (Troubleshooting)
-
-**ปัญหา**: อัปโหลดไฟล์ชื่อไทยไม่ได้
-- **วิธีแก้**: ระบบจัดการให้แล้วโดยอัตโนมัติ (เปลี่ยนชื่อไฟล์ชั่วคราวเป็น ASCII เพื่ออัปโหลด)
-
-**ปัญหา**: ค้นหาแล้วไม่เจอผลลัพธ์
-- **วิธีแก้**: ตรวจสอบว่าเอกสารมีเนื้อหาที่เกี่ยวข้อง และลองเปลี่ยนคำถามดู
-
-**ปัญหา**: อัปโหลดช้า
-- **วิธีแก้**: ไฟล์ใหญ่อาจใช้เวลาประมวลผลนาน ให้ดูความคืบหน้าที่ Progress bar
-
-## ความต้องการของระบบ
-
-- **OpenAI API Key**: จำเป็นสำหรับการทำงานของ AI และ Voice Processing
-- **Gemini API Key** (Optional): สำหรับใช้ฟีเจอร์ File Store Agents
-- **Docker**: (แนะนำ) สำหรับการรันระบบโดยไม่ต้องลงโปรแกรมอื่นเพิ่ม
-- **Node.js และ Python**: (กรณีรันแบบ Manual)
-- **uv**: (Package manager ของ Python)
-
-## เริ่มต้นใช้งาน
-
-### การใช้งานผ่าน Docker (แนะนำ) 🐳
-
-วิธีที่ง่ายที่สุดคือใช้ Docker ไม่ต้องลง Node.js, Python หรือ uv เอง!
-
-1. **สิ่งที่ต้องมี:**
-   - Linux/Ubuntu ที่ใช้ `apt` สามารถให้ installer ติดตั้ง dependency, Docker และ Docker Compose ให้ได้
-   - ถ้าติดตั้งบน OS อื่น ให้ติดตั้ง [Docker Desktop](https://docs.docker.com/get-docker/) และตรวจสอบว่า Docker รันอยู่ก่อน
-
-2. **Clone Repository:**
-
-   ```bash
-   git clone https://github.com/rujirapongsn2/servio.git
-   cd servio/
-   ```
-
-3. **ติดตั้งและเริ่มใช้งานด้วย Docker (แนะนำ):**
-
-   ```bash
-   ./services.sh install
-   ```
-
-   installer จะ:
-   - ตรวจและติดตั้ง dependency ที่จำเป็นบน apt-based Linux เช่น `curl`, `openssl`, `lsof`, `git`, Docker และ Docker Compose
-   - ถาม `OPENAI_API_KEY` ก่อนและทดสอบกับ OpenAI API ให้ผ่านก่อนจึงไปต่อ
-   - ถาม `SOFTNIX_API_KEY` / `GEMINI_API_KEY` แบบ optional และถ้ากรอกจะทดสอบ key นั้นก่อนเช่นกัน
-   - สร้างค่าเริ่มต้นให้เองสำหรับ PostgreSQL, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WEBSOCKET_ENDPOINT`, `JWT_SECRET_KEY`
-   - ตั้งค่า local HTTP origin สำหรับ Cloudflare Tunnel (ค่าเริ่มต้น `http://localhost:8080`)
-   - สร้างหรือสำรอง `.env`
-   - build, start services, รอ health check และตรวจ `/api/health` ให้พร้อมใช้งาน
-
-   ถ้าต้องการเขียน config และ build แต่ยังไม่ start:
-
-   ```bash
-   ./services.sh install --no-start
-   ```
-
-   ถ้าจำเป็นต้องติดตั้งแบบ offline หรือยังไม่ต้องการตรวจ key ตอน install สามารถข้ามการตรวจได้:
-
-   ```bash
-   ./services.sh install --skip-api-check
-   ```
-
-   ถ้ารันใน environment ที่ไม่มี interactive terminal จริง ให้ส่ง key ผ่าน environment variable ได้:
-
-   ```bash
-   OPENAI_API_KEY=sk-... ./services.sh install
-   ```
-
-4. **จัดการ services ภายหลัง:**
-
-   คำสั่ง service manager:
-   ```bash
-   ./services.sh start frontend
-   ./services.sh restart backend
-   ./services.sh rebuild frontend
-   ./services.sh stop
-   ./services.sh status
-   ./services.sh logs backend
-   ./services.sh update
-   ```
-
-5. **แก้ไขปัญหา SSL Certificate Permissions (ถ้าจำเป็น):**
-
-   หากพบปัญหา Nginx ไม่สามารถอ่านไฟล์ SSL certificates ได้ (Permission denied) ให้รันสคริปต์แก้ไข:
-
-   ```bash
-   # แก้ไข permissions ของ SSL certificates
-   ./fix_certs_permission.sh
-
-   # หลังจากนั้นรีสตาร์ท Nginx
-   docker compose restart nginx
-   ```
-
-   สคริปต์นี้จะ:
-   - ตรวจสอบว่ามีไฟล์ `nginx/certs/server.crt` และ `server.key` อยู่หรือไม่
-   - เปลี่ยน permissions เป็น 644 เพื่อให้ Nginx container อ่านได้
-   - แสดงผลลัพธ์การดำเนินการ
-
-   **ช่องทางเข้าใช้งานหลังติดตั้ง:**
-   - Public Frontend: `https://servio.softnix.ai` (หรือโดเมนที่ระบุตอน install)
-   - Public Admin Console: `https://servio.softnix.ai/admin`
-   - Public Backend API: `https://servio.softnix.ai/api`
-   - Public WebSocket: `wss://servio.softnix.ai/ws`
-   - Cloudflare Tunnel origin: `http://localhost:8080` (หรือพอร์ต `NGINX_HTTP_PORT` ที่ตั้งไว้)
-   - Local HTTPS direct access: `https://localhost:8443`
-
-   **คำสั่ง Docker Direct** (ถ้าคุณถนัดแบบพิมพ์เอง):
-   ```bash
-   # Build และ Start services
-   docker compose up -d
-
-   # ดู Logs
-   docker compose logs -f
-
-   # Stop services
-   docker compose down
-   ```
-
-### การติดตั้งแบบ Manual (Development)
-
-ถ้าไม่อยากใช้ Docker:
-
-1. **ตั้งค่า API keys:**
-
-   สร้างไฟล์ `.env` ที่ root project แล้วใส่ค่าที่จำเป็น:
-
-   ```bash
-   touch .env
-   # Required
-   # OPENAI_API_KEY=<your_openai_api_key>
-   # JWT_SECRET_KEY=<generate_a_secure_value>
-   # Frontend endpoints (ปรับเป็นโดเมนจริงเวลา deploy)
-   # NEXT_PUBLIC_API_URL=https://servio.softnix.ai
-   # NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://servio.softnix.ai/ws
-   # NGINX_HTTP_PORT=8080
-   # NGINX_HTTPS_PORT=8443
-   # Optional integrations: SOFTNIX_API_KEY / GEMINI_API_KEY
-   ```
-
-   หรือจะตั้งค่า `OPENAI_API_KEY` เป็น environment variable ในเครื่องเลยก็ได้
-
-2. **Clone Repository:**
-
-   ```bash
-   git clone https://github.com/rujirapongsn2/servio.git
-   cd servio/
-   ```
-
-3. **ติดตั้ง Dependencies:**
-
-   ต้องลง dependency ทั้งฝั่ง frontend และ server รันคำสั่งนี้ที่ root:
-
-   ```bash
-   make sync
-   ```
-
-4. **รันแอปพลิเคชัน:**
-
-   มีหลายทางเลือก:
-
-   **ทางเลือก 1: ใช้ Make (Production Mode)**
-   ```bash
-   make serve
-   ```
-   รันแอปในโหมด Production ที่ [`http://localhost:3000`](http://localhost:3000)
-
-   **ทางเลือก 2: Development Mode with Hot Reload**
-   ```bash
-   cd frontend && npm run dev
-   ```
-   - Frontend: [`http://localhost:3001`](http://localhost:3001) (หรือพอร์ตอื่นถ้าไม่ว่าง)
-   - Backend: [`http://localhost:8000`](http://localhost:8000)
-   - WebSocket: `ws://localhost:8000/ws`
-
-   **ทางเลือก 3: รันแยกกัน**
-   ```bash
-   # Terminal 1 - Frontend only
-   cd frontend && npm run dev:next
-
-   # Terminal 2 - Backend only
-   cd server && uv run server.py
-   ```
-
-   **พอร์ตที่ใช้งาน:**
-   - Frontend: `3000` (production) หรือ `3001+` (dev)
-   - Backend: `8000`
-   - Admin Console: [`http://localhost:3001/admin`](http://localhost:3001/admin)
-
-## การ Deploy ด้วย Docker
-
-Servio มาพร้อมชุด Docker deployment ที่พร้อมสำหรับ Production และใช้สถาปัตยกรรมแบบ Multi-container
-
-### สถาปัตยกรรม (Architecture)
-
-Docker setup ใช้ **docker compose** จัดการ 4 services หลัก:
-
-- **Backend Container** (Python 3.11 + FastAPI + uvicorn)
-  - Port: 8000
-  - ติดตั้ง dependency อัตโนมัติด้วย `uv`
-  - เชื่อมต่อ PostgreSQL database ผ่าน Environment Variables
-  - มี Health checks ที่ endpoint `/api/admin/sessions`
-
-- **Frontend Container** (Node.js 20 + Next.js)
-  - Port: 3000
-  - Multi-stage build เพื่อขนาด image ที่เล็ก
-  - รันด้วย non-root user เพื่อความปลอดภัย
-  - Health checks ที่ HTTP root endpoint
-
-- **Nginx Container** (Reverse proxy)
-  - เปิด Port 80/443
-  - Route ไปยัง frontend/backend และ WebSocket
-
-- **PostgreSQL Container** (PostgreSQL 15)
-  - เก็บข้อมูลใน Docker volume `postgres_data`
-
-- **Shared Networks** (`proxy-network`, `db-network`)
-  - ให้ service ภายในคุยกันได้อย่างแยกขอบเขต
-  - Internal DNS resolution (เรียกหากันด้วยชื่อ service ได้เลย)
-
-### โครงสร้างไฟล์ Docker
-
-```
-servio/
-├── docker-compose.yml          # Service orchestration
-├── services.sh                 # CLI service manager
-├── .env                        # Environment variables (created by ./services.sh install)
-├── server/
-│   ├── Dockerfile            # Backend container definition
-│   ├── .dockerignore        # Exclude unnecessary files
-│   └── data/                # Data volume
-└── frontend/
-    ├── Dockerfile           # Frontend container definition (multi-stage)
-    └── .dockerignore       # Exclude node_modules, .next, etc.
-```
-
-### Environment Variables
-
-แนะนำให้ใช้ installer เพื่อสร้าง `.env` ให้อัตโนมัติ:
-
-```bash
+```sh
+git clone https://github.com/rujirapongsn2/servio.git
+cd servio
 ./services.sh install
 ```
 
-ถ้าต้องการสร้าง `.env` เอง ให้กำหนดค่าหลักดังนี้:
+ตัวติดตั้งรองรับ Linux เป็นหลัก ช่วยตั้งค่า `.env`, โดเมน, พอร์ต, ใบรับรอง และเริ่มบริการ ดูตัวเลือกด้วย `./services.sh help`
 
-ตัวแปรหลักใน `.env`:
+สำหรับติดตั้งจากค่าที่เตรียมไว้ ให้คัดลอกไฟล์ตัวอย่างเฉพาะเครื่องใหม่:
 
-```bash
-# Required
-OPENAI_API_KEY=your_openai_api_key
-JWT_SECRET_KEY=change_me_in_production
-
-# Frontend / public endpoints
-NEXT_PUBLIC_API_URL=https://localhost
-NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://localhost/ws
-
-# Optional integrations
-SOFTNIX_API_KEY=your_softnix_api_key    # Optional
-GEMINI_API_KEY=your_gemini_api_key      # Optional
-SOFTNIX_API_INPUTS=product_id,customer_id
-
-# Docker / database configuration
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_DB=voice_agents
-POSTGRES_PORT=5432
-DATABASE_URL=postgresql://postgres:your_secure_password_here@postgres:5432/voice_agents
-
-# Service configuration
-BACKEND_PORT=8000
-FRONTEND_PORT=3000
-TOOL_TIMEOUT_SECONDS=60
-SQL_ECHO=false
-
-# Production CORS (ระบุโดเมนด้วยจุลภาค)
-ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+```sh
+cp .env.example .env
+openssl rand -hex 32
 ```
 
-### Database Persistence
+ใส่ค่าที่สร้างใน `JWT_SECRET_KEY` แล้วกำหนด API key, รหัสผ่านฐานข้อมูล, `ALLOWED_ORIGINS`, `NEXT_PUBLIC_API_URL` และ `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` ให้ตรงกับระบบ ก่อนรันตัวติดตั้ง อย่าคัดลอกทับ `.env` ของระบบที่ใช้งานอยู่
 
-- **PostgreSQL**: ข้อมูลหลักทั้งหมดจะถูกเก็บใน PostgreSQL service ที่กำหนดใน docker-compose หรือ external DB
+เมื่อใช้พอร์ตค่าเริ่มต้นของ Compose:
 
-### การใช้สคริปต์จัดการ Services
+| ส่วน | URL |
+| --- | --- |
+| Frontend | `https://localhost` |
+| Admin | `https://localhost/admin` |
+| Backend health | `https://localhost/api/health` |
+| WebSocket | `wss://localhost/ws` |
 
-Servio ใช้ `./services.sh` เป็นคำสั่งหลักสำหรับจัดการ Docker services:
+หากใช้โดเมนหรือพอร์ตอื่น ให้เปลี่ยน URL ตามค่าที่ตั้งไว้ ใบรับรองที่สร้างสำหรับเครื่อง local เป็น self-signed สำหรับเว็บไซต์จริงให้ใช้ HTTPS ที่เบราว์เซอร์เชื่อถือ
 
-```bash
-./services.sh <command> [service] [options]
+### โครงสร้างบริการ
+
+| บริการ | หน้าที่ |
+| --- | --- |
+| nginx | Reverse proxy ไปยัง Frontend, API และ WebSocket |
+| frontend | Next.js บนพอร์ต 3000 ภายใน container |
+| backend | FastAPI บนพอร์ต 8000 ภายใน container |
+| postgres | `pgvector/pgvector:pg15` เก็บข้อมูลใน volume `postgres_data` |
+| Embedding service | บริการภายนอก Compose สำหรับสร้าง Vector ขนาด 768 มิติ |
+| Audio Processor | บริการภายนอก Compose สำหรับตรวจ เตรียม และถอดเสียง |
+
+Compose ไม่เริ่ม Embedding, Whisper หรือ Vision Model ให้อัตโนมัติ สำหรับ Mac mini ที่รัน Backend และ Frontend แบบ native ให้ใช้ตัวจัดการ process ของเครื่องนั้น แทนการเริ่ม Docker stack ซ้ำ
+
+## ตั้งค่าโมเดลและ Local Knowledge
+
+เริ่มจาก [.env.example](.env.example) และ [คู่มือตั้งค่าโมเดล](docs/model-configuration.md) ค่า Model ID ต้องตรงกับบริการที่เรียกจริง การระบุชื่อโมเดลไม่ได้ทำให้ Provider รองรับภาพ เสียง หรือ Tool Calls เพิ่มขึ้นเอง
+
+Agent ที่ใช้ Default OpenAI ใช้เส้นทาง Responses API ส่วน Custom Provider ใช้ Chat Completions ตั้งค่า Provider และ Model ให้ตรงกับความสามารถของปลายทาง
+
+### Embedding ข้อความ รูปภาพ และเสียง
+
+ไฟล์ตัวอย่างตั้งค่าทั้งสามประเภทไปยังบริการร่วมบนพอร์ต 8090:
+
+```dotenv
+EMBEDDING_BASE_URL=http://host.docker.internal:8090/v1
+EMBEDDING_MODEL=ggml-org/embeddinggemma-2-GGUF:BF16
+MULTIMODAL_EMBEDDING_BASE_URL=http://host.docker.internal:8090/v1
+MULTIMODAL_EMBEDDING_MODEL=ggml-org/embeddinggemma-2-GGUF:BF16
+AUDIO_EMBEDDING_BASE_URL=http://host.docker.internal:8090/v1
+AUDIO_EMBEDDING_MODEL=ggml-org/embeddinggemma-2-GGUF:BF16
 ```
 
-**Commands:**
-- `./services.sh start` - start ทั้ง stack
-- `./services.sh start frontend` - start frontend พร้อม dependencies ที่จำเป็น
-- `./services.sh restart backend` - restart เฉพาะ backend
-- `./services.sh rebuild frontend` - rebuild image แล้ว recreate frontend
-- `./services.sh stop` - stop ทั้ง stack โดยไม่ลบ volume/database
-- `./services.sh status` - ดูสถานะ containers
-- `./services.sh logs backend` - tail logs ของ backend
-- `./services.sh update` - `git pull --ff-only`, rebuild และ recreate services
+ต้องมีบริการที่รองรับชนิดข้อมูลนั้นและส่ง Vector 768 มิติกลับมา หากรัน Python แบบ native บนเครื่องเดียวกัน ให้เปลี่ยน `host.docker.internal` เป็น `127.0.0.1` หากใช้ Linux Docker ให้ตรวจว่าชื่อนี้ resolve ไปยัง host ได้
 
-**Services:** `all`, `frontend`, `backend`, `postgres`/`db`, `nginx`/`proxy`
+หาก Embedding Service ต้องใช้ API key ให้ตั้งคีย์แยกตามบริการ:
 
-**Options:** `--no-cache`, `--foreground`, `--kill-ports`, `--allow-dirty`
-
-### คู่มือ Production Deployment
-
-ส่วนนี้แนะนำการ Deploy บน Production Server พร้อม SSL/HTTPS
-
-#### สิ่งที่ต้องเตรียม (Prerequisites)
-- Server ที่มี Domain name (เช่น `yourdomain.com`)
-- DNS records ชี้มาที่ IP Server ของคุณ
-- Firewall เปิดพอร์ต 80 และ 443
-
-#### ขั้นตอนที่ 1: ตั้งค่า Environment Variables
-
-สร้างหรืออัปเดตไฟล์ `.env` สำหรับ Production:
-
-```bash
-# API Keys (จำเป็น)
-OPENAI_API_KEY=your_openai_api_key
-SOFTNIX_API_KEY=your_softnix_api_key  # Optional
-GEMINI_API_KEY=your_gemini_api_key    # Optional
-
-# ตั้งค่า Database (PostgreSQL)
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_DB=voice_agents
-POSTGRES_PORT=5432
-DATABASE_URL=postgresql://postgres:your_secure_password_here@postgres:5432/voice_agents
-
-# Server Ports
-BACKEND_PORT=8000
-FRONTEND_PORT=3000
-
-# Production Environment
-ENVIRONMENT=production
-
-# ⚠️ สำคัญมาก: Production WebSocket URL
-# สำหรับ HTTPS Deployment ต้องใช้ wss:// (secure WebSocket)
-# แทนที่ yourdomain.com ด้วยโดเมนจริงของคุณ
-NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws
-
-# CORS Origins (คั่นด้วย comma)
-ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+```dotenv
+EMBEDDING_API_KEY=
+MULTIMODAL_EMBEDDING_API_KEY=
+AUDIO_EMBEDDING_API_KEY=
 ```
 
-**หมายเหตุสำคัญ:**
-- `NEXT_PUBLIC_WEBSOCKET_ENDPOINT` ต้องเป็น `wss://` (ไม่ใช่ `ws://`) สำหรับเว็บ HTTPS
-- ตัวแปรนี้จะถูกฝังลงไปตอน Build frontend - **ต้อง Rebuild ใหม่** ทุกครั้งที่เปลี่ยนค่า
-- Browser ปัจจุบันบังคับให้ใช้ HTTPS เท่านั้นถึงจะอนุญาตให้ใช้ไมโครโฟนได้
+คีย์ที่ไม่ว่างจะถูกส่งเป็น `Authorization: Bearer …` ทั้งการสร้าง Vector และค้นหา โดย Health Check ภาพและเสียงใช้คีย์ของบริการนั้นกับ `/health` และ `/props` ด้วย คีย์เหล่านี้ไม่ถูกส่งไปยัง Audio Processor และไม่ใช้ `OPENAI_API_KEY` แทน หากบริการไม่ต้องยืนยันตัวตนให้เว้นว่าง การเปลี่ยนคีย์ไม่ต้อง Re-index แต่ต้องรีสตาร์ต Backend เพื่อรับค่าใหม่
 
-#### ขั้นตอนที่ 2: สร้าง Frontend Build-time Configuration
+เปิดเฉพาะฟีเจอร์ที่บริการพร้อม:
 
-Next.js ต้องการตัวแปร `NEXT_PUBLIC_*` ในขั้นตอน **build time**. ให้สร้างไฟล์ `.env.production` ในโฟลเดอร์ `frontend/`:
-
-```bash
-cd /path/to/servio/frontend
-echo "NEXT_PUBLIC_WEBSOCKET_ENDPOINT=wss://yourdomain.com/ws" > .env.production
-cd ..
+```dotenv
+LOCAL_KNOWLEDGE_HYBRID_ENABLED=true
+LOCAL_KNOWLEDGE_IMAGES_ENABLED=true
+LOCAL_KNOWLEDGE_AUDIO_ENABLED=true
 ```
 
-#### ขั้นตอนที่ 3: ตั้งค่า SSL/HTTPS ด้วย Caddy (แนะนำ)
+ค่าเหล่านี้เป็น `false` ในไฟล์ตัวอย่าง ก่อนเปิดเสียง ให้ระบุ `AUDIO_EMBEDDING_REVISION` ตาม revision ของ weights และ projector ที่ใช้งานจริง สำหรับภาพให้กำหนด `MULTIMODAL_EMBEDDING_SPACE` ให้ตรงกับชุดโมเดล เมื่อเปลี่ยนโมเดลหรือ Vector space ต้อง Re-index ข้อมูลประเภทนั้น
 
-Caddy จะจัดการเรื่อง SSL certificate (Let's Encrypt) และการต่ออายุให้อัตโนมัติ
+### รูปภาพและ OCR
 
-##### การติดตั้ง (Debian/Ubuntu):
-*(ดูคำสั่งติดตั้งละเอียดใน English section หรือเว็บ Caddy)*
+รองรับ JPG และ PNG พร้อมเก็บภาพต้นฉบับ OCR ใช้ Vision Model แยกจาก Embedding ตั้งโมเดลใน **Settings → Providers** แล้วเลือกโมเดลเริ่มต้นสำหรับ OCR และ Image Q&A
 
-##### สร้าง Caddyfile:
-```bash
-sudo nano /etc/caddy/Caddyfile
+```dotenv
+IMAGE_OCR_MODEL_SOURCE=database
+IMAGE_QA_MODEL_SOURCE=database
+LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED=true
+LOCAL_KNOWLEDGE_IMAGE_QA_ENABLED=true
 ```
 
-ใส่ Config (แก้ `yourdomain.com` เป็นของคุณ):
+หากต้องการตั้งโมเดลผ่าน `.env` ให้ใช้ source `environment` และระบุ Model, Base URL และ API Key ของแต่ละงานให้ครบ ดู [OCR](docs/local-knowledge-ocr.md), [Image Knowledge](docs/local-knowledge-images.md) และ [การค้นหาสินค้าจากภาพ](docs/image-product-matching.md)
 
-```caddy
-yourdomain.com {
-    # Caddy จัดการ SSL ให้เอง
+### เสียง: Local Whisper หรือ Groq
 
-    # Frontend (Next.js)
-    reverse_proxy localhost:3000
+`AUDIO_PROCESSOR_BASE_URL` ชี้ไปยัง **Servio Audio Processor** ซึ่งให้ API `/health`, `/preview`, `/extract` และ `/normalize` จึงไม่สามารถเปลี่ยนค่านี้เป็น Groq โดยตรง
 
-    # WebSocket endpoint
-    handle /ws {
-        reverse_proxy localhost:8000 {
-            header_up Upgrade {http.request.header.Upgrade}
-            header_up Connection {http.request.header.Connection}
-        }
-    }
+Local Whisper เป็นค่าเริ่มต้น:
 
-    # API endpoints
-    handle /api/* {
-        reverse_proxy localhost:8000
-    }
-
-    # Static assets
-    handle /assets/* {
-        reverse_proxy localhost:8000
-    }
-}
+```dotenv
+AUDIO_PROCESSOR_BASE_URL=http://host.docker.internal:8094
+KNOWLEDGE_AUDIO_ASR_PROVIDER=local
+KNOWLEDGE_AUDIO_WHISPER_CLI=/absolute/path/to/whisper-cli
+KNOWLEDGE_AUDIO_WHISPER_MODEL=/absolute/path/to/whisper-model.bin
+KNOWLEDGE_AUDIO_VAD_MODEL=/absolute/path/to/silero-vad.bin
+KNOWLEDGE_AUDIO_ASR_REVISION=your-pinned-whisper-and-vad-revisions
+KNOWLEDGE_AUDIO_USE_GPU=false
 ```
 
-ตรวจสอบและเริ่มทำงาน:
-```bash
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl enable caddy
-sudo systemctl start caddy
+ติดตั้ง `ffmpeg`, `ffprobe`, whisper.cpp และโมเดลก่อนเริ่ม Processor:
+
+```sh
+./scripts/run_audio_processor.sh
+curl --fail http://127.0.0.1:8094/health
 ```
 
-#### ขั้นตอนที่ 4: Build และ Deploy Application
+คำสั่งนี้ bind ที่ `127.0.0.1` สำหรับ Backend แบบ native หาก Backend อยู่ใน Linux Docker ให้ export `KNOWLEDGE_AUDIO_BIND` เป็น IP ของ host interface ที่ Docker เข้าถึงได้ก่อนเริ่มสคริปต์ และจำกัดการเข้าถึงพอร์ต 8094 ให้เฉพาะเครือข่ายที่เชื่อถือ การตั้ง Bind ไว้เฉพาะใน `.env` ไม่มีผลต่อ shell launcher ตรวจทั้งชื่อ `host.docker.internal` และการเชื่อมต่อจาก container จริง
 
-```bash
-cd /path/to/servio
+Health ต้องแสดง `ready: true` หากใช้ Apple Silicon พร้อม whisper.cpp ที่ build รองรับ Metal สามารถตั้ง `KNOWLEDGE_AUDIO_USE_GPU=true` ได้
 
-# Build และ recreate ทั้ง stack
-./services.sh rebuild --no-cache
+หากต้องการถอดเสียงผ่าน Groq ให้เปลี่ยนเฉพาะ Provider และกำหนดคีย์:
 
-# หรือ update จาก GitHub แล้ว deploy
+```dotenv
+KNOWLEDGE_AUDIO_ASR_PROVIDER=groq
+GROQ_API_KEY=your-groq-api-key
+KNOWLEDGE_AUDIO_GROQ_MODEL=whisper-large-v3-turbo
+```
+
+Groq รับเสียง WAV ที่ normalize แล้วเพื่อถอดเสียง การ Preview, Normalize และสร้าง Embedding ยังใช้บริการเดิม ไม่มีการสลับผู้ให้บริการอัตโนมัติเมื่อเกิดข้อผิดพลาด ข้อมูลที่นำเข้าไว้แล้วจะยังค้นหาได้
+
+Processor อ่านเฉพาะ `KNOWLEDGE_AUDIO_*` และ `GROQ_API_KEY` จาก `.env` ส่วนค่าที่กำหนดไว้ใน environment ของ process มีลำดับความสำคัญสูงกว่า ต้องรีสตาร์ต Processor หลังแก้ค่าเหล่านี้ การรีสตาร์ต Backend อย่างเดียวไม่เปลี่ยนค่า Processor
+
+บน Mac mini ที่ติดตั้ง LaunchAgent `ai.softnix.servio.audio-processor` ไว้แล้ว:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/ai.softnix.servio.audio-processor
+```
+
+ใช้ **Reindex** เพื่อถอดเสียงจากต้นฉบับใหม่ด้วย Provider ปัจจุบัน ส่วน **Reindex vectors** ใช้บทถอดเสียงที่เก็บไว้ ดู [คู่มือ Audio Knowledge](docs/local-knowledge-audio.md) สำหรับการติดตั้งและตรวจสอบบริการ
+
+### ขนาดไฟล์และความพร้อม
+
+| ประเภท | รองรับ | ขีดจำกัด |
+| --- | --- | --- |
+| เอกสาร | PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON, HTML และ archives | รวมไฟล์อัปโหลดไม่เกิน 50 MB ต่อครั้ง |
+| รูปภาพ | JPG, PNG | ไม่เกิน 10 MB ต่อภาพ และอยู่ภายใต้ขีดจำกัดรวม |
+| เสียง | WAV, MP3 | ไม่เกิน 50 MB และสูงสุด 10 นาทีต่อไฟล์ |
+
+หน้า **Add Knowledge** ตรวจความพร้อมของบริการ หาก Audio แสดง Unavailable ให้ตรวจ `/health` ของ Audio Processor และบริการ Audio Embedding การตั้งคีย์ Groq อย่างเดียวไม่เปิดฟีเจอร์เสียง
+
+## สร้างทีมและเริ่มสนทนา
+
+1. เปิด **Team Agents** แล้วสร้างหรือเลือกทีม
+2. เข้า **Workflow** เพิ่ม Agent ผ่านปุ่มบน Canvas หรือ **+ Agent** แล้วเลือก Provider, Model และ Instructions
+3. เพิ่ม Tools และ Knowledge ให้ Agent กำหนด Handoffs และบันทึก
+4. ใช้ **Private chat** ทดลองทีม หรือปุ่ม **Chat** ของ Agent เพื่อทดลองเฉพาะตัว
+5. เปิด **Channels** ภายใน Workflow เพื่อเลือก Web Chat เดิมหรือสร้างช่องทางสำหรับผู้ใช้
+
+Private chat ใช้สำหรับทดลองและไม่สร้าง Channel ให้เอง Tools บางประเภท เช่น Custom API และ MCP ไม่พร้อมใช้ใน Preview ให้ทดสอบผ่าน Channel เมื่อเชื่อมระบบเหล่านี้
+
+ใน **Add Knowledge** เลือก Files, Paste Text หรือ URLs สำหรับหลาย URL สามารถแก้ไขและนำเข้าใหม่แยกราย URL ได้ ทดสอบคำถามและตรวจต้นฉบับในหน้ารายละเอียด Knowledge ก่อนให้ Agent ใช้งาน ดู [คู่มือ URL Knowledge](docs/local-knowledge-urls.md)
+
+## เชื่อม API, MCP และ Widget
+
+Custom API รองรับวาง cURL เพื่อเติม Method, URL, Headers, Query และ Body โดยไม่รันคำสั่งนั้น ดู [คู่มือ Custom API](docs/custom-api-integrations.md)
+
+Carousel สินค้ารับข้อมูลตาม schema ที่กำหนดจาก Custom API หรือ MCP `structuredContent` มีข้อความสรุป ภาพ และปุ่ม **ดูรายละเอียด** และ **สอบถามสินค้านี้** ดู [รูปแบบ Product Carousel](docs/web-product-carousel.md)
+
+สร้าง Widget จาก Channel แล้วใช้โค้ดที่ระบบสร้างให้ โค้ดมีค่าของช่องทางและการตั้งค่าการเข้าถึง จึงควรใช้โค้ดที่คัดลอกจากระบบแทนตัวอย่างที่ไม่มี Channel API key ตั้ง Allowed domains และ URL ให้ตรงกับเว็บไซต์ที่จะติดตั้ง
+
+## ดูแลและอัปเดตระบบ
+
+คำสั่งต่อไปนี้ใช้กับ Docker deployment:
+
+```sh
+./services.sh status
+./services.sh logs backend
+./services.sh restart backend
+./services.sh rebuild backend
+./services.sh rebuild frontend
 ./services.sh update
 ```
 
-#### ขั้นตอนที่ 5: ตรวจสอบการ Deployment
+- แก้ Python หรือ dependency: Rebuild Backend
+- แก้ Frontend หรือ `NEXT_PUBLIC_*`: Rebuild Frontend
+- แก้ `.env` ฝั่ง Backend: `./services.sh restart backend` เพื่อ recreate container พร้อมค่าใหม่
+- แก้ค่าของ Audio Processor: รีสตาร์ต Processor แยกต่างหาก
 
-1. **เช็ค SSL**: เข้า `https://yourdomain.com` ต้องขึ้นแม่กุญแจ
-2. **เช็ค WebSocket**: เปิด Console (F12) ต้องไม่มี Error แดงๆ และต่อ `wss://...` สำเร็จ
-3. **เช็คไมโครโฟน**: กดปุ่มโทร Browser ต้องขออนุญาตใช้ไมค์ และปุ่มต้องกดได้ (สีเขียว)
+ฐานข้อมูลเก็บใน `postgres_data` ส่วนไฟล์ Knowledge เก็บภายใต้ `server/data` ตาม volume ใน Compose สำรองทั้งสองส่วนก่อนอัปเดตระบบจริง อย่าลบ volume เมื่อต้องการเพียงอัปเดตโค้ด
 
-#### ปัญหาที่พบบ่อย (Common Issues)
+## พัฒนาและทดสอบ
 
-**ปัญหา 1: ปุ่มโทรเป็นสีเทา กดไม่ได้**
-- **สาเหตุ**: WebSocket เชื่อมต่อไม่ได้ หรือ Mixed Content
-- **แก้**: เช็ค `.env.production` ใน frontend ว่าเป็น `wss://` ถูกต้องไหม แล้ว Build frontend ใหม่
+สำหรับรันแบบ native ต้องมี Node.js 20+, Python 3.11+, `uv` และ PostgreSQL พร้อม pgvector ตั้ง `DATABASE_URL` และ endpoint ของบริการให้เข้าถึงได้จาก process ที่รันจริง
 
-**ปัญหา 2: ไมโครโฟนใช้ไม่ได้ / Browser บล็อก**
-- **สาเหตุ**: เข้าเว็บผ่าน `http://` ธรรมดา
-- **แก้**: ต้องเข้าผ่าน `https://` เท่านั้น
-
-**ปัญหา 3: WebSocket Error**
-- **Console แจ้ง**: `requested insecure content from ws://localhost:8000/ws`
-- **แก้**: Frontend ยังจำค่าเก่าที่เป็น localhost อยู่ ให้แก้ `.env` เป็นโดเมนจริง แลัว Rebuild
-
-#### Checklist ความปลอดภัย
-- [ ] ตั้งรหัสผ่าน Database ให้ยาก
-- [ ] เปิด HTTPS/SSL
-- [ ] ตั้งค่า `ENVIRONMENT=production`
-- [ ] ตั้ง `ALLOWED_ORIGINS` ให้รับเฉพาะโดเมนเรา
-- [ ] ใช้ `wss://` สำหรับ WebSocket
-- [ ] Backup Database สม่ำเสมอ
-- [ ] ตั้งค่า `ALLOWED_ORIGINS` ให้ครอบคลุม `https://yourdomain.com`
-
----
-
-### โครงสร้างความปลอดภัยแบบใหม่ (Security Hardening & Infrastructure)
-
-ระบบปัจจุบันถูกปรับปรุงให้มีความปลอดภัยระดับ Enterprise ดังนี้:
-
-- **Reverse Proxy (Nginx)**: บริการทั้งหมดถูกซ่อนไว้หลัง Nginx Proxy (Port 80/443)
-- **SSL by Default**: รองรับ HTTPS และ WSS (Secure WebSocket) พร้อมระบบสร้าง Self-signed certificate อัตโนมัติใน `services.sh`
-- **Service Isolation**: พอร์ตภายใน (3000, 8000, 5432) จะไม่ถูกเปิดออกสู่ภายนอก เข้าถึงได้เฉพาะผ่าน Proxy เท่านั้น
-- **Read-only Filesystem**: Backend container ทำงานในโหมด Read-only เพื่อป้องกันการเขียนไฟล์ไม่พึงประสงค์ โดยมีการแยก `tmpfs` สำหรับงานชั่วคราว
-- **Unified Origin**: Frontend และ Backend ทำงานบนโดเมนและพอร์ตเดียวกัน ลดปัญหา CORS และ Mixed Content
-
-**ช่องทางการเข้าใช้งานแบบใหม่:**
-- **Frontend & Admin**: `https://localhost`
-- **Backend API**: `https://localhost/api`
-- **WebSocket**: `wss://localhost/ws`
-
----
-
-## การใช้งาน Admin & Agents
-
-### Admin Console
-- เข้าที่: `http://localhost:3001/admin` (หรือพอร์ตอื่นใน dev mode)
-- ล็อกอิน: `admin` (รหัสผ่านตามที่ตั้งใน DB; token จะถูกจำไว้ใน browser)
-
-### การจัดการ Agents (Agents Management)
-มี 2 แท็บหลัก:
-
-#### 1. **Agents Tab**
-- สร้าง/แก้ไข/ลบ Agent ทั่วไป
-- ใส่คำสั่ง (Instructions), เลือกรุ่นโมเดล, ใส่ Tools
-- ตั้งค่าการส่งต่อ (Handoffs)
-- ทดสอบคุยกับ Agent ได้เลยตรงนั้น
-
-#### 2. **File Store Agents Tab**
-- สร้าง Agent ค้นหาเอกสารด้วย Gemini
-- อัปโหลดไฟล์ จัดการไฟล์
-- สร้าง Tool ค้นหาให้อัตโนมัติ (Auto-create tools)
-- ทดสอบคำถามพร้อมดูแหล่งอ้างอิง
-
-### Dynamic Coordinator + DB Agents
-- ระบบจะสร้าง Coordinator agent ขึ้นมาตอน Run time โดยรวมเอา Agent ที่มีใน Database เข้าไปเป็นเงื่อนไขการส่งต่อ (Handoffs) ด้วย
-- ถ้าคุณสร้าง "Dtwin Agent" ใน Admin, ตัว Coordinator ก็จะส่งต่อให้ได้เมื่อ User ถามถึง DTWIN
-- File Store Agent tools ที่สร้างไว้ ทุก Agent สามารถดึงไปใช้ได้
-
-### Dtwin Agent Tips
-- สำหรับการทำ Offline/Dev environment ให้ปิด MCP tools เพื่อไม่ให้ Error:
-  - เพิ่มใน `.env`: `DISABLE_MCP=1`
-- ถ้าจะเทส Dtwin แบบไม่ต่อ Network ให้รัน: `uv run python server/scripts/configure_dtwin_fallback.py` (จะเปลี่ยนไปใช้ Mock tool แทน)
-
-## Screenshots & GIFs
-
-### Admin Dashboard
-หน้าแดชบอร์ดแสดงภาพรวมระบบพร้อมสถิติเรียลไทม์
-
-![Admin Dashboard](dashboard-preview.png)
-
-**ฟีเจอร์เด่น:**
-- **System Overview**: ดูจำนวน Agent, Tool ทั้งหมด
-- **Quick Actions**: ปุ่มลัดสร้าง Agent หรือ Tool ใหม่
-- **Clean Interface**: ดีไซน์ทันสมัย ใช้งานง่าย
-- **เมนูจัดการ**: แถบด้านซ้ายสำหรับเข้าถึงฟังก์ชันต่างๆ
-
-### Dtwin Transfer (การส่งต่องาน)
-ภาพตัวอย่างการที่ User ถามถึง DTWIN แล้วระบบส่งต่อไปยัง Dtwin Agent:
-
-![Dtwin transfer](docs/images/dtwin-transfer.png)
-
-### Admin Tool Form (MCP)
-![MCP tool form](.playwright-mcp/mcp-tool-form.png)
-
-### Admin Settings Saved
-![Admin settings success](.playwright-mcp/admin-settings-success.png)
-
-## การใช้งานแอปพลิเคชัน (Using the App)
-
-### อินเทอร์เฟซแบบ Push-to-Talk
-
-1. **เริ่มโทร**: กดปุ่มโทรสีเขียว 🟢
-2. **ปุ่มพูดจะปรากฏ**: ปุ่มไมโครโฟนสีฟ้าใหญ่ๆ
-3. **กดค้างเพื่อพูด**:
-   - กดปุ่มค้างไว้ (คลิกเมาส์ หรือแตะหน้าจอ)
-   - ปุ่มเปลี่ยนเป็นสีแดง 🔴 และขึ้นว่า "Recording..."
-   - พูดข้อความของคุณ
-4. **ปล่อยเพื่อส่ง**:
-   - ปล่อยปุ่มเมื่อพูดจบ
-   - เสียงจะถูกส่งไปประมวลผลทันที
-   - ปุ่มกลับเป็นสีฟ้า พร้อมรับคำสั่งต่อไป
-5. **วางสาย**: กดปุ่มวางสายสีแดง เพื่อจบการทำงาน
-
-### Console Debugging
-กด F12 เพื่อดู Log การทำงานได้:
-```
-📞 Call started - Ready for Push-to-Talk
-🎤 Push-to-Talk: Recording started
-🛑 Push-to-Talk: Recording stopped
-📤 Sending audio, length: 48000
-Transferred to Stylist Agent
-📞 Call ended
+```sh
+make sync
+cd frontend
+npm run dev
 ```
 
-### ตัวอย่างบทสนทนา
+`npm run dev` เริ่มทั้ง Next.js และ Backend สำหรับรันแยก ใช้ `npm run dev:next` ใน `frontend` และ `uv run server.py` ใน `server` ตั้งค่า Frontend API และ WebSocket ให้ตรงกับพอร์ตที่แสดงตอนเริ่มบริการ
 
-**ขอคำแนะนำแฟชั่น**:
-```
-คุณ: [กดค้าง] "หน้าร้อนใส่ชุดอะไรดี?"
-Stylist Agent: "แนะนำเสื้อยืดผ้าฝ้ายระบายอากาศครับ..."
+รัน Backend tests จาก `server`:
 
-คุณ: [กดค้าง] "ขอเทรนด์ในกรุงเทพฯ ช่วงนี้หน่อย"
-Stylist Agent: [Uses WebSearch] "เทรนด์ตอนนี้ที่กำลังมาคือ..."
+```sh
+uv run pytest tests/test_audio_processor.py tests/test_audio_processor_groq.py tests/test_knowledge_audio.py tests/test_knowledge_images.py tests/test_local_rag.py tests/test_local_rag_coverage.py -q
 ```
 
-**จัดการคำสั่งซื้อ**:
+ชุดทดสอบ timeout ของ Groq ใช้ HTTP server บน loopback และต้องเปิดพอร์ต local ได้ การทดสอบ API จำลองไม่ใช้ Groq key จริง สำหรับการยืนยัน Provider จริง ให้ใช้เสียงตัวอย่างที่อนุญาตให้ส่งไปยัง Provider และฐานข้อมูลทดสอบแยก
+
+รัน Frontend checks จาก `frontend`:
+
+```sh
+npm run test:regression
+npx tsc --noEmit --incremental false
+npm run build
 ```
-คุณ: [กดค้าง] "เช็ครายการสั่งซื้อให้หน่อย"
-→ Transferred to Customer Support Agent
-Customer Support: "คุณมี 9 รายการครับ ล่าสุดคือ AB472..."
 
-คุณ: [กดค้าง] "ขอคืนเงินรายการ AB472"
-Customer Support: [Uses submit_refund_request] "ดำเนินการคืนเงินให้เรียบร้อยครับ"
-```
+ดู [Workflow deployment](docs/workflow-deployment.md) สำหรับตรวจ artifact และ public URL ก่อนนำ release ไปใช้
 
-## Contributing
+## คู่มือเพิ่มเติม
 
-ยินดีต้อนรับทุก Issues และ Pull Requests เพื่อปรับปรุงแอปพลิเคชันนี้
+- [โมเดลและ Provider](docs/model-configuration.md)
+- [Local Knowledge และ pgvector](docs/LOCAL_KNOWLEDGE_PGVECTOR.md)
+- [ขอบเขต Legacy Gemini](docs/LOCAL_KNOWLEDGE_NO_GEMINI_MIGRATION.md)
+- [รูปภาพและ OCR](docs/local-knowledge-ocr.md)
+- [เสียงและ Audio Processor](docs/local-knowledge-audio.md)
+- [URL Knowledge](docs/local-knowledge-urls.md)
+- [Product Carousel](docs/web-product-carousel.md)
 
-## License
+## Contributing และ License
 
-โปรเจกต์นี้ใช้สัญญาอนุญาตแบบ MIT ดูรายละเอียดในไฟล์ LICENSE
+ส่ง Issues และ Pull Requests พร้อมขอบเขตการเปลี่ยนแปลงและผลทดสอบ โปรเจกต์ใช้ [MIT License](LICENSE)

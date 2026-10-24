@@ -1,11 +1,25 @@
 import base64
 import io
 import json
+import hashlib
+import os
+from pathlib import Path
+import subprocess
+import sys
 import shutil
 import wave
 import pytest
 from fastapi.testclient import TestClient
 from audio_processor import service
+
+
+@pytest.fixture(autouse=True)
+def isolated_processor_settings(monkeypatch):
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'local')
+    for name in ('GROQ_API_KEY', 'KNOWLEDGE_AUDIO_GROQ_MODEL', 'KNOWLEDGE_AUDIO_GROQ_BASE_URL',
+                 'KNOWLEDGE_AUDIO_SEGMENT_SECONDS', 'KNOWLEDGE_AUDIO_OVERLAP_SECONDS',
+                 'KNOWLEDGE_AUDIO_MAX_SECONDS'):
+        monkeypatch.delenv(name, raising=False)
 
 
 def wav(seconds=1):
@@ -151,3 +165,108 @@ def test_invalid_gpu_configuration_rejected(monkeypatch):
     monkeypatch.setenv('KNOWLEDGE_AUDIO_USE_GPU','maybe')
     with pytest.raises(ValueError,match='Invalid local audio GPU configuration'):
         service.use_gpu()
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'),reason='local ffmpeg required')
+def test_groq_extract_projects_transcript_without_local_assets(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'groq')
+    monkeypatch.setenv('GROQ_API_KEY', 'test-key')
+    monkeypatch.delenv('KNOWLEDGE_AUDIO_WHISPER_CLI', raising=False)
+    requests = []
+    client = httpx.AsyncClient
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={'duration': 27, 'segments': [
+            {'start': 1, 'end': 2, 'text': ' First '},
+            {'start': 19, 'end': 21, 'text': 'Across windows'},
+            {'start': 23, 'end': 26, 'text': 'Last'},
+        ]})
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kw: client(transport=httpx.MockTransport(respond), **kw))
+    result = service.analyze(wav(27), tmp_path, transcribe=True)
+    assert [row['transcript'] for row in result['audio']['segments']] == ['First Across windows', 'Across windows Last']
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(request.url) == 'https://api.groq.com/openai/v1/audio/transcriptions'
+    assert request.headers['authorization'] == 'Bearer test-key'
+    body = request.content
+    for value in [b'whisper-large-v3-turbo', b'verbose_json', b'timestamp_granularities[]', b'segment', b'audio/wav']:
+        assert value in body
+    start = body.index(b'RIFF')
+    with wave.open(io.BytesIO(body[start:])) as audio:
+        assert (audio.getnchannels(), audio.getframerate(), audio.getsampwidth(), audio.getnframes()) == (1, 16000, 2, 432000)
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'),reason='local ffmpeg required')
+def test_groq_preview_normalize_need_no_credentials_or_remote(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'groq')
+    monkeypatch.delenv('GROQ_API_KEY', raising=False)
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kw: pytest.fail('preview/normalize contacted Groq'))
+    result = service.analyze(wav(), tmp_path)
+    other = tmp_path / 'normalize'; other.mkdir()
+    assert service.analyze(wav(), other, normalize=True)['wav_segments']
+    assert result['audio']['transcript_status'] == 'empty'
+
+
+def test_groq_health_ignores_local_assets_and_gpu(monkeypatch):
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'groq')
+    monkeypatch.setenv('GROQ_API_KEY', 'test-key')
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_USE_GPU', 'invalid-local-setting')
+    monkeypatch.delenv('KNOWLEDGE_AUDIO_WHISPER_CLI', raising=False)
+    monkeypatch.setattr(service.shutil, 'which', lambda binary: '/fake/' + binary)
+    result = service.health()
+    assert result['ready'] is True
+    assert result['provider'] == 'groq'
+    assert 'whisper_cli' not in result['dependencies']
+    assert 'use_gpu' not in result
+    monkeypatch.delenv('GROQ_API_KEY')
+    assert service.health()['ready'] is False
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'),reason='local ffmpeg required')
+def test_default_local_fingerprint_is_unchanged(tmp_path, monkeypatch):
+    monkeypatch.delenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', raising=False)
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_REVISION', 'historical-revision')
+    result = service.analyze(wav(), tmp_path)
+    expected = hashlib.sha256(json.dumps(['pcm16-mono16k-v1', 20000, 2000, 'historical-revision', 'required-silero-vad-v1']).encode()).hexdigest()
+    assert result['audio']['fingerprint'] == expected
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'),reason='local ffmpeg required')
+def test_groq_fingerprint_tracks_model_not_local_weights(tmp_path, monkeypatch):
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'groq')
+    initial = service.analyze(wav(), tmp_path)['audio']['fingerprint']
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_REVISION', 'different-local-weights')
+    other = tmp_path / 'other'; other.mkdir()
+    assert service.analyze(wav(), other)['audio']['fingerprint'] == initial
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_GROQ_MODEL', 'whisper-large-v3')
+    third = tmp_path / 'third'; third.mkdir()
+    assert service.analyze(wav(), third)['audio']['fingerprint'] != initial
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'local')
+    fourth = tmp_path / 'fourth'; fourth.mkdir()
+    assert service.analyze(wav(), fourth)['audio']['fingerprint'] != initial
+
+
+def test_unknown_provider_health_fails_safely(monkeypatch):
+    monkeypatch.setenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'private-invalid-value')
+    result = service.health()
+    assert result['ready'] is False
+    assert 'private-invalid-value' not in json.dumps(result)
+
+
+def test_processor_dotenv_load_is_scoped_and_preserves_exported_values(tmp_path):
+    root = tmp_path / 'project'
+    processor = root / 'server' / 'audio_processor'
+    processor.mkdir(parents=True)
+    module = processor / 'service.py'
+    shutil.copyfile(service.__file__, module)
+    (root / '.env').write_text('KNOWLEDGE_AUDIO_ASR_PROVIDER=groq\nGROQ_API_KEY=file-key\nDATABASE_URL=unrelated-database\nAUDIO_EMBEDDING_MODEL=unrelated-model\nLOCAL_KNOWLEDGE_AUDIO_ENABLED=true\n')
+    environment = dict(os.environ, PYTHONPATH=str(Path(service.__file__).resolve().parents[1]), KNOWLEDGE_AUDIO_ASR_PROVIDER='local')
+    for name in ('GROQ_API_KEY', 'DATABASE_URL', 'AUDIO_EMBEDDING_MODEL', 'LOCAL_KNOWLEDGE_AUDIO_ENABLED'):
+        environment.pop(name, None)
+    result = subprocess.run([sys.executable, '-c',
+        'import json,os,runpy,sys; runpy.run_path(sys.argv[1]); print(json.dumps({key:os.getenv(key) for key in ["KNOWLEDGE_AUDIO_ASR_PROVIDER","GROQ_API_KEY","DATABASE_URL","AUDIO_EMBEDDING_MODEL","LOCAL_KNOWLEDGE_AUDIO_ENABLED"]}))',
+        str(module)], capture_output=True, check=True, text=True, env=environment)
+    assert json.loads(result.stdout) == {'KNOWLEDGE_AUDIO_ASR_PROVIDER': 'local', 'GROQ_API_KEY': 'file-key',
+        'DATABASE_URL': None, 'AUDIO_EMBEDDING_MODEL': None, 'LOCAL_KNOWLEDGE_AUDIO_ENABLED': None}

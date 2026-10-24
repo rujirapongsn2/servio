@@ -12,9 +12,15 @@ import tempfile
 import threading
 import wave
 from pathlib import Path
+from dotenv import dotenv_values
 from fastapi import FastAPI, HTTPException, Request
 from app.knowledge_audio import (AudioSegment, ExtractedAudio, MAX_BYTES, AudioProcessingError,
     TIMEOUT_ERRORS, UPLOAD_TIMEOUT, PROBE_TIMEOUT, DECODE_TIMEOUT, asr_timeout)
+from audio_processor import groq
+
+for _name, _value in dotenv_values(Path(__file__).resolve().parents[2] / '.env').items():
+    if _value is not None and (_name.startswith('KNOWLEDGE_AUDIO_') or _name == 'GROQ_API_KEY'):
+        os.environ.setdefault(_name, _value)
 
 app = FastAPI(docs_url=None, redoc_url=None)
 _lane = threading.BoundedSemaphore(1)
@@ -30,6 +36,13 @@ def use_gpu():
     if value not in {'true', '1', 'yes', 'false', '0', 'no'}:
         raise AudioProcessingError('Invalid local audio GPU configuration')
     return value in {'true', '1', 'yes'}
+
+
+def asr_provider():
+    value = os.getenv('KNOWLEDGE_AUDIO_ASR_PROVIDER', 'local').strip().lower()
+    if value not in {'local', 'groq'}:
+        raise AudioProcessingError('Invalid audio transcription provider configuration')
+    return value
 
 
 def run(argv, timeout=120, *, stage='decode'):
@@ -83,8 +96,11 @@ def analyze(data, directory, transcribe=False, normalize=False):
     if len(intervals) > 100:
         raise AudioProcessingError('Too many audio segments')
     transcripts = []
+    provider = asr_provider()
     asr_revision = os.getenv('KNOWLEDGE_AUDIO_ASR_REVISION', '')
-    if transcribe:
+    if transcribe and provider == 'groq':
+        transcripts = groq.transcribe(pcm, duration_ms)
+    elif transcribe:
         cli = Path(os.environ['KNOWLEDGE_AUDIO_WHISPER_CLI'])
         model = Path(os.environ['KNOWLEDGE_AUDIO_WHISPER_MODEL'])
         vad = Path(os.environ['KNOWLEDGE_AUDIO_VAD_MODEL'])
@@ -111,6 +127,8 @@ def analyze(data, directory, transcribe=False, normalize=False):
     segments = [AudioSegment(segment_id=f's{i:04}', start_ms=lo, end_ms=hi,
         transcript=' '.join(text for a, b, text in transcripts if a < hi and b > lo)) for i, (lo, hi) in enumerate(intervals)]
     fingerprint = hashlib.sha256(json.dumps(['pcm16-mono16k-v1', window, overlap, asr_revision, 'required-silero-vad-v1']).encode()).hexdigest()
+    if provider == 'groq':
+        fingerprint = hashlib.sha256(json.dumps(['pcm16-mono16k-v1', window, overlap, 'groq', groq.model_name(), 'verbose-json-segments-v1']).encode()).hexdigest()
     audio = ExtractedAudio(asset_id=hashlib.sha256(data).hexdigest(), mime=mime, duration_ms=duration_ms, segments=segments,
         transcript_status='ready' if any(s.transcript for s in segments) else 'empty', fingerprint=fingerprint)
     payload = {'audio': audio.model_dump()}
@@ -154,8 +172,20 @@ async def handle(request, *, transcribe=False, normalize=False):
 
 @app.get('/health')
 def health():
+    decoder = bool(shutil.which('ffmpeg') and shutil.which('ffprobe'))
+    try:
+        provider = asr_provider()
+    except AudioProcessingError:
+        return {'ready': False, 'provider': 'invalid', 'dependencies': {'decoder': decoder, 'provider_config': False}}
+    if provider == 'groq':
+        dependencies = {'decoder': decoder, 'api_key': bool(os.getenv('GROQ_API_KEY', '').strip()), 'provider_config': True}
+        try:
+            groq.configuration()
+        except AudioProcessingError:
+            dependencies['provider_config'] = False
+        return {'ready': all(dependencies.values()), 'provider': provider, 'dependencies': dependencies}
     dependencies = {
-        'decoder': bool(shutil.which('ffmpeg') and shutil.which('ffprobe')),
+        'decoder': decoder,
         'whisper_cli': bool(os.getenv('KNOWLEDGE_AUDIO_WHISPER_CLI') and Path(os.environ['KNOWLEDGE_AUDIO_WHISPER_CLI']).is_file() and os.access(os.environ['KNOWLEDGE_AUDIO_WHISPER_CLI'], os.X_OK)),
         'asr_model': bool(os.getenv('KNOWLEDGE_AUDIO_WHISPER_MODEL') and Path(os.environ['KNOWLEDGE_AUDIO_WHISPER_MODEL']).is_file()),
         'vad_model': bool(os.getenv('KNOWLEDGE_AUDIO_VAD_MODEL') and Path(os.environ['KNOWLEDGE_AUDIO_VAD_MODEL']).is_file()),

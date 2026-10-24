@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 import httpx
+from app.embedding_auth import headers as embedding_headers
 import jwt
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -63,13 +64,14 @@ class LocalImageEmbeddingClient:
         if not base.startswith(("http://", "https://")):
             raise ValueError("MULTIMODAL_EMBEDDING_BASE_URL must use HTTP(S)")
         self.url = base + "/embeddings"
+        self._headers = embedding_headers('MULTIMODAL_EMBEDDING_API_KEY')
         self.model = os.getenv("MULTIMODAL_EMBEDDING_MODEL", "servio-embeddinggemma2-images")
         self.query_prefix = os.getenv("MULTIMODAL_QUERY_PREFIX", "task: search result | query: ")
         self.timeout = min(300, max(1, float(os.getenv("MULTIMODAL_EMBEDDING_TIMEOUT_SECONDS", "180"))))
         self.space = hashlib.sha256(json.dumps([self.model, self.query_prefix, os.getenv("MULTIMODAL_EMBEDDING_SPACE", "embeddinggemma2-bf16-mmproj-vision256-v1"), "image-rgb1536-v1"]).encode()).hexdigest()
 
     def _request(self, value):
-        response = httpx.post(self.url, json={"model": self.model, "input": [value]}, timeout=self.timeout)
+        response = httpx.post(self.url, json={"model": self.model, "input": [value]}, timeout=self.timeout, **({"headers": self._headers} if self._headers else {}))
         response.raise_for_status()
         data = response.json()["data"]
         if len(data) != 1 or data[0].get("index") != 0:
