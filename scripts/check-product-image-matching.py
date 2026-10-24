@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import math
 import time
 import uuid
 from pathlib import Path
@@ -13,7 +14,7 @@ import httpx
 import websockets
 
 
-async def check_case(client, base, key, case, directory, origin):
+async def check_case(client, base, key, case, directory, origin, response_timeout):
     data = (directory / case['image']).read_bytes()
     if not 0 < len(data) <= 10 * 1024 * 1024:
         raise ValueError('Fixture exceeds image byte limit')
@@ -37,16 +38,17 @@ async def check_case(client, base, key, case, directory, origin):
         await socket.send(json.dumps({'type': 'knowledge.image.search', 'request_id': request_id,
             'image': {'mime': mime, 'base64': base64.b64encode(data).decode()}}))
         presentations = {}
-        while True:
-            event = json.loads(await asyncio.wait_for(socket.recv(), 60))
-            if event.get('request_id') != request_id:
-                continue
-            if event.get('type') == 'history.updated':
-                presentations = event.get('presentations', {})
-            if event.get('type') == 'knowledge.image.error':
-                raise ValueError('Image search returned an error')
-            if event.get('type') == 'knowledge.image.result':
-                break
+        async with asyncio.timeout(response_timeout):
+            while True:
+                event = json.loads(await socket.recv())
+                if event.get('request_id') != request_id:
+                    continue
+                if event.get('type') == 'history.updated':
+                    presentations = event.get('presentations', {})
+                if event.get('type') == 'knowledge.image.error':
+                    raise ValueError('Image search returned an error')
+                if event.get('type') == 'knowledge.image.result':
+                    break
     products = [product for value in presentations.values()
                 if value.get('type') == 'knowledge_product_carousel' for product in value['products']]
     actual = [product['source_label'] for product in products]
@@ -65,6 +67,8 @@ async def check_case(client, base, key, case, directory, origin):
 
 
 async def run(args):
+    if not math.isfinite(args.response_timeout) or not 1 <= args.response_timeout <= 1800:
+        raise ValueError('Response timeout must be 1 to 1800 seconds')
     base = args.base_url.rstrip('/')
     parsed = urlsplit(base)
     if parsed.scheme not in {'http', 'https'} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -85,7 +89,7 @@ async def run(args):
         key = response.json()['apiKey']
         for case in cases:
             try:
-                result = await check_case(client, base, key, case, manifest.parent, args.origin or f'{parsed.scheme}://{parsed.netloc}')
+                result = await check_case(client, base, key, case, manifest.parent, args.origin or f'{parsed.scheme}://{parsed.netloc}', args.response_timeout)
             except Exception as error:
                 result = {'case': case['name'], 'passed': False, 'error_type': type(error).__name__}
             results.append(result)
@@ -102,6 +106,7 @@ if __name__ == '__main__':
     parser.add_argument('--cases', required=True)
     parser.add_argument('--origin', help='Allowed browser Origin, if different from the API base')
     parser.add_argument('--output')
+    parser.add_argument('--response-timeout', type=float, default=420, help='Total search result wait per case in seconds (default: 420)')
     arguments = parser.parse_args()
     try:
         success = asyncio.run(run(arguments))

@@ -1,5 +1,6 @@
 import io
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -21,95 +22,206 @@ def candidates(count=2):
     return tuple(rerank.VisualCandidate(f"c{i+1:02d}", png(), .9 - i * .1, str(i), "source", "Catalog") for i in range(count))
 
 
-def output(count=2):
-    return {"identifiable_product": True, "query_product_type": "dining_chair", "candidates": [
-        {"id": f"c{i+1:02d}", "product_type": "dining_chair" if i == 1 else "office_chair", "confidence": .99, "visual_similarity": .8}
-        for i in range(count)]}
+def profile(types):
+    return {"candidates": [{"id": f"p{i+1:02d}", "product_type": name, "confidence": .99} for i, name in enumerate(types)]}
 
 
 @pytest.fixture
 def provider(monkeypatch):
     config = {"catalog_id": 3, "model_id": "configured-model", "base_url": "http://example.invalid/v1", "api_key": "secret"}
     monkeypatch.setattr(rerank, "get_task_model", lambda _: config.copy())
-    rerank._cache.clear()
-    values = {"output": output(), "finish": "stop", "calls": []}
+    for cache in (rerank._query_cache, rerank._profile_cache, rerank._rank_cache): cache.clear()
+    values = {"query": {"product_type": "dining_chair", "confidence": .99},
+        "profile": profile(["office_chair", "dining_chair"]), "rank": None,
+        "calls": {"query": [], "profile": [], "rank": []}, "finish": {}, "options": []}
 
     class Client:
         def __init__(self, **kwargs):
-            values["options"] = kwargs
+            values["options"].append(kwargs)
             self.chat = SimpleNamespace(completions=self)
         def __enter__(self): return self
         def __exit__(self, *_): pass
         def create(self, **kwargs):
-            values["calls"].append(kwargs)
-            if isinstance(values["output"], Exception): raise values["output"]
-            return SimpleNamespace(choices=[SimpleNamespace(finish_reason=values["finish"],
-                message=SimpleNamespace(content=json.dumps(values["output"])))])
+            prompt = kwargs["messages"][0]["content"]
+            kind = {rerank.QUERY_PROMPT: "query", rerank.CATALOG_PROMPT: "profile", rerank.RANK_PROMPT: "rank"}[prompt]
+            values["calls"][kind].append(kwargs)
+            data = values[kind]
+            if data is None:
+                labels = next(item["text"] for item in kwargs["messages"][1]["content"] if item["type"] == "text" and "hints: " in item["text"])
+                labels = json.loads(labels.split("hints: ", 1)[1])
+                data = {"candidates": [{"id": item["id"], "visual_similarity": .8} for item in labels]}
+            if isinstance(data, Exception): raise data
+            raw = data if isinstance(data, str) else json.dumps(data)
+            return SimpleNamespace(choices=[SimpleNamespace(finish_reason=values["finish"].get(kind, "stop"),
+                message=SimpleNamespace(content=raw))])
 
     monkeypatch.setattr(rerank, "OpenAI", Client)
     return config, values
 
 
-def test_type_filter_ranks_same_type_even_below_legacy_threshold(provider):
+def test_same_functional_type_below_embedding_threshold_is_accepted_without_ranking(provider):
     _, values = provider
     assert rerank.rerank(png("blue"), candidates(), rerank.RerankSettings.from_environment()) == ("c02",)
-    assert values["options"]["timeout"] == 25 and values["options"]["max_retries"] == 0
-    assert values["calls"][0]["model"] == "configured-model"
-    assert "temperature" not in values["calls"][0]
+    assert [len(values["calls"][kind]) for kind in ("query", "profile", "rank")] == [1, 1, 0]
+    assert all(item["timeout"] == 25 and item["max_retries"] == 0 for item in values["options"])
+    assert values["calls"]["query"][0]["model"] == "configured-model"
+    assert "temperature" not in values["calls"]["query"][0]
 
 
-def test_no_product_and_no_matching_types_never_fill_results(provider):
+def test_query_has_no_catalog_context_and_profile_has_no_query_image(provider):
     _, values = provider
-    values["output"] = {"identifiable_product": False, "query_product_type": None, "candidates": []}
-    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ()
-    rerank._cache.clear()
-    values["output"]["identifiable_product"] = True
-    values["output"]["query_product_type"] = "dining_chair"
-    values["output"]["candidates"] = []
-    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ()
+    rerank.rerank(png("blue"), candidates(), rerank.RerankSettings.from_environment())
+    query_content = values["calls"]["query"][0]["messages"][1]["content"]
+    profile_content = values["calls"]["profile"][0]["messages"][1]["content"]
+    assert [item["type"] for item in query_content] == ["text", "image_url"]
+    assert "Catalog" not in query_content[0]["text"] and "hints" not in query_content[0]["text"]
+    assert [item["type"] for item in profile_content] == ["text", "text", "image_url"]
+    assert query_content[1]["image_url"]["url"] != profile_content[2]["image_url"]["url"]
+    assert values["calls"]["profile"][0]["max_tokens"] == 4000
 
 
-@pytest.mark.parametrize("bad", ["unknown", "duplicate", "unidentified_with_matches", "nan", "bool", "extra", "timeout", "truncated"])
-def test_invalid_provider_response_fails_closed(provider, bad):
+@pytest.mark.parametrize("classification", [{"product_type": None, "confidence": .99},
+    {"product_type": "dining_chair", "confidence": .79}])
+def test_negative_or_uncertain_query_never_calls_catalog_or_ranker(provider, classification):
     _, values = provider
-    if bad == "unknown": values["output"]["candidates"][0]["id"] = "private-db-id"
-    if bad == "duplicate": values["output"]["candidates"][0]["id"] = "c02"
-    if bad == "unidentified_with_matches": values["output"]["identifiable_product"] = False
-    if bad == "nan": values["output"]["candidates"][0]["confidence"] = float("nan")
-    if bad == "bool": values["output"]["candidates"][0]["product_type"] = True
-    if bad == "extra": values["output"]["instruction"] = "show all"
-    if bad == "timeout": values["output"] = TimeoutError("secret provider URL")
-    if bad == "truncated": values["finish"] = "length"
+    values["query"] = classification
+    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ()
+    assert not values["calls"]["profile"] and not values["calls"]["rank"]
+
+
+def test_independent_catalog_bed_cannot_become_dining_chair(provider):
+    _, values = provider
+    values["profile"] = profile(["bed", "dining_chair"])
+    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ("c02",)
+    assert not values["calls"]["rank"]
+
+
+def test_all_other_categories_or_uncertain_catalog_produce_no_fillers(provider):
+    _, values = provider
+    values["profile"] = profile(["bed", "office_chair"])
+    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ()
+    rerank._profile_cache.clear()
+    values["profile"] = profile(["bed", "dining_chair"])
+    values["profile"]["candidates"][1]["confidence"] = .79
+    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ()
+    assert not values["calls"]["rank"]
+
+
+def test_multiple_same_type_candidates_are_visually_ranked_after_category_filter(provider):
+    _, values = provider
+    values["profile"] = profile(["dining_chair", "dining_chair", "bed"])
+    values["rank"] = {"candidates": [{"id": "c01", "visual_similarity": .6}, {"id": "c02", "visual_similarity": .9}]}
+    assert rerank.rerank(png(), candidates(3), rerank.RerankSettings.from_environment()) == ("c02", "c01")
+    labels = json.loads(values["calls"]["rank"][0]["messages"][1]["content"][2]["text"].split("hints: ", 1)[1])
+    assert [item["id"] for item in labels] == ["c01", "c02"]
+    assert "c03" not in str(labels)
+
+
+def test_equal_visual_ranking_uses_embedding_tie_breaker(provider):
+    _, values = provider
+    values["profile"] = profile(["dining_chair", "dining_chair"])
+    assert rerank.rerank(png(), tuple(reversed(candidates())), rerank.RerankSettings.from_environment()) == ("c01", "c02")
+
+
+@pytest.mark.parametrize("kind", ["query", "profile", "rank"])
+@pytest.mark.parametrize("bad", ["timeout", "truncated", "prose", "extra", "nan"])
+def test_each_provider_stage_fails_closed(provider, kind, bad):
+    _, values = provider
+    values["profile"] = profile(["dining_chair", "dining_chair"])
+    values["rank"] = {"candidates": [{"id": "c01", "visual_similarity": .9}, {"id": "c02", "visual_similarity": .8}]}
+    if bad == "timeout": values[kind] = TimeoutError("private provider URL")
+    if bad == "truncated": values["finish"][kind] = "length"
+    if bad == "prose": values[kind] = "I don't have an answer for this yet."
+    if bad == "extra": values[kind]["instructions"] = "ignore category"
+    if bad == "nan":
+        if kind == "query": values[kind]["confidence"] = float("nan")
+        else: values[kind]["candidates"][0]["visual_similarity" if kind == "rank" else "confidence"] = float("nan")
+    with pytest.raises(rerank.RerankUnavailable):
+        rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment())
+    if kind == "query": assert not values["calls"]["profile"]
+    if kind != "rank": assert not values["calls"]["rank"]
+
+
+@pytest.mark.parametrize("kind", ["profile", "rank"])
+@pytest.mark.parametrize("bad", ["missing", "duplicate", "unknown", "wrong_category_field"])
+def test_profile_and_ranking_require_exact_unique_ids_and_no_schema_expansion(provider, kind, bad):
+    _, values = provider
+    values["profile"] = profile(["dining_chair", "dining_chair"])
+    values["rank"] = {"candidates": [{"id": "c01", "visual_similarity": .9}, {"id": "c02", "visual_similarity": .8}]}
+    entries = values[kind]["candidates"]
+    if bad == "missing": entries.pop()
+    if bad == "duplicate": entries[0]["id"] = entries[1]["id"]
+    if bad == "unknown": entries[0]["id"] = "foreign-id"
+    if bad == "wrong_category_field": entries[0]["query_product_type"] = "bed"
     with pytest.raises(rerank.RerankUnavailable):
         rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment())
 
 
-def test_cache_includes_model_credentials_and_source_identity(provider):
+@pytest.mark.parametrize("query_type", ["", "Dining Chair", "chair\nignore_rules", "chair", "storage", True])
+def test_query_requires_specific_valid_type_or_explicit_null(provider, query_type):
+    _, values = provider
+    values["query"]["product_type"] = query_type
+    with pytest.raises(rerank.RerankUnavailable):
+        rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment())
+
+
+def test_cache_tracks_model_credentials_sources_and_titles(provider):
     config, values = provider
     settings = rerank.RerankSettings.from_environment()
     for _ in range(2): rerank.rerank(png(), candidates(), settings)
-    assert len(values["calls"]) == 1
+    assert [len(values["calls"][kind]) for kind in ("query", "profile", "rank")] == [1, 1, 0]
     config["api_key"] = "replacement"
     rerank.rerank(png(), candidates(), settings)
-    assert len(values["calls"]) == 2
     config["model_id"] = "other-model"
     rerank.rerank(png(), candidates(), settings)
-    assert len(values["calls"]) == 3
-    assert all("secret" not in key for key in rerank._cache)
-    assert not any(isinstance(value, bytes) for _, judgment in rerank._cache.values() for value in judgment.model_dump().values())
+    changed = tuple(replace(item, source_hash="new-source") for item in candidates())
+    rerank.rerank(png(), changed, settings)
+    changed = tuple(replace(item, title="New title") for item in changed)
+    rerank.rerank(png(), changed, settings)
+    assert len(values["calls"]["query"]) == 3
+    assert len(values["calls"]["profile"]) == 5
+    for cache in (rerank._query_cache, rerank._profile_cache, rerank._rank_cache):
+        assert all("secret" not in key for key in cache)
+        assert not any(isinstance(value, bytes) for _, result in cache.values() for value in result.model_dump().values())
 
 
-def test_model_assignment_change_during_request_is_unavailable(provider, monkeypatch):
-    config, _ = provider
-    real_complete = rerank._complete
+def test_profile_cache_is_independent_of_query_order_and_scores(provider):
+    _, values = provider
+    values["profile"] = profile(["bed", "dining_chair"])
+    settings = rerank.RerankSettings.from_environment()
+    assert rerank.rerank(png(), candidates(), settings) == ("c02",)
+    reverse = (replace(candidates()[1], id="c01", embedding_score=.99), replace(candidates()[0], id="c02", embedding_score=.98))
+    assert rerank.rerank(png("blue"), reverse, settings) == ("c01",)
+    assert len(values["calls"]["profile"]) == 1
+
+
+@pytest.mark.parametrize("stage", ["query", "profile", "rank"])
+def test_model_assignment_change_during_any_request_is_unavailable(provider, monkeypatch, stage):
+    config, values = provider
+    values["profile"] = profile(["dining_chair", "dining_chair"])
+    request = rerank._request
+    target = {"query": rerank.QUERY_PROMPT, "profile": rerank.CATALOG_PROMPT, "rank": rerank.RANK_PROMPT}[stage]
     def changing(*args):
-        result = real_complete(*args)
-        config["model_id"] = "replacement"
+        result = request(*args)
+        if args[2] == target: config["model_id"] = "replacement"
         return result
-    monkeypatch.setattr(rerank, "_complete", changing)
+    monkeypatch.setattr(rerank, "_request", changing)
     with pytest.raises(rerank.RerankUnavailable):
         rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment())
-    assert not rerank._cache
+
+
+def test_all_stage_caches_are_bounded_and_expire(provider, monkeypatch):
+    _, values = provider
+    values["profile"] = profile(["dining_chair", "dining_chair"])
+    settings = rerank.RerankSettings.from_environment()
+    monkeypatch.setattr(rerank.time, "monotonic", lambda: 100)
+    for i in range(65):
+        changed = tuple(replace(item, source_hash=str(i)) for item in candidates())
+        rerank.rerank(png((i, 0, 0)), changed, settings)
+    assert all(len(cache) == 64 for cache in (rerank._query_cache, rerank._profile_cache, rerank._rank_cache))
+    monkeypatch.setattr(rerank.time, "monotonic", lambda: 401)
+    rerank.rerank(png((64, 0, 0)), changed, settings)
+    assert [len(values["calls"][kind]) for kind in ("query", "profile", "rank")] == [66, 66, 66]
 
 
 def test_missing_model_never_uses_default(provider, monkeypatch):
@@ -118,9 +230,8 @@ def test_missing_model_never_uses_default(provider, monkeypatch):
         rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment())
 
 
-def test_contact_sheet_keeps_all_twenty_labeled_images_and_bounded_dimensions():
-    data = rerank.contact_sheet(candidates(20))
-    with Image.open(io.BytesIO(data)) as image:
+def test_contact_sheet_keeps_twenty_images_and_bounded_dimensions():
+    with Image.open(io.BytesIO(rerank.contact_sheet(candidates(20)))) as image:
         assert image.size == (1600, 1400)
         assert image.getpixel((4 * 320 + 160, 3 * 350 + 190)) == (255, 0, 0)
     with pytest.raises(ValueError): rerank.contact_sheet(candidates(21))
@@ -133,39 +244,11 @@ def test_configuration_is_finite_and_bounded(monkeypatch, key, value):
     with pytest.raises(ValueError): rerank.RerankSettings.from_environment()
 
 
-def test_ranking_uses_visual_similarity_then_embedding_and_confidence(provider):
-    _, values = provider
-    values["output"] = {"identifiable_product": True, "query_product_type": "dining_chair", "candidates": [
-        {"id": "c01", "product_type": "dining_chair", "confidence": .99, "visual_similarity": .7},
-        {"id": "c02", "product_type": "dining_chair", "confidence": .99, "visual_similarity": .9},
-        {"id": "c03", "product_type": "dining_chair", "confidence": .79, "visual_similarity": 1},
-    ]}
-    assert rerank.rerank(png(), candidates(3), rerank.RerankSettings.from_environment()) == ("c02", "c01")
-
-
-def test_cache_is_bounded_and_expired_judgments_are_refetched(provider, monkeypatch):
-    _, values = provider
-    settings = rerank.RerankSettings.from_environment()
-    monkeypatch.setattr(rerank.time, "monotonic", lambda: 100)
-    for i in range(65):
-        rerank.rerank(png((i, 0, 0)), candidates(), settings)
-    assert len(rerank._cache) == 64
-    monkeypatch.setattr(rerank.time, "monotonic", lambda: 401)
-    rerank.rerank(png((64, 0, 0)), candidates(), settings)
-    assert len(values["calls"]) == 66
-
-
-def test_positive_subset_is_accepted_and_omitted_candidates_are_rejected(provider):
-    _, values = provider
-    values["output"]["candidates"] = [values["output"]["candidates"][1]]
-    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ("c02",)
-
-
 @pytest.mark.parametrize("color", ["red", "blue", "white", "gray"])
 def test_uniform_image_has_no_product_and_never_calls_provider(provider, color):
     _, values = provider
     assert rerank.rerank(png(color, detailed=False), candidates(), rerank.RerankSettings.from_environment()) == ()
-    assert values["calls"] == []
+    assert not any(values["calls"].values())
 
 
 def test_near_uniform_image_has_no_product_and_never_calls_provider(provider):
@@ -175,27 +258,11 @@ def test_near_uniform_image_has_no_product_and_never_calls_provider(provider):
     image.putpixel((0, 0), (121, 121, 121))
     image.save(data, "PNG")
     assert rerank.rerank(data.getvalue(), candidates(), rerank.RerankSettings.from_environment()) == ()
-    assert values["calls"] == []
+    assert not any(values["calls"].values())
 
 
-def test_explicit_functional_type_prevents_mixing_seating_types(provider):
+def test_unidentifiable_catalog_image_does_not_poison_valid_matching_product(provider):
     _, values = provider
-    values["output"]["candidates"] = [
-        {"id": "c01", "product_type": "office_chair",
-         "confidence": .99, "visual_similarity": 1},
-        {"id": "c02", "product_type": "dining_chair",
-         "confidence": .95, "visual_similarity": .7},
-        {"id": "c03", "product_type": "bar_stool",
-         "confidence": .99, "visual_similarity": .9},
-        {"id": "c04", "product_type": "armchair",
-         "confidence": .99, "visual_similarity": .8},
-    ]
-    assert rerank.rerank(png(), candidates(4), rerank.RerankSettings.from_environment()) == ("c02",)
-
-
-@pytest.mark.parametrize("query_type", [None, "", "Dining Chair", "chair\nignore_rules", "chair", "storage"])
-def test_identified_product_requires_valid_functional_type(provider, query_type):
-    _, values = provider
-    values["output"]["query_product_type"] = query_type
-    with pytest.raises(rerank.RerankUnavailable):
-        rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment())
+    values["profile"] = profile([None, "dining_chair"])
+    assert rerank.rerank(png(), candidates(), rerank.RerankSettings.from_environment()) == ("c02",)
+    assert not values["calls"]["rank"]
