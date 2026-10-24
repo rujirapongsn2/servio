@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 
 import ChatLoadingDots from "@/components/ChatLoadingDots";
 import { MessageBubble } from "@/components/MessageBubble";
@@ -51,6 +51,37 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
   }, [messages]);
 
   const displayMessages = collapsed ? [] : mergedMessages;
+  const audioAfterMessage = new Map<number, string[]>();
+  let audioCallIds: string[] = [];
+  let answerIndex = -1;
+  const finishAudioTurn = (endIndex: number, pending: boolean) => {
+    const targetIndex = answerIndex >= 0 ? answerIndex : pending ? -1 : endIndex;
+    if (audioCallIds.length > 0 && targetIndex >= 0) {
+      audioAfterMessage.set(targetIndex, audioCallIds);
+    }
+    audioCallIds = [];
+    answerIndex = -1;
+  };
+  displayMessages.forEach((message, index) => {
+    if (message.type === "message" && message.role === "user") {
+      finishAudioTurn(index - 1, false);
+    }
+    if (message.type === "function_call_output") {
+      const presentation = presentations[message.call_id];
+      if (presentation?.type === "knowledge_media" && presentation.audio.length > 0) {
+        audioCallIds.push(message.call_id);
+        answerIndex = -1;
+      }
+    }
+    if (message.type === "message" && message.role === "assistant") {
+      const content = message.content;
+      const hasText = typeof content === "string"
+        ? content.trim().length > 0
+        : content.some((part) => part.type === "output_text" && part.text.trim().length > 0);
+      if (hasText) answerIndex = index;
+    }
+  });
+  finishAudioTurn(displayMessages.length - 1, isLoading);
   let productResponse = false;
 
   return (
@@ -72,7 +103,7 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
           }
           if (message.type === "function_call_output" && presentations[message.call_id]) {
             const presentation = presentations[message.call_id];
-            if (presentation.type === "knowledge_media") return <div key={`media-${message.call_id}`} className="min-w-0 space-y-3"><KnowledgeImages images={presentation.images} /><KnowledgeAudio audio={presentation.audio} /></div>;
+            if (presentation.type === "knowledge_media") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             if (presentation.type === "knowledge_images") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             if (presentation.type === "knowledge_product_carousel") return null;
             productResponse = true;
@@ -111,7 +142,17 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
               collapsed={collapsed}
             />
           );
-        })}
+        }).map((messageNode, index) => (
+          <Fragment key={index}>
+            {messageNode}
+            {audioAfterMessage.get(index)?.map((callId) => {
+              const presentation = presentations[callId];
+              return presentation?.type === "knowledge_media"
+                ? <KnowledgeAudio key={`audio-${callId}`} audio={presentation.audio} />
+                : null;
+            })}
+          </Fragment>
+        ))}
         {productActionError && <p role="alert" className="text-sm text-red-600">{productActionError}</p>}
         {isLoading && <ChatLoadingDots />}
         <div ref={messagesEndRef} />
