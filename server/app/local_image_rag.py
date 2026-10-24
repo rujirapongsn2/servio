@@ -10,6 +10,8 @@ import os
 import threading
 import time
 from pathlib import Path
+from typing import Callable
+from urllib.parse import urlsplit
 import httpx
 import jwt
 from fastapi import APIRouter, HTTPException
@@ -125,7 +127,18 @@ def _asset(root: Path, frontmatter):
     return asset_id, data, mime
 
 
-def index_bundle(bundle_id):
+def _source_filename(source: object, file_path: str) -> str:
+    path = source if isinstance(source, str) else file_path
+    path = path.replace("\\", "/")
+    if path.lower().startswith(("http://", "https://")):
+        try:
+            path = urlsplit(path).path
+        except ValueError:
+            path = file_path
+    return (Path(path).name or Path(file_path).name)[:255]
+
+
+def index_bundle(bundle_id, *, on_progress: Callable[[int, int, str | None], None] | None = None):
     if not enabled():
         return {"status": "disabled", "images": 0}
     from app.okf_service import _parse_frontmatter, _ensure_within
@@ -149,24 +162,33 @@ def index_bundle(bundle_id):
                 if fm.get("document_type") not in {"jpg", "jpeg", "png"}:
                     continue
                 asset_id, data, _ = _asset(root, fm)
-                records.append((concept.concept_id, concept.content_hash, asset_id, data))
+                filename = _source_filename(fm.get("source_file"), concept.file_path)
+                records.append((concept.concept_id, concept.content_hash, asset_id, data, filename))
         client = LocalImageEmbeddingClient()
-        vectors = [client.image(r[3]) for r in records]
+        vectors = []
+        for completed, record in enumerate(records):
+            if on_progress is not None:
+                on_progress(completed, len(records), record[4])
+            vectors.append(client.image(record[3]))
+        if records and on_progress is not None:
+            on_progress(len(records), len(records), None)
         with engine.begin() as conn:
             current = dict(conn.execute(text("SELECT concept_id, content_hash FROM okf_concept_index WHERE bundle_id=:bundle"), {"bundle": bundle_id}).all())
             if current != hashes:
                 raise ValueError("Knowledge changed during image indexing; retry")
             conn.execute(text("DELETE FROM okf_image_vectors WHERE bundle_id=:bundle"), {"bundle": bundle_id})
-            for (concept, source_hash, asset, _), vector in zip(records, vectors):
+            for (concept, source_hash, asset, _, _), vector in zip(records, vectors):
                 conn.execute(text("""INSERT INTO okf_image_vectors(bundle_id,concept_id,asset_id,source_hash,space,embedding)
                     VALUES(:bundle,:concept,:asset,:hash,:space,CAST(:vector AS vector))"""),
                     {"bundle": bundle_id, "concept": concept, "asset": asset, "hash": source_hash, "space": client.space, "vector": _literal(vector)})
         return {"status": "ready", "images": len(records), "model": client.model}
 
 
-def try_index_bundle(bundle_id):
+def try_index_bundle(bundle_id, *, on_progress: Callable[[int, int, str | None], None] | None = None):
     try:
-        return index_bundle(bundle_id)
+        if on_progress is None:
+            return index_bundle(bundle_id)
+        return index_bundle(bundle_id, on_progress=on_progress)
     except Exception:
         logger.exception("Image index unavailable for bundle %s", bundle_id)
         return {"status": "failed", "images": 0}

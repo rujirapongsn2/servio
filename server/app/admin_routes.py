@@ -1593,8 +1593,17 @@ def _run_okf_import_job(
         if audio_index['status'] == 'failed':
             bundle['validation_summary']['warnings'].append('Audio indexing failed. Retry reindex-vectors.')
         if image_search_enabled():
-            _update_okf_job(job_id, message="Indexing images")
-        image_index = index_images(bundle["id"])
+            _update_okf_job(job_id, message="Waiting to index images")
+            def image_progress(completed: int, total: int, filename: Optional[str]) -> None:
+                message = (
+                    f"Indexing images · {completed}/{total} completed · {filename}"
+                    if filename is not None
+                    else f"Saving image index · {completed}/{total} processed"
+                )
+                _update_okf_job(job_id, message=message)
+            image_index = index_images(bundle["id"], on_progress=image_progress)
+        else:
+            image_index = index_images(bundle["id"])
         if image_index["status"] == "failed":
             bundle["validation_summary"]["warnings"].append("Image indexing failed. Retry reindex-vectors.")
         from app.local_rag import enabled as hybrid_enabled, index_bundle
