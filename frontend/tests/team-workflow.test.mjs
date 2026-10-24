@@ -60,7 +60,7 @@ function setup(t, saved = snapshot()) {
   global.localStorage = { getItem: () => 'test-token' };
   global.sessionStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) };
   global.window = { addEventListener() {}, removeEventListener() {}, confirm: () => true, location: { search: '', reload() {} } };
-  global.document = { addEventListener() {}, removeEventListener() {} };
+  global.document = { addEventListener() {}, removeEventListener() {}, getElementById: () => null };
   global.fetch = async (url, init) => {
     if (url.endsWith('/model-defaults')) return response({ default_agent_model: 'runtime-agent-model', agent_models: ['runtime-agent-model', 'runtime-second-model'] });
     if (url.endsWith('/auth/me')) return response({is_super_admin: true});
@@ -142,8 +142,36 @@ async function select(renderer, id) {
   await act(async () => renderer.root.findByType('workflow-graph').props.onSelect(id));
 }
 async function save(renderer) {
-  await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Agent settings' }).props.onSubmit({ preventDefault() {} }));
 }
+
+test('Workflow switches between design and private chat without saving drafts or losing composers', async t => {
+  const env = setup(t); const renderer = await env.mount();
+  await change(renderer, 'workflow-agent-name', 'Draft support');
+  await act(async () => button(renderer, 'Try draft').props.onClick());
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Private workflow preview' }).props.hidden, false);
+  await change(renderer, 'preview-message-1', 'Remember this team question');
+  await act(async () => button(renderer, 'Design').props.onClick());
+  assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Draft support');
+  await act(async () => button(renderer, 'Private chat').props.onClick());
+  assert.equal(renderer.root.findByProps({ id: 'preview-message-1' }).props.value, 'Remember this team question');
+  await change(renderer, 'preview-target-1', '1');
+  assert.equal(renderer.root.findByProps({ id: 'preview-message-1' }).props.value, '');
+  await change(renderer, 'preview-message-1', 'Direct question');
+  await change(renderer, 'preview-target-1', 'team');
+  assert.equal(renderer.root.findByProps({ id: 'preview-message-1' }).props.value, 'Remember this team question');
+  assert.equal(env.saves.length, 0);
+  assert.equal(env.creates.length, 0);
+});
+
+test('Canceling a live Agent save keeps its draft and performs no write', async t => {
+  const env = setup(t); const renderer = await env.mount();
+  await change(renderer, 'workflow-agent-name', 'Do not publish');
+  global.window.confirm = () => false;
+  await save(renderer);
+  assert.equal(env.saves.length, 0);
+  assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Do not publish');
+});
 
 test('agent edits save in the active team and refresh the diagram', async (t) => {
   const env = setup(t); const renderer = await env.mount();
@@ -432,6 +460,63 @@ test('knowledge jobs for discarded new drafts cannot attach to a different new A
   assert.notEqual(firstKey, nextKey);
 });
 
+test('mouse handoff drags suppress native selection and only completed valid connections change drafts', async () => {
+  const Flow = () => null;
+  const stub = () => null;
+  const load = modules({ reactflow: { __esModule: true, default: Flow, Background: stub, Controls: stub, Handle: stub, MarkerType: { ArrowClosed: 'arrowclosed' }, Position: { Bottom: 'bottom', Top: 'top', Left: 'left', Right: 'right' } } });
+  const Graph = load('src/components/AgentFlowGraph.tsx').default;
+  const changes = []; const data = snapshot(); let tree;
+  try {
+    await act(async () => { tree = create(React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change) })); });
+    const props = tree.root.findByType(Flow).props;
+    for (const type of ['mousedown', 'touchstart']) {
+      const event = new Event(type, { cancelable: true });
+      await act(async () => props.onConnectStart?.(event, { nodeId: '2', handleId: 'handoff-out-left', handleType: 'source' }));
+      assert.equal(event.defaultPrevented, type === 'mousedown', `${type} cancellation must match the gesture`);
+      assert.equal(event.cancelBubble, false);
+      await act(async () => props.onConnectEnd?.(new Event(type === 'mousedown' ? 'mouseup' : 'touchend')));
+      assert.deepEqual(changes, []);
+    }
+    const connection = { source: '2', target: '1', sourceHandle: 'handoff-out-left', targetHandle: 'handoff-in-right' };
+    for (const invalid of [{ ...connection, target: '2' }, { ...connection, target: '999' }, { ...connection, sourceHandle: 'routing' }, { ...connection, source: '1', target: '2' }]) {
+      await act(async () => props.onConnect(invalid));
+    }
+    assert.deepEqual(changes, []);
+    await act(async () => props.onConnect(connection));
+    assert.deepEqual(changes, [{ sourceId: 2, targetId: 1, connected: true }]);
+  } finally { if (tree) await act(async () => tree.unmount()); }
+});
+
+test('selected editable handoffs expose a mouse delete action without deleting protected edges', async () => {
+  const Flow = () => null;
+  const stub = () => null;
+  const load = modules({ reactflow: { __esModule: true, default: Flow, Background: stub, Controls: stub, Handle: stub, MarkerType: { ArrowClosed: 'arrowclosed' }, Position: { Bottom: 'bottom', Top: 'top', Left: 'left', Right: 'right' } } });
+  const Graph = load('src/components/AgentFlowGraph.tsx').default;
+  const changes = []; const data = snapshot(); let tree; let added = 0;
+  const props = { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change), onAddAgent: () => added++ };
+  try {
+    await act(async () => { tree = create(React.createElement(Graph, props)); });
+    assert.equal(button(tree, 'Delete handoff'), undefined);
+    await act(async () => tree.root.findByType(Flow).props.onEdgesChange([{ id: 'routing-1', type: 'select', selected: true }]));
+    assert.equal(button(tree, 'Delete handoff'), undefined);
+    await act(async () => tree.root.findByType(Flow).props.onEdgesChange([{ id: 'handoff-1-2', type: 'select', selected: true }]));
+    assert.ok(button(tree, 'Delete handoff'));
+    assert.deepEqual(changes, []);
+    await act(async () => button(tree, 'Add agent').props.onClick());
+    assert.equal(added, 1);
+    assert.deepEqual(changes, []);
+    assert.ok(button(tree, 'Delete handoff'));
+    await act(async () => tree.update(React.createElement(Graph, { ...props, disabled: true })));
+    assert.equal(button(tree, 'Delete handoff'), undefined);
+    await act(async () => tree.update(React.createElement(Graph, { ...props, agents: data.agents.map(agent => ({ ...agent, shared: true })) })));
+    assert.equal(button(tree, 'Delete handoff'), undefined);
+    await act(async () => tree.update(React.createElement(Graph, props)));
+    await act(async () => button(tree, 'Delete handoff').props.onClick());
+    assert.deepEqual(changes, [{ sourceId: 1, targetId: 2, connected: false }]);
+    assert.equal(button(tree, 'Delete handoff'), undefined);
+  } finally { if (tree) await act(async () => tree.unmount()); }
+});
+
 test('controlled canvas edges retain selection for keyboard deletion and protect routing edges', async () => {
   const Flow = () => null;
   const stub = () => null;
@@ -631,4 +716,116 @@ test('Workflow keeps manual model entry usable when defaults are unavailable', a
   await change(renderer, 'workflow-model', 'manual/local-model');
   await save(renderer);
   assert.equal(env.saves[0].model, 'manual/local-model');
+});
+
+test('canvas Add agent is a native action independent of handoff editing', async () => {
+  const Flow = () => null; const stub = () => null;
+  const load = modules({ reactflow: { __esModule: true, default: Flow, Background: stub, Controls: stub, Handle: stub, MarkerType: { ArrowClosed: 'arrowclosed' }, Position: { Bottom: 'bottom', Top: 'top', Left: 'left', Right: 'right' } } });
+  const Graph = load('src/components/AgentFlowGraph.tsx').default;
+  const data = snapshot(); let calls = 0; let tree;
+  const props = { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onAddAgent: () => calls++ };
+  try {
+    await act(async () => { tree = create(React.createElement(Graph, props)); });
+    const action = button(tree, 'Add agent');
+    assert.ok(action, 'Editable canvas must expose Add agent without a handoff callback');
+    assert.equal(action.props.type, 'button');
+    assert.equal(action.props['aria-controls'], 'workflow-agent-inspector');
+    assert.equal(tree.root.findByType(Flow).props.nodes.length, 3);
+    await act(async () => action.props.onClick());
+    assert.equal(calls, 1);
+    await act(async () => tree.update(React.createElement(Graph, { ...props, hasNewAgentDraft: true, disabled: true })));
+    assert.equal(button(tree, 'Continue new agent').props.disabled, true);
+    await act(async () => tree.update(React.createElement(Graph, { ...props, canEdit: false })));
+    assert.equal(button(tree, 'Add agent'), undefined);
+    await act(async () => tree.update(React.createElement(Graph, { ...props, onAddAgent: undefined })));
+    assert.equal(button(tree, 'Add agent'), undefined);
+  } finally { if (tree) await act(async () => tree.unmount()); }
+});
+
+test('canvas creation preserves one unsaved draft across repeat and resume actions', async t => {
+  const env = setup(t); const renderer = await env.mount();
+  const graph = () => renderer.root.findByType('workflow-graph');
+  assert.equal(graph().props.hasNewAgentDraft, false);
+  await act(async () => graph().props.onAddAgent());
+  const requestId = JSON.parse(env.storage.get('team-workflow-new:1')).requestId;
+  await change(renderer, 'workflow-agent-name', 'Canvas draft');
+  await act(async () => graph().props.onAddAgent());
+  await select(renderer, 2);
+  await act(async () => graph().props.onAddAgent());
+  assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Canvas draft');
+  assert.equal(JSON.parse(env.storage.get('team-workflow-new:1')).requestId, requestId);
+  assert.equal(graph().props.hasNewAgentDraft, true);
+  assert.deepEqual(graph().props.agents.map(agent => agent.id), [1, 2]);
+  assert.equal(env.creates.length, 0); assert.equal(env.saves.length, 0);
+  await act(async () => button(renderer, 'Discard').props.onClick());
+  assert.equal(graph().props.hasNewAgentDraft, false);
+  await act(async () => graph().props.onAddAgent());
+  await change(renderer, 'workflow-agent-name', 'Saved canvas agent');
+  await change(renderer, 'workflow-instructions', 'Handle canvas requests');
+  await save(renderer);
+  assert.equal(env.creates.length, 1);
+  assert.equal(graph().props.hasNewAgentDraft, false);
+});
+
+test('canvas creation obeys resource editor, saving, and refresh error guards', async t => {
+  const env = setup(t); const renderer = await env.mount();
+  const graph = () => renderer.root.findByType('workflow-graph');
+  await act(async () => button(renderer, 'Tool').props.onClick());
+  assert.equal(graph().props.disabled, true);
+  await act(async () => graph().props.onAddAgent());
+  assert.equal(graph().props.hasNewAgentDraft, false);
+  await act(async () => renderer.root.findByType('tool-creator').props.onClose());
+  await change(renderer, 'workflow-agent-name', 'Save pending');
+  let release; env.controls.saveGate = new Promise(resolve => { release = resolve; });
+  let pending;
+  await act(async () => { pending = renderer.root.findByProps({ 'aria-label': 'Agent settings' }).props.onSubmit({ preventDefault() {} }); });
+  assert.equal(graph().props.disabled, true);
+  await act(async () => graph().props.onAddAgent());
+  assert.equal(graph().props.hasNewAgentDraft, false);
+  env.controls.failRefresh = true;
+  await act(async () => { release(); await pending; });
+  assert.equal(graph().props.disabled, true);
+  await act(async () => graph().props.onAddAgent());
+  assert.equal(graph().props.hasNewAgentDraft, false);
+});
+
+test('new agent actions focus the committed inspector and scroll on mobile only on request', async t => {
+  const data = snapshot(); data.agents = []; data.fallback_agent_id = null;
+  const env = setup(t, data); const renderer = await env.mount();
+  const calls = [];
+  global.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+  global.document.getElementById = id => {
+    assert.ok(renderer.root.findByProps({ id }), `${id} must be committed before focus`);
+    return { focus: options => calls.push(['focus', id, options]), scrollIntoView: options => calls.push(['scroll', id, options]) };
+  };
+  await act(async () => button(renderer, 'Create agent').props.onClick());
+  assert.deepEqual(calls, [['focus', 'workflow-agent-name', { preventScroll: true }], ['scroll', 'workflow-agent-inspector', { behavior: 'smooth', block: 'start' }]]);
+  const inspector = renderer.root.findByProps({ id: 'workflow-agent-inspector' });
+  assert.equal(inspector.props.tabIndex, -1);
+  assert.equal(inspector.props.role, 'region');
+  await change(renderer, 'workflow-agent-name', 'Keep typing');
+  assert.equal(calls.length, 2);
+  await act(async () => renderer.unmount());
+  global.document.getElementById = () => { throw Error('Restored drafts must not take focus'); };
+  await env.mount();
+});
+
+test('toolbar creation focuses the inspector fallback without scrolling desktop', async t => {
+  const env = setup(t); const renderer = await env.mount(); const calls = [];
+  global.window.matchMedia = () => ({ matches: false });
+  global.document.getElementById = id => id === 'workflow-agent-name' ? null : {
+    focus: options => calls.push(['focus', options]), scrollIntoView: () => calls.push(['scroll']),
+  };
+  await act(async () => button(renderer, 'Agent').props.onClick());
+  assert.deepEqual(calls, [['focus', { preventScroll: true }]]);
+  assert.equal(renderer.root.findByType('workflow-graph').props.hasNewAgentDraft, true);
+});
+
+test('read only canvas callback cannot create a new Agent', async t => {
+  const data = snapshot(); data.can_edit = false;
+  const env = setup(t, data); const renderer = await env.mount();
+  await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
+  assert.equal(renderer.root.findByType('workflow-graph').props.hasNewAgentDraft, false);
+  assert.equal(env.storage.has('team-workflow-new:1'), false);
+  assert.equal(env.creates.length, 0);
 });

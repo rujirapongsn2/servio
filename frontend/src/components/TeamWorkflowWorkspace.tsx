@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Bot, List, Plus, RefreshCw, Search, Star, Wrench, Users, Library } from "lucide-react";
+import { ArrowLeft, BookOpen, Bot, List, Plus, RefreshCw, Search, Star, Wrench, Users, Library, MessageSquare, Network, Radio } from "lucide-react";
 import { useTeam } from "@/lib/team-context";
 import { parseTeamWorkflow, restoreWorkflowDrafts, workflowRequest, type WorkflowAgentDraft } from "@/lib/team-workflow";
 import { addCreatedWorkflowTool, changeWorkflowDraft, createNewWorkflowAgent, getWorkflowEditor, parseCreatedAgentId, projectWorkflowAgents, reconcileWorkflow, restoreNewWorkflowAgent, stageWorkflowHandoff, type HandoffChange, type WorkflowReadyState, type WorkflowTarget } from "@/lib/workflow-authoring";
@@ -13,6 +13,8 @@ import WorkflowMembersPanel from "@/components/WorkflowMembersPanel";
 import WorkflowProviderModal from "@/components/WorkflowProviderModal";
 import WorkflowCapabilitiesPanel, { type WorkflowResourceMutation } from "@/components/WorkflowCapabilitiesPanel";
 import WorkflowAgentTestPanel from "@/components/WorkflowAgentTestPanel";
+import WorkflowPreviewChat from "@/components/WorkflowPreviewChat";
+import WorkflowChannels from "@/components/WorkflowChannels";
 import CreateOKFBundleModal from "@/components/CreateOKFBundleModal";
 
 const AgentFlowGraph = dynamic(() => import("@/components/AgentFlowGraph"), { ssr: false,
@@ -50,12 +52,17 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
   const [resourceEditor, setResourceEditor] = useState<ResourceEditor>({ kind: "closed" });
   const [panel, setPanel] = useState<"closed" | "members" | "library">("closed");
   const [testing, setTesting] = useState<{ id: number; name: string } | null>(null);
+  const [view, setView] = useState<"design" | "chat" | "channels">("design");
+  const [channelsVisited, setChannelsVisited] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<number | null>(null);
   const [providerTarget, setProviderTarget] = useState<WorkflowTarget | null>(null);
   const [superAdmin, setSuperAdmin] = useState(false);
   const [query, setQuery] = useState("");
   const [showList, setShowList] = useState(false);
   const [storageError, setStorageError] = useState(false);
   const operation = useRef(false);
+  const focusNewAgent = useRef(false);
   const storageKey = `team-workflow-drafts:${teamId}`;
   const newStorageKey = `team-workflow-new:${teamId}`;
   const knowledgeContextKey = `workflow-import-target:${teamId}`;
@@ -131,6 +138,17 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
     return () => { window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", beforeNavigate, true); };
   }, [dirtyCount, resourceEditor.kind]);
 
+  useEffect(() => {
+    if (!focusNewAgent.current || state.status !== "ready" || state.selection.kind !== "new") return;
+    focusNewAgent.current = false;
+    const inspector = document.getElementById("workflow-agent-inspector");
+    const name = document.getElementById("workflow-agent-name");
+    (name ?? inspector)?.focus({ preventScroll: true });
+    if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1023px)").matches) {
+      inspector?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [state]);
+
   const selectAgent = useCallback((id: number) => {
     if (operation.current || locked) return;
     setState((previous) => previous.status === "ready" ? { ...previous, selection: { kind: "agent", agentId: id } } : previous);
@@ -179,6 +197,7 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
     const editor = getWorkflowEditor(state);
     if (!editor || !state.workflow.can_edit || editor.kind === "existing" && editor.agent.shared) return;
     if (!editor.draft.name.trim() || !editor.draft.model.trim() || !editor.draft.instructions.trim()) return;
+    if (editor.kind === "existing" && !window.confirm("Save Agent changes? Saved settings affect customer channels using this Agent. Private preview does not require saving.")) return;
     operation.current = true; setSaveState({ status: "saving" });
     let receipt: SaveReceipt | null = null;
     try {
@@ -238,7 +257,8 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
   const target: WorkflowTarget | null = state.selection.kind === "none" ? null : state.selection;
   const resourceTarget = editor && !(editor.kind === "existing" && editor.agent.shared) ? target : null;
   const addAgent = () => {
-    if (locked || operation.current || !workflow.can_edit) return;
+    if (locked || operation.current || !workflow.can_edit || resourceEditor.kind !== "closed") return;
+    focusNewAgent.current = true;
     setState((previous) => {
       if (previous.status !== "ready") return previous;
       const newAgent = previous.newAgent ?? createNewWorkflowAgent(previous.workflow);
@@ -268,13 +288,22 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
         onClick={() => { if (!dirtyCount || window.confirm("Leave Workflow with unsaved changes? Agent drafts stay in this tab.")) router.push("/admin/teams"); }} className="shrink-0 rounded-lg border border-slate-200 p-2 text-slate-500 disabled:opacity-40"><ArrowLeft className="h-5 w-5" /></button>
         <div className="min-w-0"><div className="text-xs text-slate-500">Workflow</div><h1 className="break-words text-2xl font-semibold text-slate-900">{workflow.team_name}</h1></div></div>
       <div className="flex flex-wrap items-center gap-2"><span role="status" className="mr-2 text-xs text-slate-500">{dirtyCount ? `${dirtyCount} unsaved agent${dirtyCount === 1 ? "" : "s"}` : saveState.status === "saved" ? saveState.message : "All changes saved"}</span>
+        {view === "design" && <>
+        <button type="button" aria-expanded={manageOpen} onClick={() => setManageOpen(!manageOpen)} className={`${toolbarButton} lg:hidden`}>Manage</button>
+        <div className={`${manageOpen ? "flex" : "hidden lg:flex"} flex-wrap items-center gap-2`}>
         <button type="button" onClick={() => setShowList(!showList)} aria-pressed={showList} className={toolbarButton}><List className="h-4 w-4" />Agents</button>
         <button type="button" disabled={locked} onClick={() => setPanel(panel === "library" ? "closed" : "library")} className={toolbarButton}><Library className="h-4 w-4" />Library</button>
         {workflow.can_edit && <><button type="button" disabled={locked} onClick={() => setPanel(panel === "members" ? "closed" : "members")} className={toolbarButton}><Users className="h-4 w-4" />Members</button><button type="button" disabled={locked} onClick={() => openResource("tool", resourceTarget)} className={toolbarButton}><Wrench className="h-4 w-4" />Tool</button>
           <button type="button" disabled={locked} onClick={() => openResource("knowledge", resourceTarget)} className={toolbarButton}><BookOpen className="h-4 w-4" />Knowledge</button>
-          <button type="button" onClick={addAgent} disabled={locked} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"><Plus className="h-4 w-4" />{state.newAgent ? "New agent" : "Agent"}</button></>}
+          <button type="button" onClick={addAgent} disabled={locked || resourceEditor.kind !== "closed"} aria-controls="workflow-agent-inspector" className={toolbarButton}><Plus className="h-4 w-4" />{state.newAgent ? "New agent" : "Agent"}</button></>}
+        </div>
+        </>}
+        {view !== "chat" && <button type="button" disabled={locked || !workflow.agents.length || !workflow.can_edit} onClick={() => { setPreviewTarget(null); setView("chat"); setPanel("closed"); }} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"><MessageSquare className="h-4 w-4" />{Object.keys(state.drafts).length ? "Try draft" : "Chat with team"}</button>}
       </div>
     </div>
+    <nav aria-label="Team workspace" className="flex gap-1 overflow-x-auto border-b border-slate-200">
+      {([{ id: "design", label: "Design", icon: Network }, { id: "chat", label: "Private chat", icon: MessageSquare }, { id: "channels", label: "Channels", icon: Radio }] satisfies { id: typeof view; label: string; icon: typeof Network }[]).map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={view === id ? "page" : undefined} disabled={locked || id === "chat" && (!workflow.can_edit || !workflow.agents.length)} onClick={() => { setView(id); if (id === "channels") setChannelsVisited(true); setPanel("closed"); }} className={`inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium disabled:opacity-40 ${view === id ? "border-sky-600 text-sky-700" : "border-transparent text-slate-500"}`}><Icon size={16} />{label}</button>)}
+    </nav>
     {panel === "members" && <WorkflowMembersPanel workflow={workflow} busy={locked} onClose={() => setPanel("closed")} onSave={async (memberIds, fallbackId, expectedIds, expectedFallback) => {
       await commitChange(`/team-agents/${teamId}/workflow/members`, "PUT", { member_agent_ids: memberIds, fallback_agent_id: fallbackId, expected_member_agent_ids: expectedIds, expected_fallback_agent_id: expectedFallback }, { kind: "membership" });
     }} />}
@@ -283,24 +312,31 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
     {(saveState.status === "error" || saveState.status === "refresh-error") && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-800"><p>{saveState.message}</p>
       {saveState.status === "refresh-error" ? <button type="button" onClick={() => void refreshAfterSave(saveState.receipt)} className="inline-flex items-center gap-1 underline"><RefreshCw className="h-4 w-4" />Refresh workflow</button> :
         <button type="button" onClick={() => window.location.reload()} className="inline-flex items-center gap-1 underline"><RefreshCw className="h-4 w-4" />Reload saved settings</button>}</div>}
-    {showList && <div className="rounded-xl border border-slate-200 bg-white p-3"><label className="mb-3 flex max-w-sm items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Search className="h-4 w-4 text-slate-400" /><input aria-label="Search agents" value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 text-sm outline-none" /></label>
+    <div hidden={view !== "design"}>
+    {showList && <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3"><label className="mb-3 flex max-w-sm items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Search className="h-4 w-4 text-slate-400" /><input aria-label="Search agents" value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 text-sm outline-none" /></label>
       <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">{workflow.agents.filter((agent) => agent.name.toLowerCase().includes(query.toLowerCase())).map((agent) => <button key={agent.id} type="button" onClick={() => selectAgent(agent.id)} aria-pressed={state.selection.kind === "agent" && agent.id === state.selection.agentId} className={`${toolbarButton} max-w-full ${state.selection.kind === "agent" && agent.id === state.selection.agentId ? "border-sky-400 bg-sky-50 text-sky-800" : ""}`}><Bot className="h-4 w-4 shrink-0" /><span className="truncate">{state.drafts[agent.id]?.name || agent.name}</span>{agent.id === workflow.fallback_agent_id && <Star aria-label="Fallback" className="h-3.5 w-3.5 text-amber-600" />}{state.drafts[agent.id] && <span aria-label="Unsaved changes" className="h-2 w-2 rounded-full bg-amber-400" />}</button>)}
-        {state.newAgent && <button type="button" onClick={addAgent} aria-pressed={state.selection.kind === "new"} className={toolbarButton}><Plus className="h-4 w-4" />{state.newAgent.draft.name || "New agent"}<span className="h-2 w-2 rounded-full bg-amber-400" /></button>}
+        {state.newAgent && <button type="button" onClick={addAgent} disabled={locked || resourceEditor.kind !== "closed"} aria-controls="workflow-agent-inspector" aria-pressed={state.selection.kind === "new"} className={toolbarButton}><Plus className="h-4 w-4" />{state.newAgent.draft.name || "New agent"}<span className="h-2 w-2 rounded-full bg-amber-400" /></button>}
         {!workflow.agents.some((agent) => agent.name.toLowerCase().includes(query.toLowerCase())) && !state.newAgent && <p className="text-sm text-slate-500">No agents found.</p>}</div></div>}
-    {workflow.agents.length === 0 && !editor ? <div className="grid min-h-96 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><div><Bot className="mx-auto mb-3 h-10 w-10 text-slate-300" /><h2 className="text-lg font-semibold">No agents in this team</h2>{workflow.can_edit && <button type="button" onClick={addAgent} className="mt-4 rounded-lg bg-sky-600 px-4 py-2 text-sm text-white">Create agent</button>}</div></div> :
-      <div className="grid min-w-0 items-stretch gap-4 lg:h-[calc(100dvh-200px)] lg:min-h-[480px] lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+    {workflow.agents.length === 0 && !editor ? <div className="grid min-h-96 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><div><Bot className="mx-auto mb-3 h-10 w-10 text-slate-300" /><h2 className="text-lg font-semibold">No agents in this team</h2>{workflow.can_edit && <button type="button" onClick={addAgent} disabled={locked || resourceEditor.kind !== "closed"} aria-controls="workflow-agent-inspector" className="mt-4 min-h-11 rounded-lg bg-sky-600 px-4 py-2 text-sm text-white disabled:opacity-40">Create agent</button>}</div></div> :
+      <div className="grid min-w-0 items-stretch gap-4 lg:h-[calc(100dvh-280px)] lg:min-h-[480px] lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
         <AgentFlowGraph agents={projectWorkflowAgents(state)} tools={workflow.tools} fallbackAgentId={workflow.fallback_agent_id} selectedAgentId={state.selection.kind === "agent" ? state.selection.agentId : null}
-          onSelect={selectAgent} canEdit={workflow.can_edit} disabled={locked || resourceEditor.kind !== "closed"} pendingAgentIds={Object.keys(state.drafts).map(Number)} onHandoffChange={handoffChanged} />
-        {editor && <div id="workflow-agent-inspector" className="min-h-0 min-w-0 scroll-mt-20"><WorkflowAgentInspector key={editor.kind === "new" ? "new" : editor.agent.id} workflow={workflow} editor={editor}
+          onSelect={selectAgent} canEdit={workflow.can_edit} disabled={locked || resourceEditor.kind !== "closed"} pendingAgentIds={Object.keys(state.drafts).map(Number)} onHandoffChange={handoffChanged} onAddAgent={addAgent} hasNewAgentDraft={Boolean(state.newAgent)} />
+        {editor && <div id="workflow-agent-inspector" tabIndex={-1} role="region" aria-label="Agent editor" className="min-h-0 min-w-0 scroll-mt-20"><WorkflowAgentInspector key={editor.kind === "new" ? "new" : editor.agent.id} workflow={workflow} editor={editor}
           dirty={editor.kind === "new" || Boolean(state.drafts[editor.agent.id])} saving={saveState.status === "saving"} locked={saveState.status === "refresh-error"}
           onSave={() => void saveAgent()} onDiscard={discard} onChange={changeDraft} onCreateTool={() => openResource("tool", target)} onCreateKnowledge={() => openResource("knowledge", target)}
-          onTest={editor.kind === "existing" ? () => setTesting({ id: editor.agent.id, name: editor.agent.name }) : undefined}
+          onTest={editor.kind === "existing" && workflow.can_edit ? () => { setPreviewTarget(editor.agent.id); setView("chat"); } : undefined}
           onCreateProvider={superAdmin && workflow.can_edit ? () => setProviderTarget(target) : undefined}
           onDelete={editor.kind === "existing" && !editor.agent.shared ? (replacementFallbackId) => {
             if (!window.confirm(`Permanently delete ${editor.agent.name}? This cannot be undone.`)) return;
             void commitChange(`/team-agents/${teamId}/workflow/agents/${editor.agent.id}`, "DELETE", { expected_updated_at: editor.agent.updated_at, expected_member_agent_ids: workflow.agents.map((agent) => agent.id), expected_fallback_agent_id: workflow.fallback_agent_id, replacement_fallback_agent_id: replacementFallbackId }, { kind: "deleted", agentId: editor.agent.id }).catch(() => {});
           } : undefined} /></div>}
       </div>}
+    {editor?.kind === "existing" && <details className="mt-3 text-sm text-slate-500"><summary className="cursor-pointer">Advanced diagnostics</summary><button type="button" aria-label="Test saved agent" disabled={locked} onClick={() => setTesting({ id: editor.agent.id, name: editor.agent.name })} className="mt-2 rounded-lg border px-3 py-2">Test saved agent</button></details>}
+    </div>
+    {view === "chat" && state.newAgent && <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Save the new Agent to include it in preview.</p>}
+    {workflow.can_edit && <WorkflowPreviewChat key={`preview-${teamId}`} teamId={teamId} workflow={workflow} drafts={state.drafts} targetAgentId={previewTarget} onTargetChange={setPreviewTarget} visible={view === "chat"}
+      onEditAgent={id => { selectAgent(id); setView("design"); }} onOpenKnowledge={() => setPanel("library")} />}
+    {channelsVisited && <div className={view === "channels" ? "block" : "hidden"}><WorkflowChannels key={`channels-${teamId}`} teamId={teamId} teamName={workflow.team_name} canEdit={workflow.can_edit} hasDrafts={dirtyCount > 0} /></div>}
     {testing && <WorkflowAgentTestPanel teamId={teamId} agent={testing} hasUnsavedChanges={Boolean(state.drafts[testing.id])} onClose={() => setTesting(null)} />}
     {providerTarget && <WorkflowProviderModal onClose={() => setProviderTarget(null)} onCreated={async (providerId) => {
       const data = await workflowRequest("/llm-providers");

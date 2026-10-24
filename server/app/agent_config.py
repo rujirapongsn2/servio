@@ -678,19 +678,17 @@ def build_agent_from_db(
         )
         instructions += (
             f"\n\n**Available Tools:**"
-            f"\nYou have the following tools available. ALWAYS use them when relevant to the user's query:"
+            f"\nUse a tool when its data is needed to answer the user's question:"
             f"\n{tool_descriptions}"
-            f"\nUse the exact tool names shown above (in backticks) when calling tools."
-            f"\nIf user asks about current date/time/day/week/month/year, you MUST call `DateTimeTool` first and answer using its returned value."
-            f"\n\n**CRITICAL — Context-Aware Tool Calls:**"
-            f"\nWhen calling a tool, you MUST include full context from the conversation in the query parameter. "
-            f"NEVER pass the user's raw message as-is if it contains implicit references."
-            f"\nExamples:"
-            f"\n  - User asked about 'train 25' earlier, now asks 'how much is the ticket?' → call tool with 'ราคาตั๋วขบวนรถ 25' (include train number)"
-            f"\n  - User discussed 'Udon Thani' earlier, now asks 'what time does it arrive?' → call tool with 'ขบวนรถ 25 ถึงอุดรธานีกี่โมง' (include destination and train)"
-            f"\n  - User mentioned a product, now asks 'how much?' → call tool with the full product name in the query"
-            f"\nAlways resolve pronouns, omitted subjects, and implicit references into explicit terms before passing to any tool."
+            f"\nUse its exact name and declared parameters. Answer using the returned result."
+            f"\nFor a current date or time question, call `DateTimeTool` once if this turn has no clock result. "
+            f"If a clock result is already present, answer from it without calling again."
         )
+        if any("query" in getattr(tool, "params_json_schema", {}).get("properties", {}) for tool in tools):
+            instructions += (
+                "\nFor tools with a query parameter, resolve pronouns and omitted subjects from conversation history "
+                "before searching. Include the specific product, place, or subject in the query."
+            )
 
     if any(getattr(tool, "_servio_image_filenames", None) for tool in tools):
         instructions += (
@@ -754,7 +752,12 @@ def load_agents_from_db():
     return all_agents[agents_data[0]["id"]] if all_agents else starting_agent
 
 
-def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
+def get_runtime_starting_agent(
+    team_agent_id: Optional[int] = None,
+    *,
+    captured_team: Optional[Dict[str, Any]] = None,
+    captured_agents: Optional[List[Dict[str, Any]]] = None,
+) -> Agent:
     """Resolve the runtime starting agent.
 
     For Team Agents, a virtual Coordinator Agent is the actual entry agent and
@@ -769,14 +772,14 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
 
     # Load team-scoped agents when team_agent_id is provided
     if team_agent_id is not None:
-        team = database.get_team_agent_by_id(team_agent_id)
+        team = captured_team if captured_team is not None else database.get_team_agent_by_id(team_agent_id)
         if not team:
             print(f"[TeamAgent] Team id={team_agent_id} not found, no agents available")
             db_agents_data = []
         else:
             # Get only this team's member agents
             member_ids = [m["agent_id"] for m in team.get("members", [])]
-            all_agents_data = database.get_all_agents()
+            all_agents_data = captured_agents if captured_agents is not None else database.get_all_agents()
             db_agents_data = [a for a in all_agents_data if a["id"] in member_ids]
             # Find the team's starting agent
             starting_member = next((m for m in team.get("members", []) if m["role"] == "starting"), None)
@@ -797,6 +800,8 @@ def get_runtime_starting_agent(team_agent_id: Optional[int] = None) -> Agent:
             )
             all_agents[a["id"]] = agent
         except Exception as e:
+            if captured_agents is not None:
+                raise
             # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
             print(f"[Agent Build Error] id={a.get('id')} name='{a.get('name')}' error={e}")
             continue

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, GitBranch, Network, BookOpen, Wrench, Star } from "lucide-react";
+import { Bot, GitBranch, Network, BookOpen, Wrench, Star, Trash2, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, { Background, Controls, Handle, MarkerType, Position, type Node, type Edge, type NodeProps, type ReactFlowInstance, type Connection } from "reactflow";
 import type { WorkflowAgent, WorkflowTool } from "@/lib/team-workflow";
@@ -57,7 +57,7 @@ function AgentNode({ data }: NodeProps<AgentNodeData>) {
 const nodeTypes = { agent: AgentNode };
 const fitViewOptions = { padding: 0.2, maxZoom: 0.87 };
 
-export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selectedAgentId, onSelect, canEdit = false, disabled = false, pendingAgentIds = [], onHandoffChange }: {
+export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selectedAgentId, onSelect, canEdit = false, disabled = false, pendingAgentIds = [], onHandoffChange, onAddAgent, hasNewAgentDraft = false }: {
   agents: WorkflowAgent[];
   tools: WorkflowTool[];
   fallbackAgentId: number | null;
@@ -67,6 +67,8 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
   disabled?: boolean;
   pendingAgentIds?: number[];
   onHandoffChange?: (change: HandoffChange) => void;
+  onAddAgent?: () => void;
+  hasNewAgentDraft?: boolean;
 }) {
   const editable = canEdit && !disabled && onHandoffChange !== undefined;
   const container = useRef<HTMLDivElement>(null);
@@ -120,6 +122,19 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
       !!connection.sourceHandle?.startsWith("handoff-out-") && !!connection.targetHandle?.startsWith("handoff-in-") &&
       !source.handoff_agent_ids.includes(target.id);
   };
+  const selectedHandoffs = edges.filter((edge) => editable && edge.deletable === true && selectedEdgeIds.has(edge.id));
+  const selectedHandoff = selectedHandoffs.length === 1 ? selectedHandoffs[0] : undefined;
+  const deleteHandoffs = (deleted: Edge[]) => {
+    for (const edge of deleted) {
+      const source = agents.find((agent) => String(agent.id) === edge.source);
+      if (editable && source && !source.shared && edge.id.startsWith("handoff-")) onHandoffChange?.({ sourceId: source.id, targetId: Number(edge.target), connected: false });
+    }
+    setSelectedEdgeIds((previous) => {
+      const next = new Set(previous);
+      for (const edge of deleted) next.delete(edge.id);
+      return next;
+    });
+  };
 
   return (
     <div ref={container} className="relative h-[55vh] min-h-80 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 lg:h-full lg:min-h-0" aria-label="Team workflow diagram">
@@ -135,21 +150,28 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
           return next;
         })}
         isValidConnection={validConnection}
+        onConnectStart={(event) => { if (event.type === "mousedown") event.preventDefault(); }}
         onConnect={(connection) => {
           if (validConnection(connection)) onHandoffChange?.({ sourceId: Number(connection.source), targetId: Number(connection.target), connected: true });
         }}
-        onEdgesDelete={(deleted) => {
-          for (const edge of deleted) {
-            const source = agents.find((agent) => String(agent.id) === edge.source);
-            if (editable && source && !source.shared && edge.id.startsWith("handoff-")) onHandoffChange?.({ sourceId: source.id, targetId: Number(edge.target), connected: false });
-          }
-        }}
+        onEdgesDelete={deleteHandoffs}
         deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
         onNodeClick={(_, node) => { if (node.id !== "coordinator") onSelect(Number(node.id)); }}
         nodesFocusable={false} edgesFocusable={editable} elementsSelectable={editable} fitView fitViewOptions={fitViewOptions} minZoom={0.2} maxZoom={1.5}>
         <Background gap={24} color="#dbe3ec" />
         <Controls showInteractive={false} fitViewOptions={fitViewOptions} position="bottom-right" />
       </ReactFlow>
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap items-start gap-2">
+        {canEdit && onAddAgent && <button type="button" onClick={onAddAgent} disabled={disabled} aria-controls="workflow-agent-inspector"
+          className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl border border-dashed border-sky-400 bg-white px-3 py-2 text-sm font-medium text-sky-700 shadow-sm hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-40">
+          <Plus className="h-4 w-4" aria-hidden="true" />{hasNewAgentDraft ? "Continue new agent" : "Add agent"}
+        </button>}
+        {selectedHandoff && <button type="button" onClick={() => deleteHandoffs([selectedHandoff])}
+        aria-label={`Delete handoff from ${agents.find((agent) => String(agent.id) === selectedHandoff.source)?.name} to ${agents.find((agent) => String(agent.id) === selectedHandoff.target)?.name}`}
+        className="pointer-events-auto ml-auto inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+        <Trash2 className="h-4 w-4" aria-hidden="true" />Delete handoff
+      </button>}
+      </div>
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-600">
         <span className="inline-flex items-center gap-1"><Network className="h-3.5 w-3.5 text-slate-400" />Auto routing</span>
         <span className="inline-flex items-center gap-1"><GitBranch className="h-3.5 w-3.5 text-sky-600" />Handoff</span>

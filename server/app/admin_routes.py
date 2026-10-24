@@ -3883,3 +3883,7 @@ async def get_widget_config_by_slug(slug: str):
         "team_agent_id": key_data.get("team_agent_id"),
         "channel_type": key_data.get("channel_type"),
     }
+
+
+from app.workflow_preview import router as workflow_preview_router
+router.include_router(workflow_preview_router)
