@@ -30,7 +30,7 @@ export function Header({
     <div className="flex flex-row gap-2 w-full relative justify-between items-center py-5 px-6 bg-white text-gray-900 border-b border-gray-200 shadow-sm dark:bg-gray-900 dark:text-white dark:border-gray-800 min-h-24">
       <div className="flex flex-row gap-5 items-center">
         <Image src="/servio_logo.png" alt="Servio Logo" width={80} height={80} className="rounded-lg" />
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Voice Agent</h1>
+        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">Voice Agent</h1>
       </div>
       {agentName && (
         <div

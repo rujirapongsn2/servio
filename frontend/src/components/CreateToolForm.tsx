@@ -81,7 +81,7 @@ export default function CreateToolForm({ context, onCreated, onCancel, onBusyCha
   return (
       <form onSubmit={handleSubmit} className="space-y-6">
         <fieldset disabled={saving} className="min-w-0 space-y-6">
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Integration Setup
           </h2>

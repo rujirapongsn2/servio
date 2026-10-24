@@ -426,7 +426,7 @@ export default function OKFBundleDetailDrawer({
                 {displayName}
               </h2>
               {bundle?.status && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
                   {bundle.status}
                 </span>
               )}
@@ -502,7 +502,7 @@ export default function OKFBundleDetailDrawer({
                     <Metric label="Last Updated" value={formatDate(bundle?.updated_at)} />
                   </div>
 
-                  <div className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+                  <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
                     <div className="flex items-start gap-3">
                       {bundle?.status === "ready" && warnings.length === 0 ? (
                         <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
@@ -539,7 +539,7 @@ export default function OKFBundleDetailDrawer({
                           value={conceptQuery}
                           onChange={(event) => setConceptQuery(event.target.value)}
                           placeholder="Search documents"
-                          className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                          className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-primary focus:ring-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                         />
                       </div>
                     </div>
@@ -561,7 +561,7 @@ export default function OKFBundleDetailDrawer({
                           <div className="mt-1 line-clamp-1 text-xs text-gray-500">{concept.resource || concept.file_path}</div>
                           <div className="mt-2 flex flex-wrap gap-1">
                             {(concept.tags || []).slice(0, 2).map((tag) => (
-                              <span key={tag} className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+                              <span key={tag} className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
                                 {tag}
                               </span>
                             ))}
@@ -629,7 +629,7 @@ export default function OKFBundleDetailDrawer({
                           <div role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">{saveError}</div>
                         )}
 
-                        <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                        <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                             <div>
                               <div className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -665,7 +665,7 @@ export default function OKFBundleDetailDrawer({
                                     type="button"
                                     onClick={handleSaveConcept}
                                     disabled={!canEdit || savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
-                                    className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
                                   >
                                     {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                     Save
@@ -692,7 +692,7 @@ export default function OKFBundleDetailDrawer({
                                   <input
                                     value={editTitle}
                                     onChange={(event) => setEditTitle(event.target.value)}
-                                    className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                    className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-primary focus:ring-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                   />
                                 </label>
                                 <label className="block text-sm font-semibold text-gray-900 dark:text-white">
@@ -700,7 +700,7 @@ export default function OKFBundleDetailDrawer({
                                   <input
                                     value={editTags}
                                     onChange={(event) => setEditTags(event.target.value)}
-                                    className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                    className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-primary focus:ring-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                   />
                                 </label>
                               </div>
@@ -709,7 +709,7 @@ export default function OKFBundleDetailDrawer({
                                 <input
                                   value={editDescription}
                                   onChange={(event) => setEditDescription(event.target.value)}
-                                  className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                  className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal focus:border-primary focus:ring-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                                 />
                               </label>
                               <label className="block text-sm font-semibold text-gray-900 dark:text-white">
@@ -720,7 +720,7 @@ export default function OKFBundleDetailDrawer({
                                   value={editBody}
                                   onChange={(event) => setEditBody(event.target.value)}
                                   rows={18}
-                                  className="mt-2 w-full resize-y rounded-md border border-gray-300 px-3 py-3 font-mono text-sm leading-6 focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                                  className="mt-2 w-full resize-y rounded-md border border-gray-300 px-3 py-3 font-mono text-sm leading-6 focus:border-primary focus:ring-primary dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                                 />
                               </label>
                             </div>
@@ -775,12 +775,12 @@ export default function OKFBundleDetailDrawer({
                       onChange={(event) => setTestQuery(event.target.value)}
                       rows={3}
                       placeholder="Example: What does this policy say about refunds?"
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:ring-primary dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                     />
                     <button
                       type="submit"
                       disabled={testing || !testQuery.trim()}
-                      className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
                     >
                       {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                       Ask
@@ -793,7 +793,7 @@ export default function OKFBundleDetailDrawer({
                         <Clock className="h-4 w-4" />
                         {testResult.response_time.toFixed(2)}s
                       </div>
-                      <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                      <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                         <div className="border-b border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900 dark:border-gray-800 dark:text-white">
                           Answer
                         </div>
@@ -882,7 +882,7 @@ export default function OKFBundleDetailDrawer({
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
       <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</div>
       <div className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{value}</div>
     </div>
@@ -891,7 +891,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 
 function InfoRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
       <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</div>
       <div className="mt-2 break-words text-sm font-medium text-gray-900 dark:text-white">{value}</div>
     </div>

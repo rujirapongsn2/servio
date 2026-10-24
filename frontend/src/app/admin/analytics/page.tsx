@@ -284,16 +284,16 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
+        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900">Analytics Dashboard</h1>
 
         {/* Team scope indicator + Period selector */}
         <div className="flex items-center gap-3">
           {selectedTeam ? (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
+            <span className="text-xs px-2.5 py-1 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
               Team: {selectedTeam.name}
             </span>
           ) : (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 font-medium">
+            <span className="text-xs px-2.5 py-1 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 font-medium">
               All Teams
             </span>
           )}
@@ -315,30 +315,30 @@ export default function AnalyticsPage() {
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+          <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
             <div className="text-sm font-medium text-gray-600">Total Conversations</div>
             <div className="text-3xl font-bold text-gray-900 mt-2">
               {summary.total_conversations}
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+          <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
             <div className="text-sm font-medium text-gray-600">Resolution Rate</div>
             <div className="text-3xl font-bold text-green-600 mt-2">
               {summary.resolution_rate}%
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+          <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
             <div className="text-sm font-medium text-gray-600">Avg Messages</div>
             <div className="text-3xl font-bold text-blue-600 mt-2">
               {summary.avg_messages}
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+          <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
             <div className="text-sm font-medium text-gray-600">Avg Sentiment</div>
-            <div className="text-3xl font-bold text-purple-600 mt-2">
+            <div className="text-3xl font-bold text-primary mt-2">
               {summary.avg_sentiment >= 0 ? "+" : ""}{summary.avg_sentiment.toFixed(2)}
             </div>
           </div>
@@ -353,7 +353,7 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Outcome Distribution */}
           {summary.outcome_breakdown && Object.keys(summary.outcome_breakdown).length > 0 && (
-            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Outcome Distribution</h3>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -367,18 +367,18 @@ export default function AnalyticsPage() {
                     labelLine={false}
                     label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     outerRadius={80}
-                    fill="#8884d8"
+                    fill="#4582b8"
                     dataKey="value"
                   >
                     {Object.entries(summary.outcome_breakdown).map(([name], index) => {
                       const colors: Record<string, string> = {
-                        resolved: "#9BC53D",
-                        escalated: "#F39C4F",
-                        abandoned: "#FDD835",
-                        ongoing: "#2E8BC0",
-                        completed: "#9BC53D",
+                        resolved: "#a9cb2e",
+                        escalated: "#f3903f",
+                        abandoned: "#fdc70c",
+                        ongoing: "#4582b8",
+                        completed: "#a9cb2e",
                       };
-                      return <Cell key={`cell-${index}`} fill={colors[name] || "#9BC53D"} />;
+                      return <Cell key={`cell-${index}`} fill={colors[name] || "#a9cb2e"} />;
                     })}
                   </Pie>
                   <Tooltip />
@@ -390,7 +390,7 @@ export default function AnalyticsPage() {
 
           {/* Sentiment Distribution */}
           {summary.sentiment_breakdown && Object.keys(summary.sentiment_breakdown).length > 0 && (
-            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Sentiment Distribution</h3>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -404,16 +404,16 @@ export default function AnalyticsPage() {
                     labelLine={false}
                     label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     outerRadius={80}
-                    fill="#8884d8"
+                    fill="#4582b8"
                     dataKey="value"
                   >
                     {Object.entries(summary.sentiment_breakdown).map(([name], index) => {
                       const colors: Record<string, string> = {
-                        positive: "#9BC53D",
-                        neutral: "#2E8BC0",
-                        negative: "#F39C4F",
+                        positive: "#a9cb2e",
+                        neutral: "#4582b8",
+                        negative: "#f3903f",
                       };
-                      return <Cell key={`cell-${index}`} fill={colors[name] || "#2E8BC0"} />;
+                      return <Cell key={`cell-${index}`} fill={colors[name] || "#4582b8"} />;
                     })}
                   </Pie>
                   <Tooltip />
@@ -427,7 +427,7 @@ export default function AnalyticsPage() {
 
       {/* Topic Distribution Bar Chart */}
       {summary && summary.topic_breakdown && Object.keys(summary.topic_breakdown).length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+        <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Topics</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart
@@ -444,7 +444,7 @@ export default function AnalyticsPage() {
               <XAxis dataKey="topic" angle={-45} textAnchor="end" height={100} />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="count" fill="#2E8BC0" />
+              <Bar dataKey="count" fill="#4582b8" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -471,7 +471,7 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Conversation Volume Trend */}
             {trends.daily_volume && trends.daily_volume.length > 0 && (
-              <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+              <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Conversation Volume Trend</h3>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={trends.daily_volume}>
@@ -491,10 +491,10 @@ export default function AnalyticsPage() {
                     <Line
                       type="monotone"
                       dataKey="count"
-                      stroke="#2E8BC0"
+                      stroke="#4582b8"
                       strokeWidth={2}
                       activeDot={{ r: 6 }}
-                      dot={{ fill: "#2E8BC0" }}
+                      dot={{ fill: "#4582b8" }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -503,7 +503,7 @@ export default function AnalyticsPage() {
 
             {/* Sentiment Trend */}
             {trends.daily_sentiment && trends.daily_sentiment.length > 0 && (
-              <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+              <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Sentiment Trend</h3>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={trends.daily_sentiment}>
@@ -523,10 +523,10 @@ export default function AnalyticsPage() {
                     <Line
                       type="monotone"
                       dataKey="sentiment"
-                      stroke="#9BC53D"
+                      stroke="#a9cb2e"
                       strokeWidth={2}
                       activeDot={{ r: 6 }}
-                      dot={{ fill: "#9BC53D" }}
+                      dot={{ fill: "#a9cb2e" }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -536,7 +536,7 @@ export default function AnalyticsPage() {
 
           {/* Agent Performance */}
           {trends.agent_performance && trends.agent_performance.length > 0 && (
-            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="bg-white p-6 rounded-xl shadow border border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Agent Performance</h3>
               <ResponsiveContainer width="100%" height={400}>
                 <BarChart
@@ -548,10 +548,10 @@ export default function AnalyticsPage() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="performance" fill="#2E8BC0" name="Performance %" />
-                  <Bar dataKey="empathy" fill="#9BC53D" name="Empathy %" />
-                  <Bar dataKey="clarity" fill="#FDD835" name="Clarity %" />
-                  <Bar dataKey="resolution_rate" fill="#F39C4F" name="Resolution %" />
+                  <Bar dataKey="performance" fill="#4582b8" name="Performance %" />
+                  <Bar dataKey="empathy" fill="#a9cb2e" name="Empathy %" />
+                  <Bar dataKey="clarity" fill="#fdc70c" name="Clarity %" />
+                  <Bar dataKey="resolution_rate" fill="#f3903f" name="Resolution %" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -560,7 +560,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+      <div className="bg-white p-4 rounded-xl shadow border border-gray-200">
         <div className="flex gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -602,7 +602,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Conversations Table */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">Conversations</h2>
         </div>
@@ -617,31 +617,31 @@ export default function AnalyticsPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Started
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Team
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Duration
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Messages
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Topic
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Sentiment
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Outcome
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       AI Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500">
                       Actions
                     </th>
                   </tr>
@@ -654,7 +654,7 @@ export default function AnalyticsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {conv.team_agent_name ? (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                          <span className="px-2 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
                             {conv.team_agent_name}
                           </span>
                         ) : (
@@ -669,7 +669,7 @@ export default function AnalyticsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {conv.primary_topic ? (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
+                          <span className="px-2 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700">
                             {conv.primary_topic.replace(/_/g, " ")}
                           </span>
                         ) : (
@@ -678,7 +678,7 @@ export default function AnalyticsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {conv.overall_sentiment ? (
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSentimentColor(conv.overall_sentiment)}`}>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-md ${getSentimentColor(conv.overall_sentiment)}`}>
                             {conv.overall_sentiment}
                           </span>
                         ) : (
@@ -686,12 +686,12 @@ export default function AnalyticsPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getOutcomeColor(conv.outcome)}`}>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-md ${getOutcomeColor(conv.outcome)}`}>
                           {conv.outcome}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getEnrichmentStatusColor(conv.enrichment_status)}`}>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-md ${getEnrichmentStatusColor(conv.enrichment_status)}`}>
                           {conv.enrichment_status || "N/A"}
                         </span>
                       </td>
@@ -761,7 +761,7 @@ export default function AnalyticsPage() {
       {/* Detail Modal */}
       {selectedConversation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">
@@ -830,7 +830,7 @@ export default function AnalyticsPage() {
                     <div className="text-sm text-gray-600 mb-1">Topics</div>
                     <div className="flex flex-wrap gap-2">
                       {ensureArray(selectedConversation.analytics.topics).map((topic: string, i: number) => (
-                        <span key={i} className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
+                        <span key={i} className="px-2 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700">
                           {topic.replace(/_/g, " ")}
                         </span>
                       ))}

@@ -68,11 +68,11 @@ export function FunctionCallMessage({
           </div>
 
           {isExpanded && (
-            <div className="bg-[#fafafa] rounded-xl py-2 ml-4 mt-2">
+            <div className="bg-canvas rounded-xl py-2 ml-4 mt-2">
               <div className="max-h-96 overflow-y-scroll text-xs border-b mx-6 p-2">
                 <SyntaxHighlighter
                   customStyle={{
-                    backgroundColor: "#fafafa",
+                    backgroundColor: "#f6f8fa",
                     padding: "8px",
                     paddingLeft: "0px",
                     marginTop: 0,
@@ -88,7 +88,7 @@ export function FunctionCallMessage({
                 {output ? (
                   <SyntaxHighlighter
                     customStyle={{
-                      backgroundColor: "#fafafa",
+                      backgroundColor: "#f6f8fa",
                       padding: "8px",
                       paddingLeft: "0px",
                       marginTop: 0,

@@ -254,7 +254,7 @@ function LLMProvidersContent() {
 
             <div className="flex flex-wrap justify-between items-center gap-3">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">LLM Providers</h1>
+                    <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">LLM Providers</h1>
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                         Configure OpenAI-compatible LLM providers for your agents.
                     </p>
@@ -272,14 +272,14 @@ function LLMProvidersContent() {
             )}
 
             {/* List */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 overflow-x-auto">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Base URL</th>
-                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Default</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                            <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500 dark:text-gray-400">Name</th>
+                            <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500 dark:text-gray-400">Base URL</th>
+                            <th className="px-6 py-3 text-center text-[12.5px] font-medium text-gray-500 dark:text-gray-400">Default</th>
+                            <th className="px-6 py-3 text-right text-[12.5px] font-medium text-gray-500 dark:text-gray-400">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -322,7 +322,7 @@ function LLMProvidersContent() {
             {/* Edit Modal */}
             {isEditing && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 animate-in fade-in zoom-in-95 duration-200">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                                 {currentProvider.id ? "Edit Provider" : "New Provider"}

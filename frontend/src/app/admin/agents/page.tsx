@@ -79,7 +79,7 @@ export default function AgentsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">
             Agents
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
@@ -110,7 +110,7 @@ export default function AgentsPage() {
       </div>
 
       {agents.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
           <p className="text-gray-600 dark:text-gray-400 mb-4">
             No agents found. Create your first agent to get started.
           </p>
@@ -126,19 +126,19 @@ export default function AgentsPage() {
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500 dark:text-gray-400">
                   Name
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500 dark:text-gray-400">
                   Model
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500 dark:text-gray-400">
                   Tools
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-[12.5px] font-medium text-gray-500 dark:text-gray-400">
                   Status
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-[12.5px] font-medium text-gray-500 dark:text-gray-400">
                   Actions
                 </th>
               </tr>
@@ -162,7 +162,7 @@ export default function AgentsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300">
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-md bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300">
                       {agent.model}
                     </span>
                   </td>
@@ -171,7 +171,7 @@ export default function AgentsPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {agent.is_starting_agent && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300">
+                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-md bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300">
                         Starting Agent
                       </span>
                     )}

@@ -391,7 +391,7 @@ export default function CreateOKFBundleModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div role="dialog" aria-modal={true} aria-busy={importing || previewing} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
+      <div role="dialog" aria-modal={true} aria-busy={importing || previewing} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-800">
         <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div>
             <h2 id={headingId} className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -438,7 +438,7 @@ export default function CreateOKFBundleModal({
                 }}
                 disabled={importing || previewing}
                 placeholder="e.g., Sales Playbook, HR Policy, Product FAQ"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary focus:ring-primary disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 required
               />
             </div>
@@ -456,7 +456,7 @@ export default function CreateOKFBundleModal({
                     setPreview(null);
                   }}
                   disabled={importing || previewing}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary focus:ring-primary disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 >
                   <option value="team">Private (this team only)</option>
                   <option value="global">Global (all teams can use)</option>
@@ -482,7 +482,7 @@ export default function CreateOKFBundleModal({
                   rows={6}
                   placeholder={"https://example.com/policy\nhttps://example.com/faq"}
                   aria-describedby="knowledge-urls-hint"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:ring-primary disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 />
                 <p id="knowledge-urls-hint" className="mt-1 text-xs text-gray-500">One public URL per line, up to 20. Only the listed pages are imported.</p>
               </div>
@@ -502,7 +502,7 @@ export default function CreateOKFBundleModal({
                   disabled={importing || previewing}
                   rows={10}
                   placeholder="Paste policy, FAQ, product information, SOP, or other knowledge here."
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary focus:ring-primary disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 />
               </div>
             ) : (
@@ -540,7 +540,7 @@ export default function CreateOKFBundleModal({
             )}
 
             {preview && mode !== "archive" && (
-              <div className="rounded-lg border border-emerald-200 bg-white p-4 dark:border-emerald-900/50 dark:bg-gray-900">
+              <div className="rounded-xl border border-emerald-200 bg-white p-4 dark:border-emerald-900/50 dark:bg-gray-900">
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
                   <div>
@@ -570,7 +570,7 @@ export default function CreateOKFBundleModal({
                           <div title={document.title} className="break-words text-sm font-medium text-gray-900 dark:text-white">{document.title}</div>
                           <div title={document.source_file} className="mt-0.5 break-all text-xs text-gray-500 dark:text-gray-400">{document.source_file}</div>
                         </div>
-                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-[11px] font-medium uppercase text-gray-600 dark:bg-gray-700 dark:text-gray-200">
+                        <span className="shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[11px] font-medium uppercase text-gray-600 dark:bg-gray-700 dark:text-gray-200">
                           {document.document_type}
                         </span>
                       </div>
@@ -659,7 +659,7 @@ export default function CreateOKFBundleModal({
                   <button
                     type="button"
                     onClick={onReturnToTeam}
-                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover"
                   >
                     Back to Team Agent
                   </button>
@@ -671,7 +671,7 @@ export default function CreateOKFBundleModal({
                     "rounded-md px-4 py-2 text-sm font-medium",
                     teamSetupMode && onReturnToTeam
                       ? "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700",
+                      : "bg-primary text-white hover:bg-primary-hover",
                   ].join(" ")}
                 >
                   Done
@@ -681,7 +681,7 @@ export default function CreateOKFBundleModal({
               <button
                 type="submit"
                 disabled={importing || previewing || !displayName.trim() || !hasSource || selectedIssues.length > 0}
-                className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {(importing || previewing) && <Loader2 className="h-4 w-4 animate-spin" />}
                 {mode === "archive" ? "Import OKF" : preview ? "Add Knowledge" : "Review Knowledge"}

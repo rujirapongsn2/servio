@@ -57,30 +57,30 @@ export default function WorkflowNavigator({
   };
 
   return (
-    <div className="rounded-[14px] border border-[#E2E8F0] bg-white px-4 py-3">
+    <div className="rounded-[14px] border border-line bg-white px-4 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <Button type="button" variant="outline" size="sm" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4" />
             {backLabel}
           </Button>
-          <nav className="flex items-center gap-1 overflow-x-auto text-sm font-medium text-[#778DA9]">
+          <nav className="flex items-center gap-1 overflow-x-auto text-sm font-medium text-ink-3">
             {steps.map((step, index) => (
               <div key={`${step.label}-${index}`} className="flex items-center gap-1 whitespace-nowrap">
                 {step.href && !step.active ? (
                   <button
                     type="button"
                     onClick={() => router.push(step.href as string)}
-                    className="font-medium text-[#2D3F55] hover:text-[#2786C2]"
+                    className="font-medium text-ink-2 hover:text-primary"
                   >
                     {step.label}
                   </button>
                 ) : (
-                  <span className={step.active ? "font-semibold text-[#0D1B2A]" : ""}>
+                  <span className={step.active ? "font-semibold text-ink" : ""}>
                     {step.label}
                   </span>
                 )}
-                {index < steps.length - 1 && <ChevronRight className="h-4 w-4 text-[#CBD5E1]" />}
+                {index < steps.length - 1 && <ChevronRight className="h-4 w-4 text-line-strong" />}
               </div>
             ))}
           </nav>

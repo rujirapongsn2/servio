@@ -171,7 +171,7 @@ export default function EditToolForm({ toolId, teamId, onSaved, onCancel, onBusy
   return (
     <div className="space-y-6 max-w-2xl">
       <form onSubmit={handleSubmit} className="space-y-6"><fieldset disabled={saving} className="space-y-6">
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Integration Setup
           </h2>

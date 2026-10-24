@@ -70,23 +70,23 @@ export default function AccountPage() {
   return (
     <div className="max-w-lg mx-auto space-y-6">
       <div>
-        <h1 className="text-[28px] font-bold leading-[1.43] text-[#0D1B2A]">Account</h1>
-        <p className="mt-1 text-base font-medium text-[#778DA9]">
+        <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-ink">Account</h1>
+        <p className="mt-1 text-base font-medium text-ink-3">
           Manage your account settings
         </p>
       </div>
 
       {/* Profile Info */}
-      <div className="rounded-[14px] border border-[#E2E8F0] bg-white p-6">
-        <h2 className="text-base font-semibold text-[#0D1B2A]">Profile</h2>
+      <div className="rounded-[14px] border border-line bg-white p-6">
+        <h2 className="text-base font-semibold text-ink">Profile</h2>
         <div className="mt-3 space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-[#778DA9]">Username</span>
-            <span className="font-medium text-[#0D1B2A]">{username}</span>
+            <span className="text-ink-3">Username</span>
+            <span className="font-medium text-ink">{username}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-[#778DA9]">Role</span>
-            <span className={`font-medium ${isSuperAdmin ? "text-[#2786C2]" : "text-[#2D3F55]"}`}>
+            <span className="text-ink-3">Role</span>
+            <span className={`font-medium ${isSuperAdmin ? "text-primary" : "text-ink-2"}`}>
               {isSuperAdmin ? "Administrator" : "User"}
             </span>
           </div>
@@ -94,8 +94,8 @@ export default function AccountPage() {
       </div>
 
       {/* Change Password */}
-      <div className="rounded-[14px] border border-[#E2E8F0] bg-white p-6">
-        <h2 className="text-base font-semibold text-[#0D1B2A]">Change Password</h2>
+      <div className="rounded-[14px] border border-line bg-white p-6">
+        <h2 className="text-base font-semibold text-ink">Change Password</h2>
         <form onSubmit={handleChangePassword} className="mt-4 space-y-4">
           {message && (
             <div className="rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
@@ -108,7 +108,7 @@ export default function AccountPage() {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-[#2D3F55] mb-1">
+            <label className="block text-sm font-medium text-ink-2 mb-1">
               Current Password
             </label>
             <input
@@ -116,11 +116,11 @@ export default function AccountPage() {
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
-              className="w-full rounded-lg border border-[#E2E8F0] px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
+              className="w-full rounded-lg border border-line px-4 py-3 text-sm font-medium text-ink outline-none focus:border-ink focus:ring-2 focus:ring-ink"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#2D3F55] mb-1">
+            <label className="block text-sm font-medium text-ink-2 mb-1">
               New Password
             </label>
             <input
@@ -129,11 +129,11 @@ export default function AccountPage() {
               onChange={(e) => setNewPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full rounded-lg border border-[#E2E8F0] px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
+              className="w-full rounded-lg border border-line px-4 py-3 text-sm font-medium text-ink outline-none focus:border-ink focus:ring-2 focus:ring-ink"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#2D3F55] mb-1">
+            <label className="block text-sm font-medium text-ink-2 mb-1">
               Confirm New Password
             </label>
             <input
@@ -141,7 +141,7 @@ export default function AccountPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              className="w-full rounded-lg border border-[#E2E8F0] px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
+              className="w-full rounded-lg border border-line px-4 py-3 text-sm font-medium text-ink outline-none focus:border-ink focus:ring-2 focus:ring-ink"
             />
           </div>
           <Button type="submit" disabled={saving}>

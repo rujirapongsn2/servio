@@ -87,7 +87,7 @@ export default function TestOKFBundleModal({
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Test knowledge" tabIndex={-1} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -128,7 +128,7 @@ export default function TestOKFBundleModal({
             <button
               type="submit"
               disabled={testing || !query.trim() || !bundleId}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-hover rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               Run Query
@@ -175,7 +175,7 @@ export default function TestOKFBundleModal({
                               {concept.title || concept.concept_id}
                             </p>
                             {concept.type && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-white/70 dark:bg-gray-900/50 text-emerald-800 dark:text-emerald-200">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-white/70 dark:bg-gray-900/50 text-emerald-800 dark:text-emerald-200">
                                 {concept.type}
                               </span>
                             )}

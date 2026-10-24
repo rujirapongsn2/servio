@@ -28,7 +28,7 @@ export default function TeamSwitcher({ label }: TeamSwitcherProps) {
   return (
     <div className="flex items-center gap-2">
       {label && (
-        <span className="text-xs font-semibold uppercase tracking-wide text-[#778DA9]">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-3">
           {label}
         </span>
       )}
@@ -37,7 +37,7 @@ export default function TeamSwitcher({ label }: TeamSwitcherProps) {
           value={selectedTeam?.id ?? ""}
           onChange={(e) => handleTeamChange(parseInt(e.target.value))}
           aria-label={label || "Team Agent"}
-          className="appearance-none rounded-full border border-[#E2E8F0] bg-white py-2 pl-4 pr-9 text-sm font-medium text-[#0D1B2A] shadow-[rgba(0,0,0,0.04)_0_2px_6px_0] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A] cursor-pointer"
+          className="appearance-none rounded-full border border-line bg-white py-2 pl-4 pr-9 text-sm font-medium text-ink shadow-[rgba(0,0,0,0.04)_0_2px_6px_0] outline-none focus:border-ink focus:ring-2 focus:ring-ink cursor-pointer"
         >
           {teams.map((team) => (
             <option key={team.id} value={team.id} className="text-gray-900 bg-white">
@@ -45,7 +45,7 @@ export default function TeamSwitcher({ label }: TeamSwitcherProps) {
             </option>
           ))}
         </select>
-        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#778DA9] pointer-events-none" />
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none" />
       </div>
     </div>
   );

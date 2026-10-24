@@ -22,7 +22,7 @@ function NewToolForm() {
       { label: UI_COPY.tools.navLabel, href: "/admin/tools" },
       { label: "Add Integration", active: true },
     ]} />
-    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Add Integration</h1>
+    <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">Add Integration</h1>
     <CreateToolForm context={{ kind: "tools-page", teamId, assignAgentId: positiveId(searchParams.get("source_agent_id")) }} onCancel={() => router.push(toolsHref)} onCreated={(result) => {
       if (routeTeamId && routeTeamId !== selectedTeamId) setSelectedTeamId(routeTeamId);
       const returnAgentValue = searchParams.get("return_agent_id");

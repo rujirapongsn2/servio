@@ -188,7 +188,7 @@ export default function AgentTestPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] text-gray-900 dark:text-white">
             Test Agent: {agentName}
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
@@ -212,7 +212,7 @@ export default function AgentTestPage() {
       </div>
 
       {/* Force Tool Controls */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 shadow rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex items-center gap-3">
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
             <input
@@ -317,7 +317,7 @@ export default function AgentTestPage() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {message.citations.map((c: string, i: number) => (
-                          <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          <span key={i} className="text-[11px] px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                             {c}
                           </span>
                         ))}
