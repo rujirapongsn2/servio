@@ -1,12 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTeam } from "@/lib/team-context";
 import { getApiBaseUrl } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
-import { Plus, Trash2, Users, Bot, Pencil, Play, Wrench } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Pencil,
+  Play,
+  Wrench,
+  Search,
+  X,
+  Settings2,
+  Workflow as WorkflowIcon,
+} from "lucide-react";
 
 interface TeamMember {
   agent_id: number;
@@ -56,6 +66,17 @@ export default function TeamsPage() {
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [pageMessage, setPageMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [query, setQuery] = useState("");
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleTeams = useMemo(() => {
+    if (!normalizedQuery) return teams;
+    return teams.filter((team) =>
+      [team.name, team.slug, team.description, team.owner_username, team.starting_agent_name]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery))
+    );
+  }, [teams, normalizedQuery]);
 
   const apiBase = getApiBaseUrl();
   const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") : "";
@@ -96,8 +117,8 @@ export default function TeamsPage() {
     }
   };
 
-  const handleDelete = async (teamId: number) => {
-    if (!confirm("Are you sure you want to delete this team?")) return;
+  const handleDelete = async (teamId: number, teamName: string) => {
+    if (!confirm(`Delete team "${teamName}"? This cannot be undone.`)) return;
     const res = await fetch(`${apiBase}/api/admin/team-agents/${teamId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
@@ -239,104 +260,193 @@ export default function TeamsPage() {
         ]}
       />
 
-      <div className="flex items-center justify-between">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-[28px] font-bold leading-[1.43] text-[#0D1B2A]">Team Agents</h1>
+          <h1 className="text-[28px] font-bold leading-[1.25] text-[#0D1B2A]">Team Agents</h1>
           <p className="mt-1 text-base font-medium text-[#778DA9]">
             Manage your agent teams and workspaces
           </p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4 mr-1" /> New Team
+        <Button onClick={() => setShowCreate(true)} className="self-start sm:self-auto">
+          <Plus className="h-4 w-4" /> New Team
         </Button>
-      </div>
+      </header>
 
       {pageMessage && (
         <div
-          className={`rounded-md border px-3 py-2 text-sm ${
+          role={pageMessage.type === "error" ? "alert" : "status"}
+          className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-sm font-medium ${
             pageMessage.type === "success"
-              ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300"
-              : "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
+              ? "border-green-200 bg-green-50 text-green-800 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300"
+              : "border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
           }`}
         >
-          {pageMessage.text}
+          <span>{pageMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setPageMessage(null)}
+            aria-label="Dismiss message"
+            className="-m-1 rounded-md p-1 opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D1B2A]"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
-      {/* Team Cards */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {teams.map((team) => (
-          <div
-            key={team.id}
-            className="rounded-[14px] border border-[#E2E8F0] bg-white p-6 transition-colors hover:border-[#CBD5E1]"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-[#0D1B2A]">{team.name}</h3>
-                <p className="text-sm font-medium text-[#778DA9]">{team.slug}</p>
-                <p className="mt-1 text-xs font-medium text-[#94A3B8]">
-                  Owned by: {team.owner_username || "N/A"}
-                </p>
-              </div>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  team.status === "active"
-                    ? "bg-[#F8F9FA] text-[#2786C2] ring-1 ring-[#E2E8F0]"
-                    : "bg-[#F8F9FA] text-[#778DA9] ring-1 ring-[#E2E8F0]"
-                }`}
-              >
-                {team.status}
-              </span>
-            </div>
+      <section aria-labelledby="team-list-heading" className="space-y-4">
+        <h2 id="team-list-heading" className="sr-only">
+          Teams
+        </h2>
 
-            {team.description && (
-              <p className="mt-3 line-clamp-2 text-sm font-medium leading-5 text-[#2D3F55]">
-                {team.description}
-              </p>
-            )}
-
-            <div className="mt-5 flex items-center gap-4 text-sm font-medium text-[#778DA9]">
-              <span className="flex items-center gap-1">
-                <Users className="h-4 w-4" /> {team.member_count} agents
-              </span>
-              {team.starting_agent_name && (
-                <span className="flex items-center gap-1">
-                  <Bot className="h-4 w-4" /> {team.starting_agent_name}
-                </span>
-              )}
+        {!teamsLoading && teams.length > 0 && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-xs">
+              <label htmlFor="team-search" className="sr-only">
+                Search teams
+              </label>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#778DA9]"
+              />
+              <input
+                id="team-search"
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name, slug or owner"
+                className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-3 text-sm font-medium text-[#0D1B2A] outline-none placeholder:text-[#778DA9] focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]/15"
+              />
             </div>
-
-            <div className="mt-5 flex items-center gap-2 border-t border-[#E2E8F0] pt-4">
-              <Button variant="outline" size="sm" onClick={() => openEdit(team.id)}>
-                Manage
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => router.push(`/admin/teams/${team.id}/workflow`)}>
-                Workflow
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDelete(team.id)}
-                className="border-red-200 text-red-600 hover:border-red-300 hover:text-red-700"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
+            <p className="text-sm font-medium tabular-nums text-[#778DA9]" aria-live="polite">
+              {normalizedQuery
+                ? `${visibleTeams.length} of ${teams.length} teams`
+                : `${teams.length} ${teams.length === 1 ? "team" : "teams"}`}
+            </p>
           </div>
-        ))}
+        )}
+
+        <div
+          role="list"
+          className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16.5rem),1fr))] gap-3"
+        >
+          {visibleTeams.map((team) => {
+            const isActive = team.status === "active";
+            const agentLabel = `${team.member_count} ${team.member_count === 1 ? "agent" : "agents"}`;
+            return (
+              <div
+                role="listitem"
+                key={team.id}
+                className="flex min-w-0 flex-col rounded-xl border border-[#E2E8F0] bg-white transition-colors hover:border-[#CBD5E1]"
+              >
+                <div className="flex flex-1 flex-col px-4 pb-3 pt-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3
+                      className="min-w-0 truncate text-[15px] font-semibold leading-5 text-[#0D1B2A]"
+                      title={team.name}
+                    >
+                      {team.name}
+                    </h3>
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[11px] font-semibold capitalize leading-4 ring-1 ring-inset ${
+                        isActive
+                          ? "bg-[#2786C2]/[0.06] text-[#1A5A8A] ring-[#2786C2]/20"
+                          : "bg-[#F8F9FA] text-[#2D3F55] ring-[#E2E8F0]"
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-[#2786C2]" : "bg-[#9BA8B4]"}`}
+                      />
+                      {team.status}
+                    </span>
+                  </div>
+
+                  <p className="mt-0.5 truncate text-xs font-medium leading-4 text-[#778DA9]">
+                    <span title={team.slug}>{team.slug}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>Owned by {team.owner_username || "N/A"}</span>
+                  </p>
+
+                  {team.description && (
+                    <p
+                      className="mt-2 truncate text-[13px] font-medium leading-5 text-[#2D3F55]"
+                      title={team.description}
+                    >
+                      {team.description}
+                    </p>
+                  )}
+
+                  <p className="mt-auto flex min-w-0 items-center gap-1 pt-2 text-[13px] leading-5 text-[#778DA9]">
+                    <span className="shrink-0 font-semibold tabular-nums text-[#0D1B2A]">{agentLabel}</span>
+                    <span aria-hidden="true" className="shrink-0">·</span>
+                    <span className="shrink-0">Fallback:</span>
+                    <span
+                      className={`truncate ${team.starting_agent_name ? "font-medium text-[#0D1B2A]" : ""}`}
+                      title={team.starting_agent_name || undefined}
+                    >
+                      {team.starting_agent_name || "Not set"}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 border-t border-[#E2E8F0] px-3 py-2">
+                  <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => openEdit(team.id)}>
+                    <Settings2 aria-hidden="true" /> Manage
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2.5"
+                    onClick={() => router.push(`/admin/teams/${team.id}/workflow`)}
+                  >
+                    <WorkflowIcon aria-hidden="true" /> Workflow
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="iconSmall"
+                    onClick={() => handleDelete(team.id, team.name)}
+                    aria-label={`Delete team ${team.name}`}
+                    title="Delete team"
+                    className="ml-auto h-7 w-7 text-[#778DA9] hover:bg-red-50 hover:text-[#B91C1C] focus-visible:ring-[#B91C1C]"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
         {teamsLoading && (
-          <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] py-12 text-center text-sm font-medium text-[#778DA9]">
-            Loading team agents...
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16.5rem),1fr))] gap-3" aria-busy="true">
+            <span className="sr-only">Loading team agents...</span>
+            {[0, 1, 2].map((i) => (
+              <div key={i} aria-hidden="true" className="h-[132px] animate-pulse rounded-xl border border-[#E2E8F0] bg-[#F8F9FA]" />
+            ))}
           </div>
         )}
 
         {!teamsLoading && teams.length === 0 && (
-          <div className="col-span-full rounded-[14px] border border-dashed border-[#CBD5E1] py-12 text-center text-sm font-medium text-[#778DA9]">
-            No teams yet. Create your first team to get started.
+          <div className="rounded-[14px] border border-dashed border-[#CBD5E1] px-6 py-12 text-center">
+            <p className="text-base font-semibold text-[#0D1B2A]">No teams yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm font-medium text-[#778DA9]">
+              Create your first team, then add agents and build its workflow.
+            </p>
+            <Button className="mt-5" onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4" /> New Team
+            </Button>
           </div>
         )}
-      </div>
+
+        {!teamsLoading && teams.length > 0 && visibleTeams.length === 0 && (
+          <div className="rounded-[14px] border border-dashed border-[#CBD5E1] px-6 py-12 text-center">
+            <p className="text-base font-semibold text-[#0D1B2A]">No teams match &ldquo;{query.trim()}&rdquo;</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => setQuery("")}>
+              Clear search
+            </Button>
+          </div>
+        )}
+      </section>
 
       {/* Create Modal */}
       {showCreate && (
