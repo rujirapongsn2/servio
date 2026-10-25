@@ -72,6 +72,11 @@ def test_filesystem_model_paths_are_omitted(value):
     assert monitor.safe_model(value) is None
 
 
+@pytest.mark.parametrize('value', ['ggml-org/embeddinggemma-2-GGUF:BF16', 'qwen/qwen3.6-27b'])
+def test_configured_model_alias_is_visible(value):
+    assert monitor.safe_model(value) == value
+
+
 def test_configuration_is_not_health(monkeypatch):
     monkeypatch.setenv('OPENAI_API_KEY', 'secret')
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'true')

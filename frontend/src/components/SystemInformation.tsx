@@ -69,11 +69,22 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
     let active = true;
     let pending: AbortController | null = null;
     let timer: ReturnType<typeof setInterval> | undefined;
+    let requestDeadline: ReturnType<typeof setTimeout> | undefined;
     const fetchInfo = async () => {
       if (!active || document.visibilityState === "hidden" || pending) return;
       const controller = new AbortController();
       pending = controller;
       setLoading(true);
+      const deadline = setTimeout(() => {
+        if (active && pending === controller) {
+          pending = null;
+          requestDeadline = undefined;
+          controller.abort();
+          setLoading(false);
+          setFailed(true);
+        }
+      }, 8000);
+      requestDeadline = deadline;
       try {
         const response = await fetch(`${apiBaseUrl}/api/admin/system-info`, {
           headers: { Authorization: `Bearer ${localStorage.getItem("adminToken")}` },
@@ -90,8 +101,10 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
       } catch {
         if (active && pending === controller && !controller.signal.aborted) setFailed(true);
       } finally {
+        clearTimeout(deadline);
         if (active && pending === controller) {
           pending = null;
+          requestDeadline = undefined;
           setLoading(false);
         }
       }
@@ -99,6 +112,8 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
     const visibility = () => {
       clearInterval(timer);
       if (document.visibilityState === "hidden") {
+        clearTimeout(requestDeadline);
+        requestDeadline = undefined;
         pending?.abort();
         pending = null;
         setLoading(false);
@@ -112,6 +127,7 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
     visibility();
     return () => {
       active = false;
+      clearTimeout(requestDeadline);
       pending?.abort();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visibility);
@@ -136,9 +152,9 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
             <div className="min-w-0 flex-1 basis-44">
               <div className="text-sm font-medium text-gray-900 dark:text-white">{service.label}</div>
               {(service.endpoint || service.model) && <div className="mt-0.5 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{[service.endpoint, service.model].filter(Boolean).join(" · ")}</div>}
-              <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{service.detail}</div>
+              {(service.status === "unavailable" || service.status === "not_configured" || service.status === "unknown") && <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{service.detail}</div>}
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statuses[service.status].color}`}>{statuses[service.status].label}</span>
+            <span title={service.detail} aria-label={`${statuses[service.status].label}. ${service.detail}`} className={`rounded-full px-2 py-0.5 text-xs font-medium ${statuses[service.status].color}`}>{statuses[service.status].label}</span>
           </li>)}
         </ul>
         <details className="mt-4 border-t border-gray-200 pt-3 text-sm dark:border-gray-700">

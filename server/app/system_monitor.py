@@ -1,4 +1,3 @@
-"""Read-only observations for Settings; configuration is distinct from health."""
 from __future__ import annotations
 
 import asyncio
@@ -34,9 +33,9 @@ def endpoint_host(value: str) -> str | None:
 
 def safe_model(value: str | None) -> str | None:
     if (not value or len(value) > 255 or value.startswith(('/', '.', '~'))
-            or '\\' in value or ':' in value or len(value.split('/')) > 2
+            or '\\' in value or re.match(r'^[A-Za-z]:', value) or len(value.split('/')) > 2
             or any(part in {'', '.', '..'} for part in value.split('/'))
-            or not re.fullmatch(r'[A-Za-z0-9_./-]+', value)):
+            or not re.fullmatch(r'[A-Za-z0-9_./:-]+', value)):
         return None
     return value
 

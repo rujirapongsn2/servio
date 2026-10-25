@@ -53,6 +53,7 @@ function AdminLayoutInner({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isWorkflow = /^\/admin\/teams\/\d+\/workflow$/.test(pathname);
+  const responsiveNavigation = isWorkflow || pathname === "/admin/settings";
 
   useEffect(() => {
     // Skip auth check for login page
@@ -187,10 +188,10 @@ function AdminLayoutInner({
 
   return (
     <div className="min-h-screen bg-white text-[#0D1B2A]" data-viewer-only={isViewerOnly ? "1" : "0"}>
-      {isWorkflow && mobileSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
+      {responsiveNavigation && mobileSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
       {/* Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-[#E2E8F0] bg-white text-[#0D1B2A] transition-all duration-200 z-20 ${isWorkflow && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
+        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-[#E2E8F0] bg-white text-[#0D1B2A] transition-all duration-200 z-20 ${responsiveNavigation && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
         onClick={(event) => { if (event.target instanceof Element && event.target.closest("a")) setMobileSidebarOpen(false); }}
       >
         <div className="flex flex-col h-full">
@@ -331,17 +332,17 @@ function AdminLayoutInner({
 
       {/* Main content */}
       <div
-        className={`${isWorkflow ? collapsed ? "ml-0 lg:ml-16 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:4rem]" : "ml-0 lg:ml-64 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:16rem]" : collapsed ? "ml-16" : "ml-64"} transition-all duration-200 relative z-0`}
-        style={isWorkflow ? undefined : { "--admin-sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
+        className={`${responsiveNavigation ? collapsed ? "ml-0 lg:ml-16 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:4rem]" : "ml-0 lg:ml-64 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:16rem]" : collapsed ? "ml-16" : "ml-64"} transition-all duration-200 relative z-0`}
+        style={responsiveNavigation ? undefined : { "--admin-sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
       >
         {/* Top bar */}
         <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-[#E2E8F0] bg-white px-4 sm:px-8">
-          {isWorkflow && <button type="button" aria-label="Open navigation" aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />Navigation</button>}
+          {responsiveNavigation && <button type="button" aria-label="Open navigation" aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />Navigation</button>}
           {shouldShowTeamContextSwitcher(pathname) && (
             <TeamSwitcher label="Team Agent" />
           )}
         </div>
-        <main className={isWorkflow ? "p-4 sm:p-6 lg:p-8" : "p-8"}>{children}</main>
+        <main className={responsiveNavigation ? "p-4 sm:p-6 lg:p-8" : "p-8"}>{children}</main>
       </div>
     </div>
   );

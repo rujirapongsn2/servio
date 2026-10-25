@@ -82,6 +82,39 @@ test('settings removes all initial credentials and mounts monitoring only under 
   assert.match(page, /activeTab === "general" \? \([\s\S]*<SystemInformation apiBaseUrl=\{apiBaseUrl\}/);
 });
 
+test('a stalled check expires, preserves the previous snapshot and allows retry', async () => {
+  const previous = { fetch: globalThis.fetch, document: globalThis.document, localStorage: globalThis.localStorage,
+    setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  const requests = [];
+  let deadline;
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  globalThis.localStorage = { getItem: () => 'test-only' };
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 8000) { deadline = callback; return 888; }
+    return previous.setTimeout(callback, delay, ...args);
+  };
+  globalThis.clearTimeout = id => { if (id !== 888) previous.clearTimeout(id); };
+  globalThis.fetch = (url, options) => new Promise(resolve => requests.push({ options, resolve }));
+  let tree;
+  try {
+    await act(async () => { tree = create(React.createElement(exports.SystemInformation, { apiBaseUrl: '' })); });
+    await act(async () => requests[0].resolve({ ok: true, json: async () => snapshot }));
+    await act(async () => tree.root.findByType('button').props.onClick());
+    assert.equal(typeof deadline, 'function', 'a request deadline must be scheduled');
+    await act(async () => deadline());
+    assert.equal(requests[1].options.signal.aborted, true);
+    assert.match(JSON.stringify(tree.toJSON()), /Showing last successful check/);
+    assert.match(JSON.stringify(tree.toJSON()), /PostgreSQL/);
+    assert.equal(tree.root.findByType('button').props.disabled, false);
+    await act(async () => tree.root.findByType('button').props.onClick());
+    await act(async () => requests[2].resolve({ ok: true, json: async () => snapshot }));
+    assert.doesNotMatch(JSON.stringify(tree.toJSON()), /Showing last successful check/);
+  } finally {
+    if (tree) await act(async () => tree.unmount());
+    Object.assign(globalThis, previous);
+  }
+});
+
 test('rendered Settings removes credentials and switching tabs aborts monitoring', async () => {
   const previous = { fetch: globalThis.fetch, document: globalThis.document, localStorage: globalThis.localStorage };
   const pageExports = {};
@@ -119,6 +152,38 @@ test('rendered Settings removes credentials and switching tabs aborts monitoring
     assert.equal(signal.aborted, true);
     assert.equal(removed, true);
     assert.doesNotMatch(JSON.stringify(tree.toJSON()), /System Information/);
+  } finally {
+    if (tree) await act(async () => tree.unmount());
+    Object.assign(globalThis, previous);
+  }
+});
+
+test('Settings exposes mobile navigation that opens and closes', async () => {
+  const previous = { fetch: globalThis.fetch, localStorage: globalThis.localStorage };
+  const layoutExports = {};
+  const router = { push() {} };
+  const source = ts.transpileModule(fs.readFileSync(new URL('../src/app/admin/layout.tsx', import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  vm.runInThisContext(`(function(require,exports){${source}\n})`)(name => {
+    if (name === 'next/navigation') return { usePathname: () => '/admin/settings', useRouter: () => router };
+    if (name === 'next/link') return { default: props => React.createElement('a', props) };
+    if (name === '@/components/ui/Button') return { Button: props => React.createElement('button', props) };
+    if (name === '@/lib/team-context') return { TeamProvider: ({ children }) => children };
+    if (name === '@/components/TeamSwitcher') return { default: () => null };
+    return require(name);
+  }, layoutExports);
+  globalThis.localStorage = { getItem: key => key === 'adminToken' ? 'fixture' : null, setItem() {} };
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ is_super_admin: true }) });
+  let tree;
+  try {
+    await act(async () => { tree = create(React.createElement(layoutExports.default, {}, 'Settings content')); });
+    const navigation = () => tree.root.findByProps({ 'aria-label': 'Open navigation' });
+    assert.equal(navigation().props['aria-expanded'], false);
+    await act(async () => navigation().props.onClick());
+    assert.equal(navigation().props['aria-expanded'], true);
+    await act(async () => tree.root.findByProps({ 'aria-label': 'Close navigation' }).props.onClick());
+    assert.equal(navigation().props['aria-expanded'], false);
   } finally {
     if (tree) await act(async () => tree.unmount());
     Object.assign(globalThis, previous);
