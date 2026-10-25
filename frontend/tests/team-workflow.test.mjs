@@ -269,13 +269,13 @@ test('empty teams create an Agent without leaving Workflow', async (t) => {
   assert.ok(!env.storage.has('team-workflow-new:1'));
 });
 
-test('team cards retain Manage and open Workflow as a full page', async (t) => {
+test('team cards omit Manage and open Workflow as a full page', async (t) => {
   const env = setup(t); env.context.teams = [{ id: 1, name: 'Support', slug: 'support', status: 'active', member_count: 2 }];
   const Teams = env.load('src/app/admin/teams/page.tsx').default;
   let renderer;
   await act(async () => { renderer = create(React.createElement(Teams)); });
   t.after(async () => { await act(async () => renderer.unmount()); });
-  assert.ok(button(renderer, 'Manage'));
+  assert.equal(button(renderer, 'Manage'), undefined);
   await act(async () => button(renderer, 'Workflow').props.onClick());
   assert.equal(env.routes[0], '/admin/teams/1/workflow');
 });

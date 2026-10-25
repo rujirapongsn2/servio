@@ -14,7 +14,6 @@ import {
   Wrench,
   Search,
   X,
-  Settings2,
   Workflow as WorkflowIcon,
 } from "lucide-react";
 
@@ -390,9 +389,6 @@ export default function TeamsPage() {
                 </div>
 
                 <div className="flex items-center gap-1.5 border-t border-[#E2E8F0] px-3 py-2">
-                  <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => openEdit(team.id)}>
-                    <Settings2 aria-hidden="true" /> Manage
-                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
