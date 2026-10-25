@@ -136,12 +136,24 @@ Output JSON format only:
             return None
             
         text = last_user_msg.get("content", "").lower().strip()
-        # Keyword presence cannot resolve negation; use contextual analysis.
-        if NEGATION.search(text):
-            return None
         
         try:
             rules = database.get_all_intent_rules()
+            if NEGATION.search(text):
+                if re.search(r'''["'“”‘’]|คำว่า|แปลว่า|หมายถึง''', text):
+                    return None
+                configured_keywords = {
+                    keyword.lower().strip()
+                    for rule in rules
+                    for keyword in rule.get("keywords", [])
+                }
+                negation_text = re.sub(r"ไม่มีปัญหาแล้ว(?:ครับ|ค่ะ)?[.!\s]*$", "", text)
+                for phrase in ("ไม่พอใจ", "ไม่แน่ใจ", "ไม่เข้าใจ"):
+                    if phrase in configured_keywords:
+                        negation_text = negation_text.replace(phrase, "")
+                # Negation outside these literal phrases still needs context.
+                if NEGATION.search(negation_text):
+                    return None
             for rule in sorted(rules, key=lambda rule: (
                 INTENT_PRIORITY.get(rule["group"], len(INTENT_PRIORITY)), rule["group"],
             )):

@@ -104,3 +104,69 @@ def test_empty_history_does_not_update_or_call_model(intent):
     assert intent[2].sessions["test"].intent_group is None
     intent[2].broadcast_sessions_list.assert_not_awaited()
     intent[3].assert_not_awaited()
+
+
+@pytest.mark.parametrize("group,keyword,text", [
+    ("Frustrated / Escalating", "ไม่พอใจ", "ไม่พอใจบริการครับ"),
+    ("Frustrated / Escalating", "ไม่พอใจ", "ขอบคุณที่ตอบครับ แต่ไม่พอใจบริการที่ช้ามาก"),
+    ("Confused / Unclear Intent", "ไม่แน่ใจ", "ไม่แน่ใจว่ารุ่นไหนเหมาะกับงาน"),
+    ("Repetitive / Looping", "ไม่เข้าใจ", "ผมยังไม่เข้าใจ ช่วยอธิบายอีกครั้ง"),
+    ("Smooth Resolution", "ได้เลย", "ได้เลยครับ ตอนนี้ไม่มีปัญหาแล้ว"),
+])
+def test_clear_negative_signals_do_not_need_a_model(intent, group, keyword, text):
+    rule = next(rule for rule in intent[1] if rule["group"] == group)
+    rule["keywords"].append(keyword)
+    session = analyze(intent, text)
+    assert session.intent_group == group
+    intent[3].assert_not_awaited()
+    intent[2].set_mode.assert_not_awaited()
+
+
+@pytest.mark.parametrize("text", [
+    "ไม่ได้ไม่พอใจแล้ว ขอบคุณครับ",
+    "ไม่ใช่ว่าไม่แน่ใจ แต่อยากได้รายละเอียดเพิ่ม",
+    "ไม่ต้องบอกว่าไม่เข้าใจครับ",
+    "อย่าคิดว่าผมไม่มีปัญหาแล้ว ขอบคุณ",
+    "ไม่ต้องการคืนเงิน แม้ผมจะไม่พอใจบริการ",
+])
+def test_nested_or_unrelated_negation_still_needs_context(intent, text):
+    for rule, keyword in zip(intent[1][1:4], ["ไม่พอใจ", "ไม่เข้าใจ", "ไม่แน่ใจ"]):
+        rule["keywords"].append(keyword)
+    analyze(intent, text)
+    intent[3].assert_awaited_once()
+
+
+def test_clear_negative_phrase_does_not_create_an_unconfigured_rule(intent):
+    analyze(intent, "ขอบคุณครับ แต่ไม่พอใจบริการ")
+    intent[3].assert_awaited_once()
+
+
+def test_resolved_phrase_does_not_create_an_unconfigured_rule(intent):
+    analyze(intent, "ไม่มีปัญหาแล้วครับ")
+    intent[3].assert_awaited_once()
+
+
+def test_custom_negative_keyword_still_needs_context(intent):
+    intent[1][0]["keywords"].append("ไม่ต้องการคืนเงิน")
+    analyze(intent, "ขอบคุณครับ ไม่ต้องการคืนเงิน")
+    intent[3].assert_awaited_once()
+
+
+@pytest.mark.parametrize("text", [
+    'คำว่า "ไม่พอใจ" แปลว่าอะไรครับ',
+    "คำว่าไม่พอใจหมายถึงอะไรครับ",
+    'ลูกค้าบอกว่า "ไม่มีปัญหาแล้ว" แต่ผมอยากได้คำอธิบาย ขอบคุณครับ',
+])
+def test_quoted_or_defined_negative_phrases_need_context(intent, text):
+    intent[1][1]["keywords"].append("ไม่พอใจ")
+    analyze(intent, text)
+    intent[3].assert_awaited_once()
+
+
+@pytest.mark.parametrize("text", [
+    "ขอบคุณครับ ไม่มีปัญหาแล้วใช่ไหม",
+    "ขอบคุณครับ ไม่มีปัญหาแล้ว ใช่ไหม",
+])
+def test_question_about_resolution_still_needs_context(intent, text):
+    analyze(intent, text)
+    intent[3].assert_awaited_once()
