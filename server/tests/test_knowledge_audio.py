@@ -50,6 +50,16 @@ def imported(store,tmp_path):
     return bundle,claims,root
 
 
+def test_audio_only_reindex_reports_ready(store, tmp_path, monkeypatch):
+    bundle, _, _ = imported(store, tmp_path)
+    monkeypatch.setattr(audio, "try_index_bundle", lambda bundle_id: {"status": "ready", "segments": 1})
+    result = store[0].reindex_hybrid(bundle["id"], 1)
+    assert result["status"] == "ready"
+    assert result["chunks"] == 0
+    assert result["audio_index"] == {"status": "ready", "segments": 1}
+    assert result["image_index"]["status"] == "disabled"
+
+
 def test_import_original_timestamp_and_metadata(store,tmp_path):
     _,claims,root=imported(store,tmp_path)
     assert next((root/'assets').iterdir()).read_bytes()==wav()

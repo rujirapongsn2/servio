@@ -280,12 +280,19 @@ class TestFileStoreResponse(BaseModel):
 
 
 # OKF Knowledge models
+class OKFSourceAvailability(BaseModel):
+    status: Literal["available", "missing", "partial", "unreadable"]
+    missing_file_count: int = Field(ge=0)
+    message: Optional[str] = None
+
+
 class OKFBundleResponse(BaseModel):
     id: int
     name: str
     display_name: str
     okf_version: Optional[str] = None
     status: str
+    source_availability: Optional[OKFSourceAvailability] = None
     concept_count: int
     link_count: int
     validation_summary: Dict[str, Any] = {}

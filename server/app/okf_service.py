@@ -111,6 +111,16 @@ class OKFValidationError(ValueError):
     """Raised when a bundle is not conformant enough to import."""
 
 
+SOURCE_RECOVERY_MESSAGE = "Restore source files from backup or reimport the originals. Cached search data has been retained."
+
+
+class OKFSourceUnavailableError(OKFValidationError):
+    """Canonical files are missing or inaccessible; cached records must be retained."""
+
+    def __init__(self):
+        super().__init__(SOURCE_RECOVERY_MESSAGE)
+
+
 @dataclass
 class ParsedConcept:
     concept_id: str
@@ -919,6 +929,7 @@ class OKFService:
             bundle = db.query(OKFBundle).filter_by(id=bundle_id).with_for_update().first()
             if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
                 raise KeyError("OKF bundle not found")
+            self._require_source_available(db, bundle)
             concepts, _ = parse_okf_directory(Path(bundle.storage_path))
             versions = {
                 item.concept_id: item.updated_at.isoformat() if item.updated_at else None
@@ -933,6 +944,7 @@ class OKFService:
                 raise KeyError("OKF bundle not found")
             if bundle.updated_at != snapshot or Path(bundle.storage_path) != source:
                 raise OKFValidationError("This knowledge changed. Reload it before saving or reindexing.")
+            self._require_source_available(db, bundle)
             if expected_hashes is not None:
                 current, _ = parse_okf_directory(source)
                 indexed = {c.concept_id:c.content_hash for c in db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all()}
@@ -1150,7 +1162,9 @@ class OKFService:
                 if bundle.created_by_admin_id:
                     admin = db.query(Admin).filter_by(id=bundle.created_by_admin_id).first()
                     created_by_username = admin.username if admin else None
-                result.append(_bundle_to_dict(bundle, owner_team_name, created_by_username))
+                data = _bundle_to_dict(bundle, owner_team_name, created_by_username)
+                data["source_availability"] = self._source_availability(db, bundle)
+                result.append(data)
             return result
 
     def get_bundle(self, bundle_id: int, team_agent_id: Optional[int]) -> Optional[Dict[str, Any]]:
@@ -1166,7 +1180,34 @@ class OKFService:
             if bundle.created_by_admin_id:
                 admin = db.query(Admin).filter_by(id=bundle.created_by_admin_id).first()
                 created_by_username = admin.username if admin else None
-            return _bundle_to_dict(bundle, owner_team_name, created_by_username)
+            data = _bundle_to_dict(bundle, owner_team_name, created_by_username)
+            data["source_availability"] = self._source_availability(db, bundle)
+            return data
+
+    @staticmethod
+    def _source_availability(db, bundle: OKFBundle) -> Dict[str, Any]:
+        paths = db.query(OKFConceptIndex.file_path).filter_by(bundle_id=bundle.id).all()
+        source = Path(bundle.storage_path)
+        try:
+            if not source.is_dir():
+                return {"status": "missing", "missing_file_count": len(paths), "message": SOURCE_RECOVERY_MESSAGE}
+            missing = 0
+            for (relative,) in paths:
+                path = source / relative
+                _ensure_within(source, path)
+                if not path.is_file():
+                    missing += 1
+                elif not os.access(path, os.R_OK):
+                    return {"status": "unreadable", "missing_file_count": missing, "message": SOURCE_RECOVERY_MESSAGE}
+        except (OSError, ValueError):
+            return {"status": "unreadable", "missing_file_count": 0, "message": SOURCE_RECOVERY_MESSAGE}
+        if missing:
+            return {"status": "partial", "missing_file_count": missing, "message": SOURCE_RECOVERY_MESSAGE}
+        return {"status": "available", "missing_file_count": 0, "message": None}
+
+    def _require_source_available(self, db, bundle: OKFBundle) -> None:
+        if self._source_availability(db, bundle)["status"] != "available":
+            raise OKFSourceUnavailableError()
 
     def list_concepts(
         self,
@@ -1340,6 +1381,8 @@ class OKFService:
         bundle = self.get_bundle(bundle_id, team_agent_id)
         if bundle is None:
             raise KeyError("OKF bundle not found")
+        if bundle.get("source_availability", {}).get("status", "available") != "available":
+            raise OKFSourceUnavailableError()
         from app.local_rag import enabled as text_enabled, index_bundle
         from app.local_image_rag import enabled as images_enabled, try_index_bundle as index_images
         images = index_images(bundle_id) if images_enabled() else {"status": "disabled", "images": 0}
@@ -1348,11 +1391,13 @@ class OKFService:
         if audio['status'] == 'failed':
             raise RuntimeError('Audio indexing failed. Retry reindex-vectors.')
         text_active = text_enabled()
-        result = index_bundle(bundle_id) if text_active else {"status": images["status"], "chunks": 0}
+        result = index_bundle(bundle_id) if text_active else {"status": "disabled", "chunks": 0}
         if images["status"] == "failed":
             prefix = "Text index refreshed but " if text_active else ""
             raise RuntimeError(prefix + "image indexing failed. Retry reindex-vectors.")
-        return {**result, "image_index": images, "audio_index": audio}
+        statuses = {result["status"], images["status"], audio["status"]}
+        aggregate_status = "ready" if "ready" in statuses else "disabled"
+        return {**result, "status": aggregate_status, "image_index": images, "audio_index": audio}
 
     def query_bundle(self, bundle_id: int, query: str, team_agent_id: Optional[int] = None,
                      limit: int = 5, expand_links: bool = True, *, image_links: bool = True) -> Dict[str, Any]:
@@ -1505,7 +1550,10 @@ class OKFService:
         source = Path(bundle.storage_path)
         path = source / concept.file_path
         _ensure_within(source, path)
-        return path.read_text(encoding="utf-8")
+        try:
+            return path.read_text(encoding="utf-8")
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError, PermissionError) as exc:
+            raise OKFSourceUnavailableError() from exc
 
     def _links_for_concept(self, db, bundle_id: int, concept_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         links = db.query(OKFLinkIndex).filter_by(

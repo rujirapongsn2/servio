@@ -56,3 +56,34 @@ test('image documents show scoped previews and expandable text while ordinary do
     Object.assign(globalThis, previous);
   }
 });
+
+for (const sourceStatus of ['missing', 'partial']) {
+  test(`${sourceStatus} sources retain navigation, explain recovery and disable reindex`, async () => {
+    const previous = { fetch: globalThis.fetch, localStorage: globalThis.localStorage, document: globalThis.document };
+    globalThis.document = { body: {} };
+    globalThis.localStorage = { getItem: () => 'test-token' };
+    const message = 'Restore source files from backup or reimport the originals.';
+    globalThis.fetch = async url => {
+      if (url.includes('/concepts/sofa')) return { ok: false, status: 409, json: async () => ({ detail: message }) };
+      return { ok: true, json: async () => url.includes('/concepts/') ? concepts.find(item => url.includes(`/concepts/${item.concept_id}`)) : url.includes('/concepts') ? concepts : { id: 1, status: 'ready', source_availability: { status: sourceStatus, missing_file_count: 1, message } } };
+    };
+    let tree;
+    try {
+      await act(async () => { tree = create(React.createElement(drawer(), { tool: { id: 1, name: 'Products', config: '{"okf_bundle_id":1}' }, teamAgentId: 21, onClose() {} })); });
+      assert.equal(button(tree, 'Re-index').props.disabled, true);
+      assert.ok(text(tree.toJSON()).includes(message));
+      assert.equal(text(tree.toJSON()).includes('This knowledge is ready to use'), false);
+      await act(async () => button(tree, 'Documents (3)').props.onClick());
+      assert.ok(tree.root.findByProps({ 'aria-label': 'Search documents' }));
+      assert.ok(text(tree.toJSON()).includes(message));
+      await act(async () => tree.root.findAllByType('button').find(node => node.props['aria-pressed'] === false && text(node).includes('Policy')).props.onClick());
+      assert.ok(text(tree.toJSON()).includes('Ordinary document content'));
+      assert.equal(button(tree, 'Edit').props.disabled, true);
+      await act(async () => button(tree, 'Issues (1)').props.onClick());
+      assert.equal(text(tree.toJSON()).includes('No issues found'), false);
+    } finally {
+      if (tree) await act(async () => tree.unmount());
+      Object.assign(globalThis, previous);
+    }
+  });
+}

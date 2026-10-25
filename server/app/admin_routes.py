@@ -76,7 +76,7 @@ from app.models import (
     UpdateAdminUserRequest,
     UpdateTeamUsersRequest,
 )
-from app.okf_service import MAX_ARCHIVE_BYTES, OKFService, OKFValidationError
+from app.okf_service import MAX_ARCHIVE_BYTES, OKFService, OKFValidationError, OKFSourceUnavailableError
 from app.orm_models import OKFImportJob
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -2021,7 +2021,10 @@ async def get_okf_concept(
 ):
     """Read one OKF concept directly from the local bundle files."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
-    concept = OKFService().get_concept(bundle_id, concept_id, team_agent_id=team_agent_id)
+    try:
+        concept = OKFService().get_concept(bundle_id, concept_id, team_agent_id=team_agent_id)
+    except OKFSourceUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not concept:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
     return concept
@@ -2085,6 +2088,8 @@ async def update_okf_concept(
         raise
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF concept not found")
+    except OKFSourceUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OKFValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -2127,11 +2132,14 @@ async def reindex_okf_vectors(
         raise HTTPException(status_code=403, detail="Only owning team may reindex")
     from app.local_rag import enabled
     from app.local_image_rag import enabled as images_enabled
-    if not enabled() and not images_enabled():
-        raise HTTPException(status_code=409, detail="Enable LOCAL_KNOWLEDGE_HYBRID_ENABLED or LOCAL_KNOWLEDGE_IMAGES_ENABLED first")
+    from app.local_audio_rag import enabled as audio_enabled
+    if not enabled() and not images_enabled() and not audio_enabled():
+        raise HTTPException(status_code=409, detail="Enable LOCAL_KNOWLEDGE_HYBRID_ENABLED, LOCAL_KNOWLEDGE_IMAGES_ENABLED or LOCAL_KNOWLEDGE_AUDIO_ENABLED first")
     from fastapi.concurrency import run_in_threadpool
     try:
         return await run_in_threadpool(OKFService().reindex_hybrid, bundle_id, team_agent_id)
+    except OKFSourceUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         import logging
         logging.getLogger(__name__).exception("Local vector indexing failed")
@@ -2175,6 +2183,8 @@ async def reindex_okf_source(
         return result
     except KeyError:
         raise HTTPException(status_code=404, detail="OKF source not found")
+    except OKFSourceUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OKFValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2220,6 +2230,8 @@ async def reindex_okf_bundle(
         raise
     except KeyError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OKF bundle not found")
+    except OKFSourceUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OKFValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:

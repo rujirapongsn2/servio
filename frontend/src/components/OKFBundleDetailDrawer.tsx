@@ -38,6 +38,11 @@ interface OKFBundle {
   display_name: string;
   okf_version?: string | null;
   status: string;
+  source_availability?: {
+    status: "available" | "missing" | "partial" | "unreadable";
+    missing_file_count: number;
+    message: string | null;
+  } | null;
   concept_count: number;
   link_count: number;
   validation_summary?: {
@@ -154,8 +159,17 @@ export default function OKFBundleDetailDrawer({
   const [refreshingSource, setRefreshingSource] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [conceptError, setConceptError] = useState<string | null>(null);
 
   const warnings = bundle?.validation_summary?.warnings || [];
+  const sourceIssue = bundle?.source_availability && bundle.source_availability.status !== "available"
+    ? bundle.source_availability : null;
+  const sourceUnavailable = Boolean(sourceIssue);
+  const ready = bundle?.status === "ready" && !sourceUnavailable && warnings.length === 0;
+  const issueCount = warnings.length + (sourceIssue ? 1 : 0);
+  const statusLabel = sourceIssue
+    ? sourceIssue.status === "partial" ? "Missing sources" : "Source unavailable"
+    : bundle?.status;
 
   const filteredConcepts = useMemo(() => {
     const query = conceptQuery.trim().toLowerCase();
@@ -213,8 +227,10 @@ export default function OKFBundleDetailDrawer({
 
   const loadConcept = async (conceptId: string | null) => {
     const request = ++conceptRequest.current;
+    setConceptError(null);
+    setSelectedConcept(null);
     if (!bundleId || !conceptId) {
-      setSelectedConcept(null);
+      setConceptLoading(false);
       return;
     }
     setConceptLoading(true);
@@ -225,7 +241,12 @@ export default function OKFBundleDetailDrawer({
         `${apiBaseUrl}/api/admin/okf-bundles/${bundleId}/concepts/${encodeURIComponent(conceptId)}${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      if (!response.ok) throw new Error("Failed to load concept detail");
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (request !== conceptRequest.current) return;
+        if (response.status === 409) await loadBundle();
+        throw new Error(response.status === 409 ? "This document's source file is unavailable." : typeof data.detail === "string" ? data.detail : "Failed to load concept detail");
+      }
       const concept: OKFConcept = await response.json();
       if (request !== conceptRequest.current) return;
       setSelectedConcept(concept);
@@ -236,7 +257,7 @@ export default function OKFBundleDetailDrawer({
       setEditBody(concept.body || "");
     } catch (err) {
       if (request !== conceptRequest.current) return;
-      setError(err instanceof Error ? err.message : "Failed to load concept detail");
+      setConceptError(err instanceof Error ? err.message : "Failed to load concept detail");
     } finally {
       if (request === conceptRequest.current) setConceptLoading(false);
     }
@@ -257,7 +278,7 @@ export default function OKFBundleDetailDrawer({
   }, [selectedConceptId, bundleId, teamAgentId]);
 
   const handleReindex = async () => {
-    if (!canEdit) return;
+    if (!canEdit || sourceUnavailable) return;
     if (!bundleId) return;
     if (concepts.some((concept) => /^https?:\/\//i.test(concept.resource || "")) && !window.confirm("Re-fetch all URL sources? This replaces their content, including manual edits.")) return;
     setReindexing(true);
@@ -287,7 +308,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const handleRefreshSource = async () => {
-    if (!canEdit) return;
+    if (!canEdit || sourceUnavailable) return;
     if (!bundleId || !selectedConcept || !sourceUrl.trim()) return;
     if (!window.confirm("Fetch this URL again? Its content, including manual edits, will be replaced.")) return;
     setRefreshingSource(true);
@@ -378,7 +399,7 @@ export default function OKFBundleDetailDrawer({
   };
 
   const handleSaveConcept = async () => {
-    if (!canEdit) return;
+    if (!canEdit || sourceUnavailable) return;
     if (!bundleId || !selectedConcept || (!selectedConcept.frontmatter?.audio && !editBody.trim())) return;
     setSavingConcept(true);
     setSaveMessage(null);
@@ -437,8 +458,8 @@ export default function OKFBundleDetailDrawer({
                 {displayName}
               </h2>
               {bundle?.status && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-                  {bundle.status}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sourceIssue ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"}`}>
+                  {statusLabel}
                 </span>
               )}
             </div>
@@ -447,7 +468,8 @@ export default function OKFBundleDetailDrawer({
             <button
               type="button"
               onClick={handleReindex}
-              disabled={!canEdit || reindexing || refreshingSource || savingConcept || !bundleId}
+              disabled={!canEdit || loading || sourceUnavailable || reindexing || refreshingSource || savingConcept || !bundleId}
+              title={sourceIssue?.message || undefined}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               {reindexing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -470,7 +492,7 @@ export default function OKFBundleDetailDrawer({
               ["overview", "Overview"],
               ["documents", `Documents (${concepts.length})`],
               ["ask", "Ask a Question"],
-              ["issues", warnings.length > 0 ? `Issues (${warnings.length})` : "Issues"],
+              ["issues", issueCount > 0 ? `Issues (${issueCount})` : "Issues"],
             ].map(([id, label]) => (
               <button
                 key={id}
@@ -490,6 +512,12 @@ export default function OKFBundleDetailDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
+          {sourceIssue && (
+            <div role="status" className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-100">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{sourceIssue.message}</span>
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center py-20 text-sm text-gray-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -504,7 +532,7 @@ export default function OKFBundleDetailDrawer({
               {activeTab === "overview" && (
                 <div className="space-y-5">
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <Metric label="Status" value={bundle?.status === "ready" ? "Ready" : bundle?.status || "N/A"} />
+                    <Metric label="Status" value={ready ? "Ready" : statusLabel || "N/A"} />
                     <Metric label="Documents" value={bundle?.concept_count ?? 0} />
                     <Metric label="Used by Agents" value={tool.agent_usage_count ?? 0} />
                     <Metric label="Last Updated" value={formatDate(bundle?.updated_at)} />
@@ -512,19 +540,19 @@ export default function OKFBundleDetailDrawer({
 
                   <div className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
                     <div className="flex items-start gap-3">
-                      {bundle?.status === "ready" && warnings.length === 0 ? (
+                      {ready ? (
                         <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />
                       ) : (
                         <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
                       )}
                       <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {bundle?.status === "ready" && warnings.length === 0
+                          {ready
                             ? "This knowledge is ready to use"
                             : "This knowledge may need review"}
                         </h3>
                         <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                          Agents can search these documents when answering questions. Use Documents to review the readable content, or Ask a Question to check whether the expected information can be found.
+                          {sourceIssue ? "Cached search results may still be available." : "Review documents or ask a question to check the available information."}
                         </p>
                       </div>
                     </div>
@@ -595,6 +623,8 @@ export default function OKFBundleDetailDrawer({
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Loading document...
                       </div>
+                    ) : conceptError ? (
+                      <div role="alert" className="p-4 text-sm text-amber-800 dark:text-amber-200">{conceptError}</div>
                     ) : selectedConcept ? (
                       <div className="space-y-4 p-4">
                         <div>
@@ -625,8 +655,8 @@ export default function OKFBundleDetailDrawer({
                           <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
                             <label htmlFor="document-source-url" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Source URL</label>
                             <div className="flex flex-col gap-2 sm:flex-row">
-                              <input id="document-source-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} disabled={!canEdit || refreshingSource || reindexing || savingConcept} className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
-                              <button type="button" onClick={handleRefreshSource} disabled={!canEdit || refreshingSource || reindexing || savingConcept || !sourceUrl.trim()} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">
+                              <input id="document-source-url" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} disabled={!canEdit || sourceUnavailable || refreshingSource || reindexing || savingConcept} className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+                              <button type="button" onClick={handleRefreshSource} disabled={!canEdit || sourceUnavailable || refreshingSource || reindexing || savingConcept || !sourceUrl.trim()} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">
                                 {refreshingSource ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Re-index URL
                               </button>
                             </div>
@@ -683,7 +713,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleSaveConcept}
-                                    disabled={!canEdit || savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
+                                    disabled={!canEdit || sourceUnavailable || savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
                                     className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                                   >
                                     {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -694,7 +724,7 @@ export default function OKFBundleDetailDrawer({
                                 <button
                                   type="button"
                                   onClick={handleEditConcept}
-                                  disabled={!canEdit || refreshingSource || reindexing}
+                                  disabled={!canEdit || sourceUnavailable || refreshingSource || reindexing}
                                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 >
                                   <Edit3 className="h-4 w-4" />
@@ -854,7 +884,7 @@ export default function OKFBundleDetailDrawer({
 
               {activeTab === "issues" && (
                 <div className="space-y-4">
-                  {bundle?.status === "ready" && warnings.length === 0 && !bundle.validation_summary?.error && (
+                  {ready && !bundle?.validation_summary?.error && (
                     <div className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-100">
                       <CheckCircle2 className="mt-0.5 h-5 w-5" />
                       No issues found. This knowledge is ready for agents to use.

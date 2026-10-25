@@ -32,6 +32,7 @@ def client(monkeypatch):
     monkeypatch.setattr(routes.database, "get_team_access_role", lambda user, team: roles.get((user, team)))
     monkeypatch.setenv("LOCAL_KNOWLEDGE_HYBRID_ENABLED", "true")
     monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGES_ENABLED", "false")
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_AUDIO_ENABLED", "false")
 
     class Service:
         def get_bundle(self, bundle_id, team_agent_id):
@@ -250,3 +251,11 @@ def test_vector_reindex_accepts_either_enabled_feature(client, monkeypatch, text
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', str(image_enabled).lower())
     response = request(client, ('POST', '/10/reindex-vectors', None), 'owner', 1)
     assert response.status_code == expected, response.text
+
+
+def test_audio_only_vector_reindex_is_allowed(client, monkeypatch):
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_HYBRID_ENABLED", "false")
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGES_ENABLED", "false")
+    monkeypatch.setenv("LOCAL_KNOWLEDGE_AUDIO_ENABLED", "true")
+    response = request(client, ("POST", "/10/reindex-vectors", None), "owner", 1)
+    assert response.status_code == 200, response.text

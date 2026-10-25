@@ -243,6 +243,7 @@ npm run build
 ## คู่มือเพิ่มเติม
 
 - [ติดตั้ง Production แบบแยกเครื่อง Servio และ Embedding](docs/production-split-deployment.md)
+- [กู้คืน Knowledge ที่ขาดไฟล์ต้นฉบับและตรวจหลัง deploy](docs/knowledge-source-recovery.md)
 
 - [โมเดลและ Provider](docs/model-configuration.md)
 - [Local Knowledge และ pgvector](docs/LOCAL_KNOWLEDGE_PGVECTOR.md)
