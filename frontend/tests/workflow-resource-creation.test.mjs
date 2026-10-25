@@ -1,3 +1,4 @@
+import { adminLocale, EnglishAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -101,6 +102,7 @@ test('pending submissions lock fields and reject duplicate submits', async () =>
 });
 const knowledge = load('src/lib/knowledge-import.ts');
 const Knowledge = load('src/components/CreateOKFBundleModal.tsx', {
+  '@/lib/admin-locale': adminLocale,
   'react-dom': { createPortal: children => children }, '@/lib/api': { getApiBaseUrl: () => '' }, '@/lib/knowledge-import': knowledge,
 }).default;
 for (const scenario of ['success', 'failed', 'invalid-result']) test(`knowledge resumes a stored job with ${scenario}`, async () => {
@@ -112,7 +114,7 @@ for (const scenario of ['success', 'failed', 'invalid-result']) test(`knowledge 
     return response({ job_id: 'job-19', status: scenario === 'failed' ? 'failed' : 'succeeded', error: 'Import failed', bundle: { id: 3, tool_id: scenario === 'invalid-result' ? 0 : 19, display_name: 'Policy', concept_count: 4, link_count: 2 }, warnings: [] });
   };
   try {
-    await act(async () => { tree = create(React.createElement(Knowledge, { teamAgentId: 4, assignAgentId: null, jobStorageKey: 'team-4-agent-8-import', onClose() {}, onSuccess: result => results.push(result) })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Knowledge, { teamAgentId: 4, assignAgentId: null, jobStorageKey: 'team-4-agent-8-import', onClose() {}, onSuccess: result => results.push(result) }))); });
     assert.equal(jobReads, 1);
     if (scenario === 'success') assert.deepEqual(results, [{ job_id: 'job-19', bundle_id: 3, tool_id: 19, display_name: 'Policy' }]);
     else assert.equal(results.length, 0);
@@ -144,7 +146,7 @@ test('unmounting a resumed knowledge import aborts its pending status request', 
     return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }));
   };
   try {
-    await act(async () => { tree = create(React.createElement(Knowledge, { teamAgentId: 4, assignAgentId: null, jobStorageKey: 'team-import', onClose() {}, onSuccess() { assert.fail('Aborted job must not be delivered'); } })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Knowledge, { teamAgentId: 4, assignAgentId: null, jobStorageKey: 'team-import', onClose() {}, onSuccess() { assert.fail('Aborted job must not be delivered'); } }))); });
     assert.equal(signal.aborted, false);
     await act(async () => tree.unmount()); tree = null;
     assert.equal(signal.aborted, true);
@@ -162,7 +164,7 @@ test('a restored import can retry status without name or source and without star
     return response({ job_id: 'job-retry', status: 'succeeded', bundle: { id: 5, tool_id: 32, display_name: 'Products' }, warnings: [] });
   };
   try {
-    await act(async () => { tree = create(React.createElement(Knowledge, { teamAgentId: 4, assignAgentId: null, jobStorageKey: 'retry-import', onClose() {}, onSuccess: result => results.push(result) })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Knowledge, { teamAgentId: 4, assignAgentId: null, jobStorageKey: 'retry-import', onClose() {}, onSuccess: result => results.push(result) }))); });
     const retry = tree.root.findAllByType('button').find(button => button.children.includes('Retry status'));
     assert.ok(retry);
     await act(async () => retry.props.onClick());

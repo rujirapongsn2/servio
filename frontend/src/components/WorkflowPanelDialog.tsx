@@ -1,4 +1,5 @@
 "use client";
+import { useAdminLocale } from "@/lib/admin-locale";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
@@ -9,6 +10,7 @@ export default function WorkflowPanelDialog({ title, onClose, children, busy = f
   busy?: boolean;
   onChildClose?: () => void;
 }) {
+  const { copy } = useAdminLocale();
   const heading = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -88,7 +90,7 @@ export default function WorkflowPanelDialog({ title, onClose, children, busy = f
   <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={heading} className="flex max-h-[96dvh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white text-gray-900 shadow-xl dark:bg-gray-900 dark:text-white">
   <header className="flex shrink-0 items-center justify-between gap-3 border-b p-4 dark:border-gray-700">
   <h2 id={heading} className="truncate text-lg font-semibold">{title}</h2>
-  <button type="button" onClick={onClose} disabled={busy} aria-label={`Close ${title}`} title="Close" className="rounded p-2 hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-gray-800">
+  <button type="button" onClick={onClose} disabled={busy} aria-label={copy.closeNamed(title)} title={copy.close} className="rounded p-2 hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-gray-800">
   <X size={20}/>
   </button>
   </header>

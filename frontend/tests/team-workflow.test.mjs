@@ -1,3 +1,4 @@
+import { adminLocale, EnglishAdminLocale, ThaiAdminLocale, SwitchableAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,6 +15,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { act, create } = TestRenderer;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 function modules(mocks = {}) {
+  mocks = { '@/lib/admin-locale': adminLocale, ...mocks };
   const cache = new Map();
   function load(relative) {
     const filename = path.join(root, relative);
@@ -53,6 +55,7 @@ function setup(t, saved = snapshot()) {
   const routes = [];
   const navigation = { search: new URLSearchParams() };
   const saves = [];
+  const workflowReads = [];
   const creates = [];
   const createReceipts = new Map();
   const context = { setSelectedTeamId() {}, refreshTeams: async () => {}, teams: [], loading: false };
@@ -67,6 +70,7 @@ function setup(t, saved = snapshot()) {
     if (url.endsWith('/models')) return response([{ id: 'discovered-model' }]);
     if (url.endsWith('/registered-models')) return response([{ model_id: 'registered-model', enabled: true, capabilities: ['text'] }]);
     if (url.endsWith('/workflow')) {
+      workflowReads.push(url);
       if (controls.failRefresh) throw Error('Refresh offline');
       return response(controls.saved);
     }
@@ -110,6 +114,7 @@ function setup(t, saved = snapshot()) {
     throw new Error(`Unexpected network request ${url}`);
   };
   const load = modules({
+    '@/lib/admin-locale': adminLocale,
     '@/lib/api': { getApiBaseUrl: () => '' },
     '@/lib/team-context': { useTeam: () => context },
     'next/navigation': { useRouter: () => ({ push: (href) => routes.push(href), replace() {} }), useSearchParams: () => navigation.search },
@@ -128,10 +133,15 @@ function setup(t, saved = snapshot()) {
     await act(async () => { renderers.forEach((renderer) => renderer.unmount()); });
     Object.assign(global, original);
   });
-  return { storage, controls, saves, creates, routes, context, navigation, load, async mount() {
+  return { storage, controls, saves, creates, routes, context, navigation, workflowReads, load, async mount() {
     let renderer;
-    await act(async () => { renderer = create(React.createElement(Component, { teamId: 1 })); });
+    await act(async () => { renderer = create(React.createElement(EnglishAdminLocale, null, React.createElement(Component, { teamId: 1 }))); });
     renderers.push(renderer); return renderer;
+  }, async mountSwitchable() {
+    let renderer; let setLocale;
+    await act(async () => { renderer = create(React.createElement(SwitchableAdminLocale, { onReady: set => { setLocale = set; } }, React.createElement(Component, { teamId: 1 }))); });
+    renderers.push(renderer);
+    return { renderer, async switchLocale(locale) { await act(async () => setLocale(locale)); } };
   } };
 }
 async function change(renderer, id, value) {
@@ -273,7 +283,7 @@ test('team cards omit Manage and open Workflow as a full page', async (t) => {
   const env = setup(t); env.context.teams = [{ id: 1, name: 'Support', slug: 'support', status: 'active', member_count: 2 }];
   const Teams = env.load('src/app/admin/teams/page.tsx').default;
   let renderer;
-  await act(async () => { renderer = create(React.createElement(Teams)); });
+  await act(async () => { renderer = create(React.createElement(EnglishAdminLocale, null, React.createElement(Teams))); });
   t.after(async () => { await act(async () => renderer.unmount()); });
   assert.equal(button(renderer, 'Manage'), undefined);
   await act(async () => button(renderer, 'Workflow').props.onClick());
@@ -289,7 +299,7 @@ test('diagram routes Coordinator to every member and keeps handoffs directed', a
   const Graph = load('src/components/AgentFlowGraph.tsx').default;
   const data = snapshot();
   let renderer;
-  await act(async () => { renderer = create(React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {} })); });
+  await act(async () => { renderer = create(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {} }))); });
   const edges = renderer.root.findByType('flow').props.edges;
   assert.deepEqual(edges.filter((edge) => edge.source === 'coordinator').map((edge) => edge.target), ['1', '2']);
   assert.deepEqual(edges.filter((edge) => edge.source !== 'coordinator').map((edge) => [edge.source, edge.target]), [['1', '2']]);
@@ -466,7 +476,7 @@ test('mouse handoff drags suppress native selection and only completed valid con
   const Graph = load('src/components/AgentFlowGraph.tsx').default;
   const changes = []; const data = snapshot(); let tree;
   try {
-    await act(async () => { tree = create(React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change) })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change) }))); });
     const props = tree.root.findByType(Flow).props;
     for (const type of ['mousedown', 'touchstart']) {
       const event = new Event(type, { cancelable: true });
@@ -494,7 +504,7 @@ test('selected editable handoffs expose a mouse delete action without deleting p
   const changes = []; const data = snapshot(); let tree; let added = 0;
   const props = { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change), onAddAgent: () => added++ };
   try {
-    await act(async () => { tree = create(React.createElement(Graph, props)); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, props))); });
     assert.equal(button(tree, 'Delete handoff'), undefined);
     await act(async () => tree.root.findByType(Flow).props.onEdgesChange([{ id: 'routing-1', type: 'select', selected: true }]));
     assert.equal(button(tree, 'Delete handoff'), undefined);
@@ -505,11 +515,11 @@ test('selected editable handoffs expose a mouse delete action without deleting p
     assert.equal(added, 1);
     assert.deepEqual(changes, []);
     assert.ok(button(tree, 'Delete handoff'));
-    await act(async () => tree.update(React.createElement(Graph, { ...props, disabled: true })));
+    await act(async () => tree.update(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { ...props, disabled: true }))));
     assert.equal(button(tree, 'Delete handoff'), undefined);
-    await act(async () => tree.update(React.createElement(Graph, { ...props, agents: data.agents.map(agent => ({ ...agent, shared: true })) })));
+    await act(async () => tree.update(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { ...props, agents: data.agents.map(agent => ({ ...agent, shared: true })) }))));
     assert.equal(button(tree, 'Delete handoff'), undefined);
-    await act(async () => tree.update(React.createElement(Graph, props)));
+    await act(async () => tree.update(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, props))));
     await act(async () => button(tree, 'Delete handoff').props.onClick());
     assert.deepEqual(changes, [{ sourceId: 1, targetId: 2, connected: false }]);
     assert.equal(button(tree, 'Delete handoff'), undefined);
@@ -523,7 +533,7 @@ test('controlled canvas edges retain selection for keyboard deletion and protect
   const Graph = load('src/components/AgentFlowGraph.tsx').default;
   const changes = []; const data = snapshot(); let tree;
   try {
-    await act(async () => { tree = create(React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change) })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onHandoffChange: change => changes.push(change) }))); });
     await act(async () => tree.root.findByType(Flow).props.onEdgesChange([{ id: 'handoff-1-2', type: 'select', selected: true }]));
     const props = tree.root.findByType(Flow).props;
     const edge = props.edges.find(edge => edge.id === 'handoff-1-2');
@@ -732,7 +742,7 @@ test('canvas Add agent is a native action independent of handoff editing', async
   const data = snapshot(); let calls = 0; let tree;
   const props = { agents: data.agents, tools: data.tools, fallbackAgentId: 1, selectedAgentId: 1, onSelect() {}, canEdit: true, onAddAgent: () => calls++ };
   try {
-    await act(async () => { tree = create(React.createElement(Graph, props)); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, props))); });
     const action = button(tree, 'Add agent');
     assert.ok(action, 'Editable canvas must expose Add agent without a handoff callback');
     assert.equal(action.props.type, 'button');
@@ -740,11 +750,11 @@ test('canvas Add agent is a native action independent of handoff editing', async
     assert.equal(tree.root.findByType(Flow).props.nodes.length, 3);
     await act(async () => action.props.onClick());
     assert.equal(calls, 1);
-    await act(async () => tree.update(React.createElement(Graph, { ...props, hasNewAgentDraft: true, disabled: true })));
+    await act(async () => tree.update(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { ...props, hasNewAgentDraft: true, disabled: true }))));
     assert.equal(button(tree, 'Continue new agent').props.disabled, true);
-    await act(async () => tree.update(React.createElement(Graph, { ...props, canEdit: false })));
+    await act(async () => tree.update(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { ...props, canEdit: false }))));
     assert.equal(button(tree, 'Add agent'), undefined);
-    await act(async () => tree.update(React.createElement(Graph, { ...props, onAddAgent: undefined })));
+    await act(async () => tree.update(React.createElement(EnglishAdminLocale, null, React.createElement(Graph, { ...props, onAddAgent: undefined }))));
     assert.equal(button(tree, 'Add agent'), undefined);
   } finally { if (tree) await act(async () => tree.unmount()); }
 });
@@ -835,4 +845,80 @@ test('read only canvas callback cannot create a new Agent', async t => {
   assert.equal(renderer.root.findByType('workflow-graph').props.hasNewAgentDraft, false);
   assert.equal(env.storage.has('team-workflow-new:1'), false);
   assert.equal(env.creates.length, 0);
+});
+
+test('Thai-only team creation preserves name and description with a bounded ASCII slug', async t => {
+  const env = setup(t);
+  const Teams = env.load('src/app/admin/teams/page.tsx').default;
+  const originalFetch = global.fetch;
+  const posts = [];
+  global.fetch = async (url, init) => {
+    if (init?.method === 'POST' && url.endsWith('/team-agents')) {
+      posts.push({ url, body: JSON.parse(init.body) });
+      return response({ id: 9 });
+    }
+    return originalFetch(url, init);
+  };
+  let tree;
+  await act(async () => { tree = create(React.createElement(ThaiAdminLocale, null, React.createElement(Teams))); });
+  t.after(async () => { await act(async () => tree.unmount()); });
+  await act(async () => button(tree, 'สร้างทีม').props.onClick());
+  await act(async () => tree.root.findByProps({ type: 'text' }).props.onChange({ target: { value: '  ฝ่ายขาย  ' } }));
+  await act(async () => tree.root.findByType('textarea').props.onChange({ target: { value: 'รับเรื่องสินค้า' } }));
+  await act(async () => button(tree, 'สร้าง').props.onClick());
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].url, '/api/admin/team-agents');
+  assert.equal(posts[0].body.name, 'ฝ่ายขาย');
+  assert.equal(posts[0].body.description, 'รับเรื่องสินค้า');
+  assert.match(posts[0].body.slug, /^team-[0-9a-f-]{36}$/);
+  assert.ok(posts[0].body.slug.length < 100);
+});
+
+test('viewer team handlers reject create and delete even when invoked directly', async t => {
+  const env = setup(t);
+  env.context.teams = [{ id: 1, name: 'Support', slug: 'support', status: 'active', member_count: 1 }];
+  global.localStorage = { getItem: key => key === 'isViewerOnly' ? '1' : 'test-token' };
+  const Teams = env.load('src/app/admin/teams/page.tsx').default;
+  const originalFetch = global.fetch;
+  const mutations = [];
+  global.fetch = async (url, init) => { if (init?.method === 'POST' || init?.method === 'DELETE') mutations.push({ url, init }); return originalFetch(url, init); };
+  let tree;
+  await act(async () => { tree = create(React.createElement(ThaiAdminLocale, null, React.createElement(Teams))); });
+  t.after(async () => { await act(async () => tree.unmount()); });
+  await act(async () => button(tree, 'สร้างทีม').props.onClick());
+  await act(async () => tree.root.findByProps({ type: 'text' }).props.onChange({ target: { value: 'ฝ่ายขาย' } }));
+  await act(async () => button(tree, 'สร้าง').props.onClick());
+  await act(async () => tree.root.findByProps({ 'aria-label': 'ลบทีม Support' }).props.onClick());
+  assert.deepEqual(mutations, []);
+});
+
+test('switching Workspace language retains unsaved instructions and an open knowledge editor', async t => {
+  const env = setup(t);
+  const ui = await env.mountSwitchable();
+  const renderer = ui.renderer;
+  await change(renderer, 'workflow-instructions', 'Keep this user-authored instruction');
+  const before = env.storage.get('team-workflow-drafts:1');
+  await act(async () => button(renderer, 'Knowledge').props.onClick());
+  assert.equal(renderer.root.findAllByType('knowledge-creator').length, 1);
+  await ui.switchLocale('th');
+  assert.equal(renderer.root.findByProps({ id: 'workflow-instructions' }).props.value, 'Keep this user-authored instruction');
+  assert.equal(renderer.root.findAllByType('knowledge-creator').length, 1);
+  assert.equal(env.storage.get('team-workflow-drafts:1'), before);
+  assert.equal(env.saves.length, 0);
+  assert.equal(env.creates.length, 0);
+  assert.ok(button(renderer, 'บันทึกผู้ช่วย'));
+});
+
+test('saved Workspace status changes language without another workflow fetch', async t => {
+  const env = setup(t);
+  const ui = await env.mountSwitchable();
+  await change(ui.renderer, 'workflow-instructions', 'Keep original content');
+  await save(ui.renderer);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Agent saved/);
+  const reads = env.workflowReads.length;
+  await ui.switchLocale('th');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /บันทึกผู้ช่วยแล้ว/);
+  assert.equal(env.workflowReads.length, reads);
+  assert.equal(env.saves.length, 1);
+  assert.equal(env.saves[0].instructions, 'Keep original content');
 });

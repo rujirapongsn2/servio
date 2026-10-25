@@ -1,4 +1,5 @@
 "use client";
+import { useAdminLocale } from "@/lib/admin-locale";
 
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight } from "lucide-react";
@@ -27,11 +28,12 @@ interface WorkflowNavigatorProps {
 
 export default function WorkflowNavigator({
   steps,
-  backLabel = "Back",
+  backLabel,
   backHref,
   onBack,
   actions = [],
 }: WorkflowNavigatorProps) {
+  const { copy } = useAdminLocale();
   const router = useRouter();
 
   const handleBack = () => {
@@ -62,7 +64,7 @@ export default function WorkflowNavigator({
         <div className="flex items-center gap-3 min-w-0">
           <Button type="button" variant="outline" size="sm" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4" />
-            {backLabel}
+            {backLabel ?? copy.back}
           </Button>
           <nav className="flex items-center gap-1 overflow-x-auto text-sm font-medium text-[#778DA9]">
             {steps.map((step, index) => (

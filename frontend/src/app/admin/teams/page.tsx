@@ -1,5 +1,7 @@
 "use client";
 
+import { useAdminLocale } from "@/lib/admin-locale";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTeam } from "@/lib/team-context";
@@ -47,6 +49,8 @@ interface AgentOption {
   llm_provider?: { id: number; name: string } | null;
 }
 
+type PageMessage = { kind: "created" | "deleted" } | { kind: "create-failed" | "delete-failed"; detail?: string };
+
 interface ToolOption {
   id: number;
   name: string;
@@ -54,6 +58,7 @@ interface ToolOption {
 }
 
 export default function TeamsPage() {
+  const { copy } = useAdminLocale();
   const router = useRouter();
   const { teams, loading: teamsLoading, refreshTeams, setSelectedTeamId } = useTeam();
   const [showCreate, setShowCreate] = useState(false);
@@ -64,8 +69,9 @@ export default function TeamsPage() {
   const [membersSaveState, setMembersSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
-  const [pageMessage, setPageMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [pageMessage, setPageMessage] = useState<PageMessage | null>(null);
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const normalizedQuery = query.trim().toLowerCase();
   const visibleTeams = useMemo(() => {
@@ -98,37 +104,40 @@ export default function TeamsPage() {
 
   const handleCreate = async () => {
     const name = formName.trim();
-    if (!name) return;
-    const slug = slugify(name);
-    const res = await fetch(`${apiBase}/api/admin/team-agents`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ name, slug, description: formDesc }),
-    });
-    if (res.ok) {
-      setShowCreate(false);
-      setFormName("");
-      setFormDesc("");
-      refreshTeams();
-    }
+    if (!name || creating || localStorage.getItem("isViewerOnly") === "1") return;
+    const slug = slugify(name) || `team-${crypto.randomUUID()}`;
+    setCreating(true);
+    setPageMessage(null);
+    try {
+      const res = await fetch(`${apiBase}/api/admin/team-agents`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, slug, description: formDesc }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.detail === "string" ? data.detail : "");
+      }
+      setShowCreate(false); setFormName(""); setFormDesc("");
+      setPageMessage({ kind: "created" });
+      await refreshTeams().catch(() => {});
+    } catch (error) {
+      setPageMessage({ kind: "create-failed", detail: error instanceof Error ? error.message : undefined });
+    } finally { setCreating(false); }
   };
 
   const handleDelete = async (teamId: number, teamName: string) => {
-    if (!confirm(`Delete team "${teamName}"? This cannot be undone.`)) return;
+    if (localStorage.getItem("isViewerOnly") === "1" || !confirm(copy.confirmDeleteTeam(teamName))) return;
     const res = await fetch(`${apiBase}/api/admin/team-agents/${teamId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
-      setPageMessage({ type: "success", text: "Team deleted." });
+      setPageMessage({ kind: "deleted" });
       refreshTeams();
       return;
     }
     const data = await res.json().catch(() => ({}));
-    setPageMessage({ type: "error", text: data.detail || "Failed to delete team" });
+    setPageMessage({ kind: "delete-failed", detail: typeof data.detail === "string" ? data.detail : undefined });
   };
 
   const openEdit = async (teamId: number) => {
@@ -201,7 +210,7 @@ export default function TeamsPage() {
 
   const handleDeleteAgent = async (agentId: number) => {
     if (!editingTeam) return;
-    if (!confirm("Delete this agent? This removes it from all teams.")) return;
+    if (!confirm(copy.confirmDeleteAgentEverywhere)) return;
     const res = await fetch(`${apiBase}/api/admin/agents/${agentId}?team_agent_id=${editingTeam.id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
@@ -210,7 +219,7 @@ export default function TeamsPage() {
       await openEdit(editingTeam.id);
       await refreshTeams();
     } else {
-      alert("Failed to delete agent");
+      alert(copy.deleteAgentFailed);
     }
   };
 
@@ -239,52 +248,49 @@ export default function TeamsPage() {
     } else {
       setMembersSaveState("idle");
       const error = await res.json().catch(() => ({}));
-      alert(error.detail || "Failed to update team members");
+      alert(error.detail || copy.saveMembersFailed);
     }
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <WorkflowNavigator
-        backLabel="Dashboard"
+        backLabel={copy.dashboard}
         backHref="/admin"
         steps={[
-          { label: "Dashboard", href: "/admin" },
-          { label: "Team Agents", active: true },
+          { label: copy.dashboard, href: "/admin" },
+          { label: copy.teamAgents, active: true },
         ]}
         actions={[
-          { label: "Channels", href: "/admin/tools/channels", variant: "outline" },
-          { label: "Online Agent", href: "/admin/monitor", variant: "outline" },
-          { label: "Analytics", href: "/admin/analytics", variant: "outline" },
+          { label: copy.channels, href: "/admin/tools/channels", variant: "outline" },
+          { label: copy.onlineAgents, href: "/admin/monitor", variant: "outline" },
+          { label: copy.analytics, href: "/admin/analytics", variant: "outline" },
         ]}
       />
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-[28px] font-bold leading-[1.25] text-[#0D1B2A]">Team Agents</h1>
-          <p className="mt-1 text-base font-medium text-[#778DA9]">
-            Manage your agent teams and workspaces
-          </p>
+          <h1 className="text-[28px] font-bold leading-[1.25] text-[#0D1B2A]">{copy.teamAgents}</h1>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="self-start sm:self-auto">
-          <Plus className="h-4 w-4" /> New Team
+        <Button data-admin-write="true" onClick={() => setShowCreate(true)} className="self-start sm:self-auto">
+          <Plus className="h-4 w-4" /> {copy.newTeam}
         </Button>
       </header>
 
       {pageMessage && (
         <div
-          role={pageMessage.type === "error" ? "alert" : "status"}
+          role={pageMessage.kind.endsWith("failed") ? "alert" : "status"}
           className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-sm font-medium ${
-            pageMessage.type === "success"
+            !pageMessage.kind.endsWith("failed")
               ? "border-green-200 bg-green-50 text-green-800 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300"
               : "border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300"
           }`}
         >
-          <span>{pageMessage.text}</span>
+          <div>{pageMessage.kind === "created" ? copy.teamCreated : pageMessage.kind === "deleted" ? copy.teamDeleted : pageMessage.kind === "create-failed" ? copy.createTeamFailed : copy.deleteTeamFailed}{"detail" in pageMessage && pageMessage.detail && <details className="mt-1 text-xs"><summary>{copy.errorDetails}</summary>{pageMessage.detail}</details>}</div>
           <button
             type="button"
             onClick={() => setPageMessage(null)}
-            aria-label="Dismiss message"
+            aria-label={copy.dismissMessage}
             className="-m-1 rounded-md p-1 opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D1B2A]"
           >
             <X className="h-4 w-4" />
@@ -294,14 +300,14 @@ export default function TeamsPage() {
 
       <section aria-labelledby="team-list-heading" className="space-y-4">
         <h2 id="team-list-heading" className="sr-only">
-          Teams
+          {copy.teams}
         </h2>
 
         {!teamsLoading && teams.length > 0 && (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative w-full sm:max-w-xs">
               <label htmlFor="team-search" className="sr-only">
-                Search teams
+                {copy.searchTeams}
               </label>
               <Search
                 aria-hidden="true"
@@ -312,14 +318,14 @@ export default function TeamsPage() {
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name, slug or owner"
+                placeholder={copy.searchTeamsHint}
                 className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-3 text-sm font-medium text-[#0D1B2A] outline-none placeholder:text-[#778DA9] focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]/15"
               />
             </div>
             <p className="text-sm font-medium tabular-nums text-[#778DA9]" aria-live="polite">
               {normalizedQuery
-                ? `${visibleTeams.length} of ${teams.length} teams`
-                : `${teams.length} ${teams.length === 1 ? "team" : "teams"}`}
+                ? copy.teamsFiltered(visibleTeams.length, teams.length)
+                : copy.teamsCount(teams.length)}
             </p>
           </div>
         )}
@@ -330,7 +336,7 @@ export default function TeamsPage() {
         >
           {visibleTeams.map((team) => {
             const isActive = team.status === "active";
-            const agentLabel = `${team.member_count} ${team.member_count === 1 ? "agent" : "agents"}`;
+            const agentLabel = copy.agentsCount(team.member_count);
             return (
               <div
                 role="listitem"
@@ -356,14 +362,14 @@ export default function TeamsPage() {
                         aria-hidden="true"
                         className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-[#2786C2]" : "bg-[#9BA8B4]"}`}
                       />
-                      {team.status}
+                      {team.status === "active" ? copy.active : team.status === "inactive" ? copy.inactive : team.status}
                     </span>
                   </div>
 
                   <p className="mt-0.5 truncate text-xs font-medium leading-4 text-[#778DA9]">
                     <span title={team.slug}>{team.slug}</span>
                     <span aria-hidden="true"> · </span>
-                    <span>Owned by {team.owner_username || "N/A"}</span>
+                    <span>{copy.ownedBy(team.owner_username || "N/A")}</span>
                   </p>
 
                   {team.description && (
@@ -378,12 +384,12 @@ export default function TeamsPage() {
                   <p className="mt-auto flex min-w-0 items-center gap-1 pt-2 text-[13px] leading-5 text-[#778DA9]">
                     <span className="shrink-0 font-semibold tabular-nums text-[#0D1B2A]">{agentLabel}</span>
                     <span aria-hidden="true" className="shrink-0">·</span>
-                    <span className="shrink-0">Fallback:</span>
+                    <span className="shrink-0">{copy.fallback}:</span>
                     <span
                       className={`truncate ${team.starting_agent_name ? "font-medium text-[#0D1B2A]" : ""}`}
                       title={team.starting_agent_name || undefined}
                     >
-                      {team.starting_agent_name || "Not set"}
+                      {team.starting_agent_name || copy.notSet}
                     </span>
                   </p>
                 </div>
@@ -395,14 +401,14 @@ export default function TeamsPage() {
                     className="h-7 px-2.5"
                     onClick={() => router.push(`/admin/teams/${team.id}/workflow`)}
                   >
-                    <WorkflowIcon aria-hidden="true" /> Workflow
+                    <WorkflowIcon aria-hidden="true" /> {copy.workflow}
                   </Button>
                   <Button
                     variant="ghost"
                     size="iconSmall"
-                    onClick={() => handleDelete(team.id, team.name)}
-                    aria-label={`Delete team ${team.name}`}
-                    title="Delete team"
+                    data-admin-write="true" onClick={() => handleDelete(team.id, team.name)}
+                    aria-label={copy.deleteTeam(team.name)}
+                    title={copy.deleteTeam(team.name)}
                     className="ml-auto h-7 w-7 text-[#778DA9] hover:bg-red-50 hover:text-[#B91C1C] focus-visible:ring-[#B91C1C]"
                   >
                     <Trash2 />
@@ -415,7 +421,7 @@ export default function TeamsPage() {
 
         {teamsLoading && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16.5rem),1fr))] gap-3" aria-busy="true">
-            <span className="sr-only">Loading team agents...</span>
+            <span className="sr-only">{copy.loadingTeams}</span>
             {[0, 1, 2].map((i) => (
               <div key={i} aria-hidden="true" className="h-[132px] animate-pulse rounded-xl border border-[#E2E8F0] bg-[#F8F9FA]" />
             ))}
@@ -424,21 +430,18 @@ export default function TeamsPage() {
 
         {!teamsLoading && teams.length === 0 && (
           <div className="rounded-[14px] border border-dashed border-[#CBD5E1] px-6 py-12 text-center">
-            <p className="text-base font-semibold text-[#0D1B2A]">No teams yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm font-medium text-[#778DA9]">
-              Create your first team, then add agents and build its workflow.
-            </p>
-            <Button className="mt-5" onClick={() => setShowCreate(true)}>
-              <Plus className="h-4 w-4" /> New Team
+            <p className="text-base font-semibold text-[#0D1B2A]">{copy.noTeams}</p>
+            <Button data-admin-write="true" className="mt-5" onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4" /> {copy.newTeam}
             </Button>
           </div>
         )}
 
         {!teamsLoading && teams.length > 0 && visibleTeams.length === 0 && (
           <div className="rounded-[14px] border border-dashed border-[#CBD5E1] px-6 py-12 text-center">
-            <p className="text-base font-semibold text-[#0D1B2A]">No teams match &ldquo;{query.trim()}&rdquo;</p>
+            <p className="text-base font-semibold text-[#0D1B2A]">{copy.noTeamsMatch(query.trim())}</p>
             <Button variant="outline" size="sm" className="mt-4" onClick={() => setQuery("")}>
-              Clear search
+              {copy.clearSearch}
             </Button>
           </div>
         )}
@@ -446,41 +449,42 @@ export default function TeamsPage() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div className="fixed inset-y-0 right-0 z-50 flex items-center justify-center bg-black/[0.24] px-4 [left:var(--admin-sidebar-width)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/[0.24] px-4">
           <div className="w-full max-w-md rounded-[20px] border border-[#E2E8F0] bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
-            <h2 className="mb-4 text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-[#0D1B2A]">Create Team Agent</h2>
+            <h2 className="mb-4 text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-[#0D1B2A]">{copy.createTeam}</h2>
+            {pageMessage?.kind === "create-failed" && <div role="alert" className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-700">{copy.createTeamFailed}{pageMessage.detail && <details><summary>{copy.errorDetails}</summary>{pageMessage.detail}</details>}</div>}
             <div className="space-y-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-[#2D3F55]">
-                  Name
+                  {copy.teamName}
                 </label>
                 <input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
-                  placeholder="Sales Support"
+                  placeholder={copy.teamExample}
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-[#2D3F55]">
-                  Description
+                  {copy.description}
                 </label>
                 <textarea
                   value={formDesc}
                   onChange={(e) => setFormDesc(e.target.value)}
                   className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-sm font-medium text-[#0D1B2A] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]"
                   rows={3}
-                  placeholder="Optional description..."
+                  placeholder={copy.optionalDescription}
                 />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <Button variant="outline" onClick={() => setShowCreate(false)}>
-                Cancel
+                {copy.cancel}
               </Button>
-              <Button onClick={handleCreate} disabled={!formName.trim()}>
-                Create
+              <Button data-admin-write="true" onClick={handleCreate} disabled={!formName.trim() || creating}>
+                {copy.create}
               </Button>
             </div>
           </div>
@@ -489,13 +493,13 @@ export default function TeamsPage() {
 
       {/* Edit Modal */}
       {editingTeam && (
-        <div className="fixed inset-y-0 right-0 z-50 flex items-center justify-center bg-black/[0.24] px-4 [left:var(--admin-sidebar-width)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/[0.24] px-4">
           <div className="max-h-[88vh] w-full max-w-[1200px] overflow-y-auto rounded-[20px] border border-[#E2E8F0] bg-white p-6 shadow-[rgba(0,0,0,0.02)_0_0_0_1px,rgba(0,0,0,0.04)_0_2px_6px_0,rgba(0,0,0,0.1)_0_4px_8px_0]">
             <WorkflowNavigator
-              backLabel="Close"
+              backLabel={copy.close}
               onBack={() => setEditingTeam(null)}
               steps={[
-                { label: "Team Agents", href: "/admin/teams" },
+                { label: copy.teamAgents, href: "/admin/teams" },
                 { label: editingTeam.name, active: true },
               ]}
             />
@@ -504,16 +508,15 @@ export default function TeamsPage() {
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="text-[22px] font-medium leading-[1.18] tracking-[-0.44px] text-[#0D1B2A]">
-                      {editingTeam.name} — Members
+                      {editingTeam.name} · {copy.members}
                     </h2>
                     <p className="mt-1 text-sm font-medium text-[#778DA9]">
-                      Select members and choose the fallback agent.
                     </p>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
+                    data-admin-write="true" onClick={() => {
                       setSelectedTeamId(editingTeam.id);
                       const autoAssignAgentId =
                         startingAgentId ?? (memberAgentIds.length === 1 ? memberAgentIds[0] : null);
@@ -529,7 +532,7 @@ export default function TeamsPage() {
                       router.push(`/admin/tools?${params.toString()}`);
                     }}
                   >
-                    Manage Team Capabilities
+                    {copy.manageCapabilities}
                   </Button>
                 </div>
                 <div className="overflow-hidden rounded-[14px] border border-[#E2E8F0]">
@@ -537,16 +540,16 @@ export default function TeamsPage() {
                     <thead className="bg-[#F8F9FA]">
                       <tr>
                         <th className="w-24 px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
-                          Member
+                          {copy.member}
                         </th>
                         <th className="w-28 px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
-                          Fallback
+                          {copy.fallback}
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-[#778DA9]">
-                          Agent
+                          {copy.agent}
                         </th>
                         <th className="w-36 px-4 py-3 text-right text-xs font-semibold text-[#778DA9]">
-                          Actions
+                          {copy.actions}
                         </th>
                       </tr>
                     </thead>
@@ -559,7 +562,7 @@ export default function TeamsPage() {
                               <input
                                 type="checkbox"
                                 checked={isMember}
-                                onChange={() => toggleMember(agent.id)}
+                                data-admin-write="true" onChange={() => toggleMember(agent.id)}
                                 className="h-4 w-4"
                               />
                             </td>
@@ -569,7 +572,7 @@ export default function TeamsPage() {
                                 name="starting-agent"
                                 checked={startingAgentId === agent.id}
                                 disabled={!isMember}
-                                onChange={() => {
+                                data-admin-write="true" onChange={() => {
                                   setStartingAgentId(agent.id);
                                   setMembersSaveState("idle");
                                 }}
@@ -582,7 +585,7 @@ export default function TeamsPage() {
                                 {agent.model}
                                 {agent.tools.length > 0 && (
                                   <span className="ml-2 inline-flex items-center gap-0.5">
-                                    <Wrench className="h-3 w-3" /> {agent.tools.length} tool(s)
+                                    <Wrench className="h-3 w-3" /> {copy.toolCount(agent.tools.length)}
                                   </span>
                                 )}
                               </div>
@@ -596,23 +599,23 @@ export default function TeamsPage() {
                                   type="button"
                                   onClick={() => openAgentTester(agent.id)}
                                   className="rounded-full p-1.5 text-[#0D1B2A] hover:bg-[#F8F9FA]"
-                                  title="Test agent"
+                                  title={copy.testAgent}
                                 >
                                   <Play className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => openAgentEditor(agent.id)}
+                                  data-admin-write="true" onClick={() => openAgentEditor(agent.id)}
                                   className="rounded-full p-1.5 text-[#2786C2] hover:bg-[#F8F9FA]"
-                                  title="Edit agent"
+                                  title={copy.editAgent}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteAgent(agent.id)}
+                                  data-admin-write="true" onClick={() => handleDeleteAgent(agent.id)}
                                   className="rounded-full p-1.5 text-red-600 hover:bg-red-50"
-                                  title="Delete agent"
+                                  title={copy.deleteAgent}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
@@ -624,7 +627,7 @@ export default function TeamsPage() {
                       {agents.length === 0 && (
                         <tr>
                           <td colSpan={4} className="px-4 py-10 text-center text-sm font-medium text-[#778DA9]">
-                            No agents available. Create one first.
+                            {copy.noAgentsAvailable}
                           </td>
                         </tr>
                       )}
@@ -634,21 +637,21 @@ export default function TeamsPage() {
               </section>
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => openAgentEditor("new")}>
-                Create New Agent
+              <Button variant="outline" data-admin-write="true" onClick={() => openAgentEditor("new")}>
+                {copy.createNewAgent}
               </Button>
               <Button variant="outline" onClick={() => setEditingTeam(null)}>
-                Close
+                {copy.close}
               </Button>
               <Button
-                onClick={handleSaveMembers}
+                data-admin-write="true" onClick={handleSaveMembers}
                 disabled={memberAgentIds.length === 0 || membersSaveState === "saving"}
               >
                 {membersSaveState === "saving"
-                  ? "Saving..."
+                  ? copy.saving
                   : membersSaveState === "saved"
-                    ? "Saved"
-                    : "Save Members"}
+                    ? copy.saved
+                    : copy.saveMembers}
               </Button>
             </div>
           </div>

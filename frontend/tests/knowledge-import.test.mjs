@@ -1,3 +1,4 @@
+import { adminLocale, EnglishAdminLocale, SwitchableAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -21,7 +22,7 @@ function load(file, mocks = {}) {
 }
 const helpers = load('src/lib/knowledge-import.ts');
 const portalHosts = [];
-const { default: Modal } = load('src/components/CreateOKFBundleModal.tsx', { '@/lib/api': { getApiBaseUrl: () => '' }, '@/lib/knowledge-import': helpers, 'react-dom': { createPortal(children, host) { portalHosts.push(host); return children; } } });
+const { default: Modal } = load('src/components/CreateOKFBundleModal.tsx', { '@/lib/admin-locale': adminLocale, '@/lib/api': { getApiBaseUrl: () => '' }, '@/lib/knowledge-import': helpers, 'react-dom': { createPortal(children, host) { portalHosts.push(host); return children; } } });
 const ready = { documents: { status: 'ready' }, images: { status: 'ready' }, audio: { status: 'ready' }, image_ocr: { status: 'not_configured' } };
 const response = (body, ok = true) => ({ ok, json: async () => body });
 const props = { teamAgentId: 1, onClose() {}, onSuccess() {} };
@@ -33,7 +34,7 @@ function button(renderer, label) { return renderer.root.findAllByType('button').
 async function create(fetcher = async () => response(ready)) {
   globalThis.fetch = fetcher;
   let renderer;
-  await TestRenderer.act(async () => { renderer = TestRenderer.create(React.createElement(Modal, props)); });
+  await TestRenderer.act(async () => { renderer = TestRenderer.create(React.createElement(EnglishAdminLocale, null, React.createElement(Modal, props))); });
   return renderer;
 }
 async function pick(renderer, label, files) {
@@ -67,7 +68,7 @@ test('modal initial server render needs no document or portal host', () => {
   delete globalThis.document;
   portalHosts.length = 0;
   try {
-    assert.equal(renderToString(React.createElement(Modal, props)), '');
+    assert.equal(renderToString(React.createElement(EnglishAdminLocale, null, React.createElement(Modal, props))), '');
     assert.equal(portalHosts.length, 0);
   } finally {
     globalThis.document = document;
@@ -141,7 +142,7 @@ test('readiness failure allows documents, rejects dropped media and retry retain
 test('stale readiness response is ignored after team changes and fetch aborts on unmount', async () => {
   const pending = [];
   const renderer = await create((url, options) => new Promise((resolve) => pending.push({ url, options, resolve })));
-  await TestRenderer.act(async () => renderer.update(React.createElement(Modal, { ...props, teamAgentId: 2 })));
+  await TestRenderer.act(async () => renderer.update(React.createElement(EnglishAdminLocale, null, React.createElement(Modal, { ...props, teamAgentId: 2 }))));
   assert.equal(pending[0].options.signal.aborted, true);
   await TestRenderer.act(async () => pending[1].resolve(response(ready)));
   await TestRenderer.act(async () => pending[0].resolve(response({ ...ready, images: { status: 'disabled' } })));
@@ -158,7 +159,7 @@ test('existing queue is revalidated when readiness changes', async () => {
   try {
     await pick(renderer, 'Add images', [new File(['png'], 'image.png')]);
     enabled = false;
-    await TestRenderer.act(async () => renderer.update(React.createElement(Modal, { ...props, teamAgentId: 2 })));
+    await TestRenderer.act(async () => renderer.update(React.createElement(EnglishAdminLocale, null, React.createElement(Modal, { ...props, teamAgentId: 2 }))));
     assert.match(text(renderer), /Image import disabled/);
     assert.equal(renderer.root.findByProps({ type: 'submit' }).props.disabled, true);
     assert.match(text(renderer), /image.png/);
@@ -281,4 +282,19 @@ test('incremental mixed selections count unique files, allow exactly 50 MB and r
   } finally {
     await TestRenderer.act(async () => renderer.unmount());
   }
+});
+
+test('Add Knowledge keeps pasted text and selected files across a locale switch', async () => {
+  globalThis.fetch = async () => response(ready);
+  let setLocale; let renderer;
+  await TestRenderer.act(async () => { renderer = TestRenderer.create(React.createElement(SwitchableAdminLocale, { onReady: set => { setLocale = set; } }, React.createElement(Modal, props))); });
+  try {
+    await pick(renderer, 'Add documents', [new File(['policy'], 'policy.txt')]);
+    await TestRenderer.act(async () => button(renderer, 'Paste Text').props.onClick());
+    await TestRenderer.act(async () => renderer.root.findByProps({ id: 'knowledge-text' }).props.onChange({ target: { value: 'Do not translate this source' } }));
+    await TestRenderer.act(async () => setLocale('th'));
+    assert.equal(renderer.root.findByProps({ id: 'knowledge-text' }).props.value, 'Do not translate this source');
+    await TestRenderer.act(async () => button(renderer, 'ไฟล์').props.onClick());
+    assert.match(text(renderer), /policy.txt/);
+  } finally { await TestRenderer.act(async () => renderer.unmount()); }
 });

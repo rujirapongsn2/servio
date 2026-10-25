@@ -1,4 +1,5 @@
 "use client";
+import { useAdminLocale } from "@/lib/admin-locale";
 
 import { useTeam } from "@/lib/team-context";
 import { usePathname, useRouter } from "next/navigation";
@@ -9,6 +10,7 @@ interface TeamSwitcherProps {
 }
 
 export default function TeamSwitcher({ label }: TeamSwitcherProps) {
+  const { copy } = useAdminLocale();
   const router = useRouter();
   const pathname = usePathname();
   const { teams, selectedTeam, setSelectedTeamId, loading } = useTeam();
@@ -36,7 +38,7 @@ export default function TeamSwitcher({ label }: TeamSwitcherProps) {
         <select
           value={selectedTeam?.id ?? ""}
           onChange={(e) => handleTeamChange(parseInt(e.target.value))}
-          aria-label={label || "Team Agent"}
+          aria-label={label || copy.teamAgent}
           className="appearance-none rounded-full border border-[#E2E8F0] bg-white py-2 pl-4 pr-9 text-sm font-medium text-[#0D1B2A] shadow-[rgba(0,0,0,0.04)_0_2px_6px_0] outline-none focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A] cursor-pointer"
         >
           {teams.map((team) => (

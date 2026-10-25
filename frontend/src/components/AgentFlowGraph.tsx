@@ -1,4 +1,5 @@
 "use client";
+import { useAdminLocale } from "@/lib/admin-locale";
 
 import { Bot, GitBranch, Network, BookOpen, Wrench, Star, Trash2, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -22,11 +23,12 @@ type AgentNodeData = { kind: "coordinator" } | {
 };
 
 function AgentNode({ data }: NodeProps<AgentNodeData>) {
+  const { copy } = useAdminLocale();
   if (data.kind === "coordinator") {
     return (
       <div className="w-60 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-center shadow-sm">
-        <div className="flex items-center justify-center gap-2 font-semibold text-orange-900"><Network className="h-5 w-5" />Coordinator</div>
-        <div className="mt-1 text-xs text-orange-800">System router</div>
+        <div className="flex items-center justify-center gap-2 font-semibold text-orange-900"><Network className="h-5 w-5" />{copy.coordinator}</div>
+        <div className="mt-1 text-xs text-orange-800">{copy.systemRouter}</div>
         <Handle type="source" position={Position.Bottom} isConnectable={false} className="!bg-orange-400" />
       </div>
     );
@@ -34,22 +36,22 @@ function AgentNode({ data }: NodeProps<AgentNodeData>) {
   return (
     <div className="relative">
       <Handle id="routing" type="target" position={Position.Top} isConnectable={false} className="!bg-slate-400" />
-      <Handle id="handoff-in-left" type="target" position={Position.Left} isConnectable={data.targetConnectable} style={{ top: "35%" }} title="Receive handoff" className="!h-3 !w-3 !bg-sky-500" />
-      <Handle id="handoff-in-right" type="target" position={Position.Right} isConnectable={data.targetConnectable} style={{ top: "35%" }} title="Receive handoff" className="!h-3 !w-3 !bg-sky-500" />
+      <Handle id="handoff-in-left" type="target" position={Position.Left} isConnectable={data.targetConnectable} style={{ top: "35%" }} title={copy.receiveHandoff} className="!h-3 !w-3 !bg-sky-500" />
+      <Handle id="handoff-in-right" type="target" position={Position.Right} isConnectable={data.targetConnectable} style={{ top: "35%" }} title={copy.receiveHandoff} className="!h-3 !w-3 !bg-sky-500" />
       <button type="button" onClick={(event) => { event.stopPropagation(); data.onSelect(data.agent.id); }} aria-pressed={data.selected}
-        aria-label={`Edit ${data.agent.name}`} className={`nodrag nowheel w-60 rounded-2xl border bg-white p-4 text-left shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${data.selected ? "border-sky-500 ring-2 ring-sky-100" : "border-slate-200 hover:border-sky-400"}`}>
-        <div className="flex items-start gap-2"><Bot className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" /><span className="min-w-0 break-words font-semibold text-slate-900">{data.agent.name || "Untitled agent"}</span></div>
+        aria-label={copy.editNamedAgent(data.agent.name)} className={`nodrag nowheel w-60 rounded-2xl border bg-white p-4 text-left shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${data.selected ? "border-sky-500 ring-2 ring-sky-100" : "border-slate-200 hover:border-sky-400"}`}>
+        <div className="flex items-start gap-2"><Bot className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" /><span className="min-w-0 break-words font-semibold text-slate-900">{data.agent.name || copy.untitledAgent}</span></div>
         <div className="mt-1 truncate pl-7 text-xs text-slate-500" title={data.agent.model}>{data.agent.model}</div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-          {data.isFallback && <span className="inline-flex items-center gap-1 text-amber-700"><Star className="h-3.5 w-3.5" />Fallback</span>}
-          <span className="inline-flex items-center gap-1" title={`${data.tools} tools`}><Wrench className="h-3.5 w-3.5" />{data.tools}</span>
-          <span className="inline-flex items-center gap-1" title={`${data.knowledge} knowledge sources`}><BookOpen className="h-3.5 w-3.5" />{data.knowledge}</span>
-          {data.pending && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">Unsaved</span>}
-          {data.agent.shared && <span className="rounded bg-slate-100 px-1.5 py-0.5">Shared</span>}
+          {data.isFallback && <span className="inline-flex items-center gap-1 text-amber-700"><Star className="h-3.5 w-3.5" />{copy.fallback}</span>}
+          <span className="inline-flex items-center gap-1" title={copy.toolsCount(data.tools)}><Wrench className="h-3.5 w-3.5" />{data.tools}</span>
+          <span className="inline-flex items-center gap-1" title={copy.knowledgeCount(data.knowledge)}><BookOpen className="h-3.5 w-3.5" />{data.knowledge}</span>
+          {data.pending && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">{copy.unsaved}</span>}
+          {data.agent.shared && <span className="rounded bg-slate-100 px-1.5 py-0.5">{copy.shared}</span>}
         </div>
       </button>
-      <Handle id="handoff-out-right" type="source" position={Position.Right} isConnectable={data.editable} style={{ top: "65%" }} title="Drag to add handoff" className="!h-3 !w-3 !bg-sky-500" />
-      <Handle id="handoff-out-left" type="source" position={Position.Left} isConnectable={data.editable} style={{ top: "65%" }} title="Drag to add handoff" className="!h-3 !w-3 !bg-sky-500" />
+      <Handle id="handoff-out-right" type="source" position={Position.Right} isConnectable={data.editable} style={{ top: "65%" }} title={copy.dragHandoff} className="!h-3 !w-3 !bg-sky-500" />
+      <Handle id="handoff-out-left" type="source" position={Position.Left} isConnectable={data.editable} style={{ top: "65%" }} title={copy.dragHandoff} className="!h-3 !w-3 !bg-sky-500" />
     </div>
   );
 }
@@ -70,6 +72,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
   onAddAgent?: () => void;
   hasNewAgentDraft?: boolean;
 }) {
+  const { copy } = useAdminLocale();
   const editable = canEdit && !disabled && onHandoffChange !== undefined;
   const container = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance<AgentNodeData> | null>(null);
@@ -104,7 +107,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
           knowledge: assigned.filter(isKnowledgeTool).length, onSelect, editable: editable && !agent.shared, targetConnectable: editable, pending: pendingAgentIds.includes(agent.id) },
       });
       edges.push({ id: `routing-${agent.id}`, source: "coordinator", target: String(agent.id), targetHandle: "routing", type: "smoothstep", deletable: false, focusable: false, className: "!pointer-events-none",
-        label: agent.id === fallbackAgentId ? "fallback" : undefined,
+        label: agent.id === fallbackAgentId ? copy.fallback : undefined,
         style: { stroke: "#94a3b8", strokeDasharray: "5 5" }, markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" } });
       agent.handoff_agent_ids.filter((id) => memberIds.has(id)).forEach((id) => edges.push({
         id: `handoff-${agent.id}-${id}`, source: String(agent.id), target: String(id), sourceHandle: index % 3 <= agents.findIndex((target) => target.id === id) % 3 ? "handoff-out-right" : "handoff-out-left",
@@ -113,7 +116,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
       }));
     });
     return { nodes, edges };
-  }, [agents, tools, fallbackAgentId, selectedAgentId, onSelect, editable, pendingAgentIds]);
+  }, [agents, tools, fallbackAgentId, selectedAgentId, onSelect, editable, pendingAgentIds, copy]);
 
   const validConnection = (connection: Connection) => {
     const source = agents.find((agent) => String(agent.id) === connection.source);
@@ -137,7 +140,7 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
   };
 
   return (
-    <div ref={container} className="relative h-[55vh] min-h-80 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 lg:h-full lg:min-h-0" aria-label="Team workflow diagram">
+    <div ref={container} className="relative h-[55vh] min-h-80 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 lg:h-full lg:min-h-0" aria-label={copy.diagram}>
       <ReactFlow nodes={nodes} edges={edges.map((edge) => ({ ...edge, selected: editable && edge.deletable !== false && selectedEdgeIds.has(edge.id) }))} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={editable} onInit={setInstance}
         onEdgesChange={(changes) => setSelectedEdgeIds((previous) => {
           const next = new Set(previous);
@@ -162,19 +165,19 @@ export default function AgentFlowGraph({ agents, tools, fallbackAgentId, selecte
         <Controls showInteractive={false} fitViewOptions={fitViewOptions} position="bottom-right" />
       </ReactFlow>
       <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap items-start gap-2">
-        {canEdit && onAddAgent && <button type="button" onClick={onAddAgent} disabled={disabled} aria-controls="workflow-agent-inspector"
+        {canEdit && onAddAgent && <button type="button" data-admin-write="true" onClick={onAddAgent} disabled={disabled} aria-controls="workflow-agent-inspector"
           className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl border border-dashed border-sky-400 bg-white px-3 py-2 text-sm font-medium text-sky-700 shadow-sm hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-40">
-          <Plus className="h-4 w-4" aria-hidden="true" />{hasNewAgentDraft ? "Continue new agent" : "Add agent"}
+          <Plus className="h-4 w-4" aria-hidden="true" />{hasNewAgentDraft ? copy.continueNewAgent : copy.addAgent}
         </button>}
-        {selectedHandoff && <button type="button" onClick={() => deleteHandoffs([selectedHandoff])}
-        aria-label={`Delete handoff from ${agents.find((agent) => String(agent.id) === selectedHandoff.source)?.name} to ${agents.find((agent) => String(agent.id) === selectedHandoff.target)?.name}`}
+        {selectedHandoff && <button type="button" data-admin-write="true" onClick={() => deleteHandoffs([selectedHandoff])}
+        aria-label={copy.deleteNamedHandoff(agents.find((agent) => String(agent.id) === selectedHandoff.source)?.name || "", agents.find((agent) => String(agent.id) === selectedHandoff.target)?.name || "")}
         className="pointer-events-auto ml-auto inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
-        <Trash2 className="h-4 w-4" aria-hidden="true" />Delete handoff
+        <Trash2 className="h-4 w-4" aria-hidden="true" />{copy.deleteHandoff}
       </button>}
       </div>
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-600">
-        <span className="inline-flex items-center gap-1"><Network className="h-3.5 w-3.5 text-slate-400" />Auto routing</span>
-        <span className="inline-flex items-center gap-1"><GitBranch className="h-3.5 w-3.5 text-sky-600" />Handoff</span>
+        <span className="inline-flex items-center gap-1"><Network className="h-3.5 w-3.5 text-slate-400" />{copy.autoRouting}</span>
+        <span className="inline-flex items-center gap-1"><GitBranch className="h-3.5 w-3.5 text-sky-600" />{copy.handoff}</span>
       </div>
     </div>
   );

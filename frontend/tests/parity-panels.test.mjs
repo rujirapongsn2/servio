@@ -1,3 +1,4 @@
+import { adminLocale, EnglishAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,7 +20,7 @@ const noop = () => null;
 const Dialog = ({ children, ...props }) => React.createElement('dialog-test', props, children);
 const Edit = props => React.createElement('edit-test', props);
 const Knowledge = props => React.createElement('knowledge-test', props);
-const mocks = { '@/lib/api': { getApiBaseUrl: () => '' }, '@/components/WorkflowPanelDialog': { default: Dialog }, '@/components/EditToolForm': { default: Edit } };
+const mocks = { '@/lib/admin-locale': adminLocale, '@/lib/api': { getApiBaseUrl: () => '' }, '@/components/WorkflowPanelDialog': { default: Dialog }, '@/components/EditToolForm': { default: Edit } };
 for (const name of ['WorkflowToolModal','CreateOKFBundleModal','TestOKFBundleModal','CreateFileStoreModal','FileStoreDetailModal','TestFileStoreModal']) mocks[`@/components/${name}`] = { default: noop };
 mocks['@/components/OKFBundleDetailDrawer'] = { default: Knowledge };
 const library = load('src/components/WorkflowCapabilitiesPanel.tsx', mocks);
@@ -42,7 +43,7 @@ const text = tree => JSON.stringify(tree.toJSON());
 const button = (tree, value) => tree.root.findAllByType('button').find(node => node.children.includes(value));
 function globals() { const previous = { fetch: globalThis.fetch, localStorage: globalThis.localStorage, window: globalThis.window }; globalThis.localStorage = { getItem: () => 'token' }; globalThis.window = { confirm: () => true }; return () => Object.assign(globalThis, previous); }
 const tools = [{ id: 1, name: 'Own API', type: 'custom_api', owner_team_agent_id: 5, config: '{}', visibility: 'team', agent_usage_count: 2 }, { id: 2, name: 'Foreign API', type: 'custom_api', owner_team_agent_id: 9, config: '{}', visibility: 'global' }, { id: 3, name: 'Foreign knowledge', type: 'okf_knowledge_graph', owner_team_agent_id: 9, config: '{"okf_bundle_id":3}', visibility: 'global' }];
-async function mountLibrary(onMutation = async () => {}, canEdit = true) { let tree; await act(async () => { tree = create(React.createElement(library.default, { teamId: 5, canEdit, onClose() {}, onMutation })); }); return tree; }
+async function mountLibrary(onMutation = async () => {}, canEdit = true) { let tree; await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(library.default, { teamId: 5, canEdit, onClose() {}, onMutation }))); }); return tree; }
 test('library scopes reads and exposes write controls only for editable resources', async () => { const restore = globals(); let tree; const urls = []; globalThis.fetch = async url => { urls.push(url); return response(tools); }; try { tree = await mountLibrary(); assert.deepEqual(urls, ['/api/admin/tools?team_agent_id=5']); assert.equal(tree.root.findAllByProps({ 'aria-label': 'Edit Own API' }).length, 1); assert.equal(tree.root.findAllByProps({ 'aria-label': 'Edit Foreign API' }).length, 0); assert.equal(tree.root.findAllByProps({ 'aria-label': 'Delete Foreign knowledge' }).length, 0); await act(async () => tree.root.findByProps({ 'aria-label': 'Open Foreign knowledge' }).props.onClick()); assert.equal(tree.root.findByType('knowledge-test').props.canEdit, false); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
 test('deleted resource refresh retry never repeats DELETE and preserves receipt', async () => { const restore = globals(); let tree; let deletes = 0; const mutations = []; globalThis.fetch = async (url, options) => { if (options?.method === 'DELETE') { deletes++; return response({ success: true }); } return response(deletes ? [] : tools); }; try { tree = await mountLibrary(async mutation => { mutations.push(mutation); if (mutations.length === 1) throw Error('snapshot offline'); }); await act(async () => tree.root.findByProps({ 'aria-label': 'Delete Own API' }).props.onClick()); assert.equal(deletes, 1); assert.match(text(tree), /snapshot offline/); assert.equal(tree.root.findByType('dialog-test').props.busy, true); await act(async () => button(tree, 'Retry refresh').props.onClick()); assert.equal(deletes, 1); assert.deepEqual(mutations, [{ kind: 'deleted', toolId: 1 }, { kind: 'deleted', toolId: 1 }]); assert.doesNotMatch(text(tree), /Retry refresh/); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
 test('updated integration refresh retry calls snapshot callback without saving the form again', async () => { const restore = globals(); let tree; let attempts = 0; globalThis.fetch = async () => response(tools); try { tree = await mountLibrary(async () => { if (++attempts === 1) throw Error('refresh unavailable'); }); await act(async () => tree.root.findByProps({ 'aria-label': 'Edit Own API' }).props.onClick()); await act(async () => { await assert.rejects(tree.root.findByType('edit-test').props.onSaved(), /refresh unavailable/); }); assert.equal(tree.root.findAllByType('fieldset')[0].props.disabled, true); await act(async () => button(tree, 'Retry refresh').props.onClick()); assert.equal(attempts, 2); assert.equal(tree.root.findAllByType('edit-test').length, 0); } finally { if (tree) await act(async () => tree.unmount()); restore(); } });
@@ -87,9 +88,9 @@ test('Escape preserves a busy nested import dialog and closes it when idle', asy
   nested.getAttribute = name => name === 'aria-busy' ? String(busy) : null;
   globalThis.document = { activeElement: null, body: { style: { overflow: '' }, querySelectorAll: () => [nested] }, addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) };
   globalThis.MutationObserver = class { observe() {} disconnect() {} };
-  const Panel = load('src/components/WorkflowPanelDialog.tsx', { 'react-dom': { createPortal: children => children } }).default;
+  const Panel = load('src/components/WorkflowPanelDialog.tsx', { '@/lib/admin-locale': adminLocale, 'react-dom': { createPortal: children => children } }).default;
   try {
-    await act(async () => { tree = create(React.createElement(Panel, { title: 'Library', onClose() { assert.fail('Parent must stay open'); }, onChildClose() { closed++; } })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Panel, { title: 'Library', onClose() { assert.fail('Parent must stay open'); }, onChildClose() { closed++; } }))); });
     const key = { key: 'Escape', target: nested, preventDefault() {}, stopPropagation() {} };
     await act(async () => listeners.get('keydown')(key));
     assert.equal(closed, 0);
@@ -158,9 +159,9 @@ test('native image dialog retains Escape and Tab without closing Workflow Test',
   const parentDialog = { contains: () => true, getAttribute: () => null, querySelectorAll: () => [], focus() {} };
   globalThis.document = { activeElement: imageDialog, body: { style: { overflow: '' }, querySelectorAll: () => [parentDialog] }, addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) };
   globalThis.MutationObserver = class { observe() {} disconnect() {} };
-  const Panel = load('src/components/WorkflowPanelDialog.tsx', { 'react-dom': { createPortal: children => children } }).default;
+  const Panel = load('src/components/WorkflowPanelDialog.tsx', { '@/lib/admin-locale': adminLocale, 'react-dom': { createPortal: children => children } }).default;
   try {
-    await act(async () => { tree = create(React.createElement(Panel, { title: 'Test', onClose() { assert.fail('Test must remain open'); } })); });
+    await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(Panel, { title: 'Test', onClose() { assert.fail('Test must remain open'); } }))); });
     for (const key of ['Escape', 'Tab']) {
       await act(async () => listeners.get('keydown')({ key, target: imageDialog, preventDefault() { assert.fail('Native dialog handles its own keyboard'); }, stopPropagation() {} }));
     }

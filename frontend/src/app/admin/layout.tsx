@@ -1,5 +1,7 @@
 "use client";
 
+import { useAdminLocale } from "@/lib/admin-locale";
+
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +18,7 @@ import {
   Shield,
   Menu,
 } from "lucide-react";
+import { AdminLocaleProvider } from "@/lib/admin-locale";
 import { TeamProvider } from "@/lib/team-context";
 import TeamSwitcher from "@/components/TeamSwitcher";
 
@@ -41,6 +44,7 @@ function AdminLayoutInner({
 }: {
   children: React.ReactNode;
 }) {
+  const { locale, copy, setLocale } = useAdminLocale();
   const router = useRouter();
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -53,7 +57,7 @@ function AdminLayoutInner({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isWorkflow = /^\/admin\/teams\/\d+\/workflow$/.test(pathname);
-  const responsiveNavigation = isWorkflow || pathname === "/admin/settings";
+  const responsiveNavigation = isWorkflow || pathname === "/admin/settings" || pathname === "/admin/teams";
 
   useEffect(() => {
     // Skip auth check for login page
@@ -132,39 +136,46 @@ function AdminLayoutInner({
 
   useEffect(() => {
     if (!isViewerOnly) return;
-
     const actionPattern = /\b(add|create|save|new|delete)\b/i;
-
-    const shouldDisable = (text: string) => actionPattern.test(text);
-
+    const locked = new Map<HTMLElement, { disabled?: boolean; ariaDisabled: string | null; tabIndex: string | null }>();
+    const lock = (element: HTMLButtonElement | HTMLAnchorElement) => {
+      if (!locked.has(element)) locked.set(element, {
+        disabled: element instanceof HTMLButtonElement ? element.disabled : undefined,
+        ariaDisabled: element.getAttribute("aria-disabled"), tabIndex: element.getAttribute("tabindex"),
+      });
+      if (element instanceof HTMLButtonElement) {
+        if (!element.disabled) element.disabled = true;
+      } else {
+        if (element.getAttribute("aria-disabled") !== "true") element.setAttribute("aria-disabled", "true");
+        if (element.getAttribute("tabindex") !== "-1") element.setAttribute("tabindex", "-1");
+      }
+      for (const token of ["opacity-50", "cursor-not-allowed", "pointer-events-none"]) {
+        if (!element.classList.contains(token)) element.classList.add(token);
+      }
+    };
+    const unlock = (element: HTMLElement) => {
+      const previous = locked.get(element);
+      if (!previous) return;
+      if (element instanceof HTMLButtonElement && previous.disabled !== undefined && element.disabled !== previous.disabled) element.disabled = previous.disabled;
+      if (previous.ariaDisabled === null) element.removeAttribute("aria-disabled"); else element.setAttribute("aria-disabled", previous.ariaDisabled);
+      if (previous.tabIndex === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", previous.tabIndex);
+      element.classList.remove("opacity-50", "cursor-not-allowed", "pointer-events-none");
+      locked.delete(element);
+    };
     const applyViewerActionLock = () => {
-      const elements = document.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a");
-      elements.forEach((element) => {
-        if ((element as HTMLElement).dataset.viewerActionBypass === "true") {
-          return;
-        }
-        const content = [
-          element.textContent || "",
-          element.getAttribute("title") || "",
-          element.getAttribute("aria-label") || "",
-        ].join(" ");
-        if (!shouldDisable(content)) return;
-
-        if (element instanceof HTMLButtonElement) {
-          element.disabled = true;
-        } else {
-          element.setAttribute("aria-disabled", "true");
-          element.setAttribute("tabindex", "-1");
-        }
-        element.classList.add("opacity-50", "cursor-not-allowed", "pointer-events-none");
+      document.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a").forEach((element) => {
+        const content = [element.textContent || "", element.getAttribute("title") || "", element.getAttribute("aria-label") || ""].join(" ");
+        const shouldLock = element.dataset.viewerActionBypass !== "true" &&
+          (element.dataset.adminWrite === "true" || actionPattern.test(content));
+        if (shouldLock) lock(element); else unlock(element);
       });
     };
-
     applyViewerActionLock();
-    const observer = new MutationObserver(() => applyViewerActionLock());
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [isViewerOnly, pathname]);
+    const observer = new MutationObserver(applyViewerActionLock);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true,
+      attributes: true, attributeFilter: ["disabled", "aria-disabled", "title", "aria-label", "data-admin-write"] });
+    return () => { observer.disconnect(); for (const element of locked.keys()) unlock(element); };
+  }, [isViewerOnly, pathname, locale]);
 
   const toggleSidebar = () => {
     setCollapsed((v) => {
@@ -187,8 +198,8 @@ function AdminLayoutInner({
   }
 
   return (
-    <div className="min-h-screen bg-white text-[#0D1B2A]" data-viewer-only={isViewerOnly ? "1" : "0"}>
-      {responsiveNavigation && mobileSidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
+    <div lang={locale} className="min-h-screen bg-white text-[#0D1B2A]" data-viewer-only={isViewerOnly ? "1" : "0"}>
+      {responsiveNavigation && mobileSidebarOpen && <button type="button" aria-label={copy.closeNavigation} onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
       {/* Sidebar */}
       <div
         className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-[#E2E8F0] bg-white text-[#0D1B2A] transition-all duration-200 z-20 ${responsiveNavigation && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
@@ -205,8 +216,8 @@ function AdminLayoutInner({
             <Button
               size="iconSmall"
               variant="outline"
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? copy.expandSidebar : copy.collapseSidebar}
+              title={collapsed ? copy.expandSidebar : copy.collapseSidebar}
               onClick={toggleSidebar}
               className="border-[#E2E8F0] bg-[#F8F9FA] text-[#0D1B2A] hover:bg-white"
             >
@@ -225,7 +236,7 @@ function AdminLayoutInner({
                 collapsed={collapsed}
                 icon={Activity}
               >
-                Online Agents
+                {copy.onlineAgents}
               </NavLink>
             ) : (
               <>
@@ -235,7 +246,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={LayoutDashboard}
                 >
-                  Dashboard
+                  {copy.dashboard}
                 </NavLink>
                 <NavLink
                   href="/admin/teams"
@@ -243,7 +254,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={Users}
                 >
-                  Team Agents
+                  {copy.teamAgents}
                 </NavLink>
                 <NavLink
                   href="/admin/tools/channels"
@@ -251,7 +262,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={Puzzle}
                 >
-                  Channels
+                  {copy.channels}
                 </NavLink>
                 <NavLink
                   href="/admin/monitor"
@@ -259,7 +270,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={Activity}
                 >
-                  Online Agents
+                  {copy.onlineAgents}
                 </NavLink>
                 <NavLink
                   href="/admin/analytics"
@@ -267,7 +278,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={LineChart}
                 >
-                  Analytics
+                  {copy.analytics}
                 </NavLink>
                 <NavLink
                   href="/admin/voip"
@@ -289,7 +300,7 @@ function AdminLayoutInner({
                     collapsed={collapsed}
                     icon={Shield}
                   >
-                    Users
+                    {copy.users}
                   </NavLink>
                 )}
                 {isSuperAdmin && (
@@ -299,7 +310,7 @@ function AdminLayoutInner({
                     collapsed={collapsed}
                     icon={Settings}
                   >
-                    Settings
+                    {copy.settings}
                   </NavLink>
                 )}
               </>
@@ -311,7 +322,7 @@ function AdminLayoutInner({
             <Link
               href="/admin/account"
               className="flex items-center space-x-2 rounded-md p-1.5 -mx-1.5 hover:bg-[#F8F9FA] transition-colors"
-              title="Account settings"
+              title={copy.accountSettings}
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F8F9FA] text-sm font-semibold text-[#0D1B2A] ring-1 ring-[#E2E8F0]">
                 {username.charAt(0).toUpperCase()}
@@ -324,7 +335,7 @@ function AdminLayoutInner({
               onClick={handleLogout}
               className="mt-2 w-full text-sm font-medium text-[#778DA9] hover:text-[#0D1B2A] flex items-center gap-1.5"
             >
-              <span>Logout</span>
+              <span>{copy.logout}</span>
             </button>
           </div>
         </div>
@@ -337,9 +348,15 @@ function AdminLayoutInner({
       >
         {/* Top bar */}
         <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-[#E2E8F0] bg-white px-4 sm:px-8">
-          {responsiveNavigation && <button type="button" aria-label="Open navigation" aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />Navigation</button>}
+          {responsiveNavigation && <button type="button" aria-label={copy.openNavigation} aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />{copy.navigation}</button>}
+          <label className="mr-3 flex items-center gap-2 text-xs font-medium text-slate-600">
+            <span className="sr-only sm:not-sr-only">{copy.language}</span>
+            <select aria-label={copy.language} value={locale} onChange={(event) => setLocale(event.target.value === "en" ? "en" : "th")} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900">
+              <option value="th">ไทย</option><option value="en">EN</option>
+            </select>
+          </label>
           {shouldShowTeamContextSwitcher(pathname) && (
-            <TeamSwitcher label="Team Agent" />
+            <TeamSwitcher label={copy.teamAgent} />
           )}
         </div>
         <main className={responsiveNavigation ? "p-4 sm:p-6 lg:p-8" : "p-8"}>{children}</main>
@@ -354,9 +371,11 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <TeamProvider>
-      <AdminLayoutInner>{children}</AdminLayoutInner>
-    </TeamProvider>
+    <AdminLocaleProvider>
+      <TeamProvider>
+        <AdminLayoutInner>{children}</AdminLayoutInner>
+      </TeamProvider>
+    </AdminLocaleProvider>
   );
 }
 

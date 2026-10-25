@@ -1,4 +1,5 @@
 "use client";
+import { useAdminLocale } from "@/lib/admin-locale";
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { BookOpen, Boxes, Pencil, Play, Plus, RefreshCw, Search, Trash2, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
@@ -60,6 +61,7 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
   onClose: () => void;
   onMutation: (result: WorkflowResourceMutation) => Promise<void>;
 }) {
+  const { copy } = useAdminLocale();
   const [tools, setTools] = useState<LibraryTool[]>([]);
   const [view, setView] = useState<ResourceView>({ kind: "list" });
   const [query, setQuery] = useState("");
@@ -147,7 +149,7 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
   const remove = async (tool: LibraryTool) => {
     if (!canEditWorkflowResource(tool, teamId, canEdit) || operation.current || pending)
       return;
-    if (!window.confirm(`Delete ${tool.name}? This removes it from all assigned Agents.`))
+    if (!window.confirm(copy.confirmDeleteCapability(tool.name)))
       return;
     operation.current = true;
     setBusy(true);
@@ -221,36 +223,36 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
   };
   const visible = tools.filter(tool => `${tool.name} ${tool.type} ${tool.owner_team_name ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()));
   const actionClass = "rounded p-2 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800";
-  return <WorkflowPanelDialog title="Capabilities" onClose={onClose} onChildClose={closeChild} busy={busy || !!pending}>
-  <div className="space-y-4">{error && <p role="alert" className="text-sm text-red-600">{error}</p>}{pending && <div className="flex items-center justify-between gap-2 rounded border border-amber-300 p-3 text-sm">
-    <span>Change saved. Refresh Workflow to continue.</span>
+  return <WorkflowPanelDialog title={copy.capabilities} onClose={onClose} onChildClose={closeChild} busy={busy || !!pending}>
+  <div className="space-y-4">{error && <div role="alert" className="text-sm text-red-600">{copy.capabilityIssue}<details><summary>{copy.errorDetails}</summary>{error}</details></div>}{pending && <div className="flex items-center justify-between gap-2 rounded border border-amber-300 p-3 text-sm">
+    <span>{copy.changeSavedRefresh}</span>
     <button type="button" disabled={busy} onClick={() => {
         setBusy(true);
         void refresh(pending).catch(() => {
         }).finally(() => setBusy(false));
-      }} className="rounded border px-3 py-1.5">Retry refresh</button>
+      }} className="rounded border px-3 py-1.5">{copy.retryRefresh}</button>
     </div>}{view.kind === "edit" ? <fieldset disabled={!!pending}>
     <div className="mb-3 flex items-center justify-between">
-    <h3 className="font-semibold">Edit Integration</h3>
-    <button type="button" disabled={busy || !!pending} onClick={closeChild} className="rounded border px-3 py-1.5 text-sm">Back</button>
+    <h3 className="font-semibold">{copy.editIntegration}</h3>
+    <button type="button" disabled={busy || !!pending} onClick={closeChild} className="rounded border px-3 py-1.5 text-sm">{copy.back}</button>
     </div>
     <EditToolForm key={view.tool.id} toolId={view.tool.id} teamId={teamId} onCancel={closeChild} onBusyChange={setBusy} onSaved={() => refresh({ kind: "updated", toolId: view.tool.id })}/>
     </fieldset> : <>
     <div className="flex flex-wrap items-center gap-2">
     <label className="relative min-w-40 flex-1">
     <Search className="absolute left-3 top-2.5 text-gray-400" size={18}/>
-    <input aria-label="Search capabilities" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search capabilities" className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm dark:border-gray-700 dark:bg-gray-800"/>
+    <input aria-label={copy.searchCapabilities} value={query} onChange={event => setQuery(event.target.value)} placeholder={copy.searchCapabilities} className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm dark:border-gray-700 dark:bg-gray-800"/>
     </label>
-    <button type="button" title="Refresh capabilities" aria-label="Refresh capabilities" disabled={loading || busy || !!pending} onClick={() => {
+    <button type="button" title={copy.refreshCapabilities} aria-label={copy.refreshCapabilities} disabled={loading || busy || !!pending} onClick={() => {
         setLoading(true);
         fetchTools().catch(failure => setError(String(failure))).finally(() => setLoading(false));
       }} className={actionClass}>
     <RefreshCw size={18}/>
     </button>{canEdit && <>
-      <button type="button" disabled={busy || !!pending} onClick={() => setView({ kind: "create-tool" })} className="inline-flex items-center gap-1 rounded border px-3 py-2 text-sm">
-      <Plus size={16}/>Integration</button>
-      <button type="button" disabled={busy || !!pending} onClick={() => setView({ kind: "create-knowledge" })} className="inline-flex items-center gap-1 rounded border px-3 py-2 text-sm">
-      <Plus size={16}/>Knowledge</button>{legacy && <button type="button" disabled={busy || !!pending} onClick={() => setView({ kind: "create-legacy" })} className="rounded border px-3 py-2 text-sm">Document library</button>}</>}</div>{loading ? <p role="status" className="py-8 text-center text-sm text-gray-500">Loading capabilities…</p> : <ul className="divide-y rounded-lg border dark:divide-gray-700 dark:border-gray-700">{visible.map(tool => {
+      <button type="button" disabled={busy || !!pending} data-admin-write="true" onClick={() => setView({ kind: "create-tool" })} className="inline-flex items-center gap-1 rounded border px-3 py-2 text-sm">
+      <Plus size={16}/>{copy.integration}</button>
+      <button type="button" disabled={busy || !!pending} data-admin-write="true" onClick={() => setView({ kind: "create-knowledge" })} className="inline-flex items-center gap-1 rounded border px-3 py-2 text-sm">
+      <Plus size={16}/>{copy.knowledge}</button>{legacy && <button type="button" disabled={busy || !!pending} data-admin-write="true" onClick={() => setView({ kind: "create-legacy" })} className="rounded border px-3 py-2 text-sm">{copy.documentLibrary}</button>}</>}</div>{loading ? <p role="status" className="py-8 text-center text-sm text-gray-500">{copy.loadingCapabilities}</p> : <ul className="divide-y rounded-lg border dark:divide-gray-700 dark:border-gray-700">{visible.map(tool => {
           const own = canEditWorkflowResource(tool, teamId, canEdit);
           const knowledge = ["okf_knowledge_graph", "gemini_file_search"].includes(tool.type);
           const integration = ["custom_api", "mcp_streamable_http"].includes(tool.type);
@@ -260,26 +262,26 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
           <div className="min-w-0 flex-1">
           <p className="break-words text-sm font-medium">{tool.name}</p>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-          <span>{tool.type === "builtin" ? "Included" : tool.type === "custom_api" ? "API" : tool.type === "mcp_streamable_http" ? "MCP" : "Knowledge"}</span>
-                <span>{tool.owner_team_agent_id === teamId ? "This team" : tool.owner_team_name || (tool.type === "builtin" ? "System" : "Unassigned")}</span>
-          <span>{tool.visibility === "global" ? "Global" : tool.type === "builtin" ? "" : "Private"}</span>
-          <span>{tool.agent_usage_count ?? 0} Agents</span>
+          <span>{tool.type === "builtin" ? copy.included : tool.type === "custom_api" ? "API" : tool.type === "mcp_streamable_http" ? "MCP" : copy.knowledge}</span>
+                <span>{tool.owner_team_agent_id === teamId ? copy.thisTeam : tool.owner_team_name || (tool.type === "builtin" ? copy.system : copy.unassigned)}</span>
+          <span>{tool.visibility === "global" ? copy.global : tool.type === "builtin" ? "" : copy.private}</span>
+          <span>{copy.agentsCount(tool.agent_usage_count ?? 0)}</span>
           </div>
           </div>
           <div className="flex shrink-0 gap-1">{knowledge && <>
-            <button type="button" disabled={busy || !!pending} onClick={() => void open(tool)} title={`Open ${tool.name}`} aria-label={`Open ${tool.name}`} className={actionClass}>
+            <button type="button" disabled={busy || !!pending} onClick={() => void open(tool)} title={copy.openNamed(tool.name)} aria-label={copy.openNamed(tool.name)} className={actionClass}>
             <BookOpen size={17}/>
             </button>
-            <button type="button" disabled={busy || !!pending} onClick={() => void open(tool, true)} title={`Test ${tool.name}`} aria-label={`Test ${tool.name}`} className={actionClass}>
+            <button type="button" disabled={busy || !!pending} onClick={() => void open(tool, true)} title={copy.testNamed(tool.name)} aria-label={copy.testNamed(tool.name)} className={actionClass}>
             <Play size={17}/>
             </button>
-            </>}{own && integration && <button type="button" disabled={busy || !!pending} onClick={() => void open(tool)} title={`Edit ${tool.name}`} aria-label={`Edit ${tool.name}`} className={actionClass}>
+            </>}{own && integration && <button type="button" disabled={busy || !!pending} data-admin-write="true" onClick={() => void open(tool)} title={copy.editNamed(tool.name)} aria-label={copy.editNamed(tool.name)} className={actionClass}>
             <Pencil size={17}/>
-            </button>}{own && (integration || knowledge) && <button type="button" disabled={busy || !!pending} onClick={() => void remove(tool)} title={`Delete ${tool.name}`} aria-label={`Delete ${tool.name}`} className={`${actionClass} text-red-600`}>
+            </button>}{own && (integration || knowledge) && <button type="button" disabled={busy || !!pending} data-admin-write="true" onClick={() => void remove(tool)} title={copy.deleteNamed(tool.name)} aria-label={copy.deleteNamed(tool.name)} className={`${actionClass} text-red-600`}>
             <Trash2 size={17}/>
             </button>}</div>
           </li>;
-        })}{visible.length === 0 && <li className="p-8 text-center text-sm text-gray-500">No capabilities found</li>}</ul>}</>}
+        })}{visible.length === 0 && <li className="p-8 text-center text-sm text-gray-500">{copy.noCapabilities}</li>}</ul>}</>}
   {view.kind === "create-tool" && <WorkflowToolModal teamId={teamId} onClose={closeChild} onCreated={result => {
         void mutate({ kind: "updated", toolId: result.tool_id });
       }}/>}

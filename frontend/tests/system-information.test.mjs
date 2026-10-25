@@ -1,3 +1,4 @@
+import { adminLocale, EnglishAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -170,6 +171,7 @@ test('Settings exposes mobile navigation that opens and closes', async () => {
     if (name === 'next/navigation') return { usePathname: () => '/admin/settings', useRouter: () => router };
     if (name === 'next/link') return { default: props => React.createElement('a', props) };
     if (name === '@/components/ui/Button') return { Button: props => React.createElement('button', props) };
+    if (name === '@/lib/admin-locale') return { ...adminLocale, AdminLocaleProvider: EnglishAdminLocale };
     if (name === '@/lib/team-context') return { TeamProvider: ({ children }) => children };
     if (name === '@/components/TeamSwitcher') return { default: () => null };
     return require(name);

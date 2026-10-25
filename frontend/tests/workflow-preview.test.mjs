@@ -1,3 +1,4 @@
+import { adminLocale, EnglishAdminLocale, SwitchableAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -31,11 +32,11 @@ const reply = response => ({ response, agent_name: 'Support', presentations: {},
 const text = node => typeof node === 'string' ? node : (node.children ?? []).map(text).join(' ');
 const button = (renderer, label) => renderer.root.findAllByType('button').find(node => text(node).trim() === label);
 function deferred() { let resolve; let reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
-async function setup(t, request, extra = {}, strict = false) {
+async function setup(t, request, extra = {}, strict = false, switchable = false) {
   const originalWindow = global.window;
   global.window = { confirm: () => true };
   const Component = load('src/components/WorkflowPreviewChat.tsx', {
-    '@/lib/workflow-preview': helpers, '@/lib/team-workflow': { workflowRequest: request },
+    '@/lib/admin-locale': adminLocale, '@/lib/workflow-preview': helpers, '@/lib/team-workflow': { workflowRequest: request },
     'react-markdown': { default: ReactMarkdown }, 'remark-gfm': { default: remarkGfm },
     '@/lib/markdown': { normalizeMarkdownForChat: value => value },
     '@/components/KnowledgeImages': { KnowledgeImages: props => React.createElement('images-test', props) },
@@ -43,12 +44,15 @@ async function setup(t, request, extra = {}, strict = false) {
     '@/components/ProductCarousel': { ProductCarousel: props => React.createElement('carousel-test', props) },
   }).default;
   const props = { teamId: 1, workflow, drafts: {}, targetAgentId: null, visible: true, onTargetChange() {}, onEditAgent() {}, onOpenKnowledge() {}, ...extra };
-  const render = () => strict ? React.createElement(React.StrictMode, null, React.createElement(Component, props)) : React.createElement(Component, props);
+  let setLocale;
+  const content = () => switchable ? React.createElement(SwitchableAdminLocale, { onReady: set => { setLocale = set; } }, React.createElement(Component, props)) : React.createElement(EnglishAdminLocale, null, React.createElement(Component, props));
+  const render = () => strict ? React.createElement(React.StrictMode, null, content()) : content();
   let renderer;
   await act(async () => { renderer = create(render()); });
   t.after(async () => { await act(async () => renderer.unmount()); global.window = originalWindow; });
   return {
     renderer, props,
+    async switchLocale(locale) { await act(async () => setLocale(locale)); },
     async update(next) { Object.assign(props, next); await act(async () => renderer.update(render())); },
     async compose(value) { await act(async () => renderer.root.findByType('textarea').props.onChange({ target: { value } })); },
     async send() { await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })); },
@@ -217,4 +221,25 @@ test('canceling restart retains the conversation and the original frozen setting
   assert.equal(calls.filter(call => call.init.method === 'DELETE').length, 0);
   await ui.compose('Next'); await ui.send();
   assert.equal(calls.filter(call => call.init.method === 'POST' && !call.url.endsWith('/messages')).length, 1);
+});
+
+test('locale switch preserves a live private conversation and composer without another session request', async t => {
+  const calls = [];
+  const ui = await setup(t, async (url, init) => {
+    calls.push({ url, method: init?.method });
+    if (url.endsWith('/previews')) return session('live');
+    if (url.endsWith('/messages')) return reply('Answer stays intact');
+    throw Error(`Unexpected request ${url}`);
+  }, {}, false, true);
+  await ui.compose('Question');
+  await ui.send();
+  await ui.compose('Unsent next question');
+  const before = calls.length;
+  await ui.switchLocale('th');
+  assert.equal(ui.renderer.root.findByType('textarea').props.value, 'Unsent next question');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Answer stays intact/);
+  assert.equal(ui.renderer.root.findByProps({ 'aria-label': 'ประวัติการทดลองสนทนา' }).props['aria-busy'], false);
+  assert.equal(calls.length, before);
+  assert.equal(calls.filter(call => call.method === 'DELETE').length, 0);
+  assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 1);
 });
