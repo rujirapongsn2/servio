@@ -12,7 +12,6 @@ import WorkflowToolModal from "@/components/WorkflowToolModal";
 import WorkflowMembersPanel from "@/components/WorkflowMembersPanel";
 import WorkflowProviderModal from "@/components/WorkflowProviderModal";
 import WorkflowCapabilitiesPanel, { type WorkflowResourceMutation } from "@/components/WorkflowCapabilitiesPanel";
-import WorkflowAgentTestPanel from "@/components/WorkflowAgentTestPanel";
 import WorkflowPreviewChat from "@/components/WorkflowPreviewChat";
 import WorkflowChannels from "@/components/WorkflowChannels";
 import CreateOKFBundleModal from "@/components/CreateOKFBundleModal";
@@ -51,7 +50,6 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
   const [resourceEditor, setResourceEditor] = useState<ResourceEditor>({ kind: "closed" });
   const [panel, setPanel] = useState<"closed" | "members" | "library">("closed");
-  const [testing, setTesting] = useState<{ id: number; name: string } | null>(null);
   const [view, setView] = useState<"design" | "chat" | "channels">("design");
   const [channelsVisited, setChannelsVisited] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -295,7 +293,7 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
         <button type="button" disabled={locked} onClick={() => setPanel(panel === "library" ? "closed" : "library")} className={toolbarButton}><Library className="h-4 w-4" />Library</button>
         {workflow.can_edit && <><button type="button" disabled={locked} onClick={() => setPanel(panel === "members" ? "closed" : "members")} className={toolbarButton}><Users className="h-4 w-4" />Members</button><button type="button" disabled={locked} onClick={() => openResource("tool", resourceTarget)} className={toolbarButton}><Wrench className="h-4 w-4" />Tool</button>
           <button type="button" disabled={locked} onClick={() => openResource("knowledge", resourceTarget)} className={toolbarButton}><BookOpen className="h-4 w-4" />Knowledge</button>
-          <button type="button" onClick={addAgent} disabled={locked || resourceEditor.kind !== "closed"} aria-controls="workflow-agent-inspector" className={toolbarButton}><Plus className="h-4 w-4" />{state.newAgent ? "New agent" : "Agent"}</button></>}
+        </>}
         </div>
         </>}
         {view !== "chat" && <button type="button" disabled={locked || !workflow.agents.length || !workflow.can_edit} onClick={() => { setPreviewTarget(null); setView("chat"); setPanel("closed"); }} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"><MessageSquare className="h-4 w-4" />{Object.keys(state.drafts).length ? "Try draft" : "Chat with team"}</button>}
@@ -331,13 +329,11 @@ export default function TeamWorkflowWorkspace({ teamId }: { teamId: number }) {
             void commitChange(`/team-agents/${teamId}/workflow/agents/${editor.agent.id}`, "DELETE", { expected_updated_at: editor.agent.updated_at, expected_member_agent_ids: workflow.agents.map((agent) => agent.id), expected_fallback_agent_id: workflow.fallback_agent_id, replacement_fallback_agent_id: replacementFallbackId }, { kind: "deleted", agentId: editor.agent.id }).catch(() => {});
           } : undefined} /></div>}
       </div>}
-    {editor?.kind === "existing" && <details className="mt-3 text-sm text-slate-500"><summary className="cursor-pointer">Advanced diagnostics</summary><button type="button" aria-label="Test saved agent" disabled={locked} onClick={() => setTesting({ id: editor.agent.id, name: editor.agent.name })} className="mt-2 rounded-lg border px-3 py-2">Test saved agent</button></details>}
     </div>
     {view === "chat" && state.newAgent && <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Save the new Agent to include it in preview.</p>}
     {workflow.can_edit && <WorkflowPreviewChat key={`preview-${teamId}`} teamId={teamId} workflow={workflow} drafts={state.drafts} targetAgentId={previewTarget} onTargetChange={setPreviewTarget} visible={view === "chat"}
       onEditAgent={id => { selectAgent(id); setView("design"); }} onOpenKnowledge={() => setPanel("library")} />}
     {channelsVisited && <div className={view === "channels" ? "block" : "hidden"}><WorkflowChannels key={`channels-${teamId}`} teamId={teamId} teamName={workflow.team_name} canEdit={workflow.can_edit} hasDrafts={dirtyCount > 0} /></div>}
-    {testing && <WorkflowAgentTestPanel teamId={teamId} agent={testing} hasUnsavedChanges={Boolean(state.drafts[testing.id])} onClose={() => setTesting(null)} />}
     {providerTarget && <WorkflowProviderModal onClose={() => setProviderTarget(null)} onCreated={async (providerId) => {
       const data = await workflowRequest("/llm-providers");
       if (!Array.isArray(data) || !data.every((provider: unknown) => provider && typeof provider === "object" && "id" in provider && typeof provider.id === "number" && "name" in provider && typeof provider.name === "string")) throw Error("Unable to refresh providers.");

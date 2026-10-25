@@ -115,7 +115,6 @@ function setup(t, saved = snapshot()) {
     'next/navigation': { useRouter: () => ({ push: (href) => routes.push(href), replace() {} }), useSearchParams: () => navigation.search },
     'next/dynamic': { __esModule: true, default: () => (props) => React.createElement('workflow-graph', props) },
     '@/components/WorkflowCapabilitiesPanel': { __esModule: true, default: (props) => React.createElement('capabilities-panel', props) },
-    '@/components/WorkflowAgentTestPanel': { __esModule: true, default: (props) => React.createElement('agent-test-panel', props) },
     '@/components/WorkflowMembersPanel': { __esModule: true, default: (props) => React.createElement('members-panel', props) },
     '@/components/WorkflowProviderModal': { __esModule: true, default: (props) => React.createElement('provider-modal', props) },
     '@/components/WorkflowToolModal': { __esModule: true, default: (props) => React.createElement('tool-creator', props) },
@@ -342,7 +341,7 @@ test('tool creation preserves the Workflow destination and selects the new tool'
 test('new Agent drafts survive selection and reload with the same request ID', async (t) => {
   const env = setup(t); let renderer = await env.mount();
   await change(renderer, 'workflow-agent-name', 'Existing draft');
-  await act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Agent').props.onClick());
+  await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'New specialist');
   await change(renderer, 'workflow-instructions', 'Handle specialist requests');
   const requestId = JSON.parse(env.storage.get('team-workflow-new:1')).requestId;
@@ -374,7 +373,7 @@ test('an uncertain Agent creation retries the same request without duplicate Age
 
 test('a successful create with failed refresh can refresh without posting again', async (t) => {
   const env = setup(t); const renderer = await env.mount();
-  await act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Agent').props.onClick());
+  await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'Created once');
   await change(renderer, 'workflow-instructions', 'Handle requests');
   env.controls.failRefresh = true;
@@ -406,7 +405,7 @@ test('created resources attach to the captured draft and preserve other Agent ed
 
 test('new Agent knowledge is staged without binding to a persisted Agent', async (t) => {
   const env = setup(t); const renderer = await env.mount();
-  await act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Agent').props.onClick());
+  await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'Knowledge expert');
   await change(renderer, 'workflow-instructions', 'Use assigned knowledge');
   await act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Knowledge').props.onClick());
@@ -449,7 +448,7 @@ test('shared sources, duplicates, self handoffs and nonmember edges cannot chang
 
 test('knowledge jobs for discarded new drafts cannot attach to a different new Agent', async (t) => {
   const env = setup(t); const renderer = await env.mount();
-  const start = async () => act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Agent').props.onClick());
+  const start = async () => act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   const knowledge = async () => act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Knowledge').props.onClick());
   await start(); await knowledge();
   const firstKey = renderer.root.findByType('knowledge-creator').props.jobStorageKey;
@@ -572,15 +571,23 @@ test('resource deletion removes only that tool from all drafts and preserves rev
   assert.equal(env.saves[0].expected_updated_at, '2026-10-23T01:00:00');
 });
 
-test('saved Agent tests show unsaved status and are available to viewers', async (t) => {
-  const data = snapshot(); data.can_edit = false;
-  const env = setup(t, data); const renderer = await env.mount();
-  await act(async () => renderer.root.findByProps({'aria-label':'Test saved agent'}).props.onClick());
-  assert.deepEqual(renderer.root.findByType('agent-test-panel').props.agent, {id:1,name:'Support agent'});
-  assert.equal(renderer.root.findByType('agent-test-panel').props.hasUnsavedChanges, false);
-  assert.ok(button(renderer, 'Library'));
-  assert.equal(button(renderer, 'Members'), undefined);
-});
+for (const canEdit of [true, false]) {
+  test(`workflow removes diagnostics and duplicate toolbar creation for can_edit=${canEdit}`, async (t) => {
+    const data = snapshot(); data.can_edit = canEdit;
+    const env = setup(t, data); const renderer = await env.mount();
+    assert.doesNotMatch(text(renderer.root), /Advanced diagnostics|Test saved agent/);
+    assert.equal(renderer.root.findAllByType('button').filter(node => !node.props.role && text(node).trim() === 'Agent').length, 0);
+    assert.ok(button(renderer, 'Library'));
+    await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
+    assert.equal(renderer.root.findByType('workflow-graph').props.hasNewAgentDraft, canEdit);
+    if (canEdit) {
+      await change(renderer, 'workflow-agent-name', 'Canvas draft');
+      assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Canvas draft');
+    } else {
+      assert.equal(button(renderer, 'Members'), undefined);
+    }
+  });
+}
 
 test('optimization is reviewed before applying and cannot overwrite newer instructions', async (t) => {
   const env = setup(t); const renderer = await env.mount();
@@ -810,13 +817,13 @@ test('new agent actions focus the committed inspector and scroll on mobile only 
   await env.mount();
 });
 
-test('toolbar creation focuses the inspector fallback without scrolling desktop', async t => {
+test('canvas creation focuses the inspector fallback without scrolling desktop', async t => {
   const env = setup(t); const renderer = await env.mount(); const calls = [];
   global.window.matchMedia = () => ({ matches: false });
   global.document.getElementById = id => id === 'workflow-agent-name' ? null : {
     focus: options => calls.push(['focus', options]), scrollIntoView: () => calls.push(['scroll']),
   };
-  await act(async () => button(renderer, 'Agent').props.onClick());
+  await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   assert.deepEqual(calls, [['focus', { preventScroll: true }]]);
   assert.equal(renderer.root.findByType('workflow-graph').props.hasNewAgentDraft, true);
 });

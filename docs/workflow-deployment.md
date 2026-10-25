@@ -36,7 +36,7 @@ Workflow keeps **Design**, **Private chat**, and **Channels** in the same team w
 
 Each team or direct Agent target retains its own conversation and unsent message while switching views. Restart captures the current Agent settings. Knowledge contents remain current rather than frozen with those settings. Opening Knowledge returns to the same conversation after the editor closes.
 
-Preview permits built-in date and web search tools and Local Knowledge. Custom APIs, MCP, and other tools are unavailable in preview because their effects cannot be inferred safely. The interface lists blocked tools. Existing saved-Agent diagnostics remain under **Advanced diagnostics**.
+Preview permits built-in date and web search tools and Local Knowledge. Custom APIs, MCP, and other tools are unavailable in preview because their effects cannot be inferred safely. The interface lists blocked tools.
 
 The authenticated routes under `/api/admin/team-agents/{team_id}/workflow/previews` create, message, and delete private sessions. Access is checked against the owning user and team on every request. Sessions expire after 30 minutes and hold at most 24 user turns. A process allows four sessions per user, 100 sessions overall, and four active runs. A request deadline expires the session but retains capacity until underlying work finishes. Closing a busy session retires it without canceling retrieval threads.
 

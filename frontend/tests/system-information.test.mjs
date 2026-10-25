@@ -144,7 +144,8 @@ test('rendered Settings removes credentials and switching tabs aborts monitoring
     await act(async () => { tree = create(React.createElement(pageExports.default)); });
     const text = JSON.stringify(tree.toJSON());
     assert.doesNotMatch(text, /Initial Admin Credentials|admin123|Fresh database only|Existing deployments keep/);
-    assert.match(text, /Change Password/);
+    assert.doesNotMatch(text, /Change Password|Current Password|New Password|Confirm New Password/);
+    assert.equal(tree.root.findAllByType('input').filter(input => input.props.type === 'password').length, 0);
     assert.match(text, /Manage LLM Providers/);
     assert.match(text, /System Information/);
     const tab = tree.root.findAllByType('button').find(button => button.children.includes('Intent Detection Rules'));
