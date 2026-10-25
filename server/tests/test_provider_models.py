@@ -238,3 +238,20 @@ def test_ocr_environment_cache_tracks_model_endpoint_and_preserves_disabled_stat
     assert vision.extract_text_with_status(b"image").status == "unavailable"
     assert len(calls) == 2
     vision._cached_ocr.cache_clear()
+
+
+def test_task_model_can_use_an_existing_scoped_readonly_session(registry, monkeypatch):
+    client, get_db = registry
+    selected = create(client).json()['id']
+    defaults(client, selected, selected)
+    with get_db() as db:
+        monkeypatch.setattr(catalog, 'get_db', lambda: pytest.fail('opened unbounded global session'))
+        config = catalog.get_task_model('image_ocr', session=db)
+        assert config['catalog_id'] == selected
+        assert config['model_id'] == 'custom/vision-v1'
+        assert config['base_url'] == 'https://first.example/v1'
+        monkeypatch.setenv('IMAGE_OCR_MODEL_SOURCE', 'environment')
+        monkeypatch.setenv('IMAGE_OCR_MODEL', 'env-vision')
+        monkeypatch.setenv('IMAGE_OCR_BASE_URL', 'https://env.example/v1')
+        monkeypatch.setenv('IMAGE_OCR_API_KEY', 'env-private')
+        assert catalog.get_task_model('image_ocr', session=db)['model_id'] == 'env-vision'

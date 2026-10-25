@@ -213,6 +213,18 @@ class CreatedProviderResponse(MessageResponse):
 
 
 # System info
+ServiceStatus = Literal["healthy", "unavailable", "configured", "not_configured", "disabled", "unknown"]
+
+
+class SystemService(BaseModel):
+    id: str
+    label: str
+    status: ServiceStatus
+    endpoint: str | None = None
+    model: str | None = None
+    detail: str
+
+
 class SystemInfoResponse(BaseModel):
     backend_url: str
     frontend_origin: str | None = None
@@ -220,8 +232,10 @@ class SystemInfoResponse(BaseModel):
     python_version: str
     mcp_enabled: bool
     openai_api_key_set: bool
-    agents_count: int
-    tools_count: int
+    agents_count: int | None
+    tools_count: int | None
+    services: list[SystemService]
+    checked_at: str
 
 
 # File Store models

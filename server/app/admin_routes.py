@@ -1230,13 +1230,14 @@ async def get_tool(
 @router.get("/system-info", response_model=SystemInfoResponse)
 async def system_info(
     request: Request,
+    response: Response,
     team_agent_id: Optional[int] = None,
     current_user: str = Depends(get_current_user),
 ):
     """Return dynamic system information for the Admin UI."""
+    response.headers["Cache-Control"] = "private, no-store"
     require_team_access(current_user, team_agent_id, "viewer")
     import os, sys, datetime
-    from app import database as db
 
     # Backend URL from request
     backend_url = str(request.base_url).rstrip('/')
@@ -1258,9 +1259,8 @@ async def system_info(
     mcp_enabled = not disable_mcp
     openai_api_key_set = bool(os.getenv("OPENAI_API_KEY"))
 
-    # Counts
-    agents = db.get_all_agents()
-    tools = db.get_all_tools(team_agent_id=team_agent_id)
+    from app.system_monitor import monitor
+    observations = await monitor(team_agent_id)
 
     return SystemInfoResponse(
         backend_url=backend_url,
@@ -1269,8 +1269,7 @@ async def system_info(
         python_version=sys.version.split()[0],
         mcp_enabled=mcp_enabled,
         openai_api_key_set=openai_api_key_set,
-        agents_count=len(agents),
-        tools_count=len(tools),
+        **observations,
     )
 
 

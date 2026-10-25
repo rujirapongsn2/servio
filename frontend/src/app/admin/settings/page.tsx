@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { SystemInformation } from "@/components/SystemInformation";
 import { getApiBaseUrl } from "@/lib/api";
 
 
@@ -232,29 +233,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [sys, setSys] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
-
-  useEffect(() => {
-    const fetchInfo = async () => {
-      try {
-        const token = localStorage.getItem("adminToken");
-        const res = await fetch(`${apiBaseUrl}/api/admin/system-info`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setSys(data);
-        }
-      } catch (e) {
-        // silent
-      }
-    };
-    fetchInfo();
-  }, []);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -533,77 +515,7 @@ export default function SettingsPage() {
               </form>
             </div>
 
-            {/* System Information */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                System Information
-              </h2>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Backend API:</span>
-                  <span className="text-gray-900 dark:text-white font-mono">
-                    {sys?.backend_url || apiBaseUrl}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Frontend:</span>
-                  <span className="text-gray-900 dark:text-white font-mono">
-                    {sys?.frontend_origin || (typeof window !== 'undefined' ? window.location.origin : '')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Server Time (UTC):</span>
-                  <span className="text-gray-900 dark:text-white font-mono">
-                    {sys?.server_time || "-"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Python:</span>
-                  <span className="text-gray-900 dark:text-white font-mono">
-                    {sys?.python_version || "-"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">MCP Enabled:</span>
-                  <span className="text-gray-900 dark:text-white">
-                    {sys?.mcp_enabled ? "Yes" : "No"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">OpenAI Key Set:</span>
-                  <span className="text-gray-900 dark:text-white">
-                    {sys?.openai_api_key_set ? "Yes" : "No"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Agents / Tools:</span>
-                  <span className="text-gray-900 dark:text-white">
-                    {sys ? `${sys.agents_count} / ${sys.tools_count}` : "-"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Username:</span>
-                  <span className="text-gray-900 dark:text-white">
-                    {typeof window !== "undefined" && localStorage.getItem("adminUsername")}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Initial credentials info */}
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-yellow-900 dark:text-yellow-300 mb-2">
-                Initial Admin Credentials
-              </h3>
-              <div className="text-sm text-yellow-800 dark:text-yellow-400 space-y-1">
-                <p>• Username: <span className="font-mono">admin</span></p>
-                <p>• Fresh database only: <span className="font-mono">admin123</span></p>
-                <p className="mt-2 text-xs">
-                  Existing deployments keep the password already stored in PostgreSQL.
-                </p>
-              </div>
-            </div>
+            <SystemInformation apiBaseUrl={apiBaseUrl} />
           </div>
         ) : (
           <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 p-6">

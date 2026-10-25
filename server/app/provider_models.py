@@ -1,5 +1,8 @@
 """Provider model registry and explicit defaults for image processing."""
+from contextlib import nullcontext
 from typing import Literal
+
+from sqlalchemy.orm import Session
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
@@ -161,13 +164,13 @@ def set_defaults(data: ImageDefaultsInput) -> dict:
         return values
 
 
-def get_task_model(purpose: str) -> dict | None:
+def get_task_model(purpose: str, *, session: Session | None = None) -> dict | None:
     """Resolve credentials only for internal execution; never return to the UI."""
     if purpose not in PURPOSES:
         raise ValueError("Unknown image model purpose")
     if _task_source(purpose) == "environment":
         return _environment_task_model(purpose)
-    with get_db() as db:
+    with nullcontext(session) if session is not None else get_db() as db:
         selected = db.query(ProviderModel, LLMProvider).join(
             ImageModelDefault, ImageModelDefault.model_catalog_id == ProviderModel.id
         ).join(LLMProvider, ProviderModel.provider_id == LLMProvider.id).filter(
