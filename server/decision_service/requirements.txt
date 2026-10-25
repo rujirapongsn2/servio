@@ -1,0 +1,5 @@
+mediapipe==1.1.1
+fastapi==0.115.11
+uvicorn==0.34.0
+python-dotenv==1.0.1
+pydantic==2.12.5

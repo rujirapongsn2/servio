@@ -12,7 +12,8 @@ def isolated(monkeypatch):
     for name in ('LOCAL_KNOWLEDGE_HYBRID_ENABLED', 'LOCAL_KNOWLEDGE_IMAGES_ENABLED',
                  'LOCAL_KNOWLEDGE_AUDIO_ENABLED', 'LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED',
                  'LOCAL_KNOWLEDGE_IMAGE_QA_ENABLED', 'OPENAI_API_KEY', 'OPENAI_BASE_URL',
-                 'DISABLE_MCP', 'AGENTS_SAFE_MODE_DISABLE_EXTERNAL', 'AUDIO_EMBEDDING_REVISION'):
+                 'DISABLE_MCP', 'AGENTS_SAFE_MODE_DISABLE_EXTERNAL', 'AUDIO_EMBEDDING_REVISION',
+                 'INTENT_DECISION_ENABLED', 'INTENT_DECISION_BASE_URL', 'INTENT_DECISION_API_KEY'):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(monitor, 'database_observations', lambda team, flags: (
         [monitor.row('postgresql', 'PostgreSQL', 'unavailable'),
@@ -30,6 +31,21 @@ def test_disabled_services_do_not_probe(monkeypatch):
         'text_embedding', 'image_embedding', 'audio_embedding', 'audio_processor', 'image_ocr', 'image_qa'))
     assert rows['default_llm'].status == 'not_configured'
     assert result['agents_count'] is None
+
+
+@pytest.mark.parametrize('key,expected', [('dedicated-key', 'configured'), ('', 'not_configured')])
+def test_intent_decision_configuration_is_visible_without_exposing_key(monkeypatch, key, expected):
+    monkeypatch.setenv('INTENT_DECISION_ENABLED', 'true')
+    monkeypatch.setenv('INTENT_DECISION_BASE_URL', 'http://decision.local:8095')
+    monkeypatch.setenv('INTENT_DECISION_API_KEY', key)
+    probe = AsyncMock()
+    monkeypatch.setattr(monitor, '_healthy', probe)
+    result = asyncio.run(monitor.monitor())
+    service = next(service for service in result['services'] if service.id == 'intent_decision')
+    assert service.status == expected
+    assert service.endpoint == 'decision.local:8095'
+    assert 'dedicated-key' not in str(result)
+    probe.assert_not_awaited()
 
 
 def test_service_credentials_and_processor_isolation(monkeypatch):

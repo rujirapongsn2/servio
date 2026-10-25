@@ -173,5 +173,11 @@ async def monitor(team_agent_id=None):
     mcp_disabled = enabled('DISABLE_MCP') or enabled('AGENTS_SAFE_MODE_DISABLE_EXTERNAL')
     services = [*db_services[:2], *probes, llm, *db_services[2:],
                 row('mcp', 'MCP', 'disabled' if mcp_disabled else 'configured')]
+    if enabled('INTENT_DECISION_ENABLED'):
+        from app.intent_decision import decision_configured
+        services.append(row('intent_decision', 'Intent Decision Maker',
+                            'configured' if decision_configured() else 'not_configured',
+                            base=os.getenv('INTENT_DECISION_BASE_URL'),
+                            model='embeddinggemma-2-text-270m'))
     return {'services': services, 'checked_at': datetime.now(timezone.utc).isoformat(),
             'agents_count': agents_count, 'tools_count': tools_count}

@@ -20,6 +20,7 @@ GROUPS = [
 @pytest.fixture
 def intent(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-no-network")
+    monkeypatch.setenv("INTENT_DECISION_ENABLED", "false")
     module = importlib.import_module("app.intent_service")
     import app
     from app.session_manager import SessionInfo, SessionManager
@@ -170,3 +171,49 @@ def test_quoted_or_defined_negative_phrases_need_context(intent, text):
 def test_question_about_resolution_still_needs_context(intent, text):
     analyze(intent, text)
     intent[3].assert_awaited_once()
+
+
+def test_confident_decision_updates_monitor_without_llm_or_handoff(intent, monkeypatch):
+    module = importlib.import_module("app.intent_service")
+    decision = AsyncMock(return_value="Frustrated / Escalating")
+    monkeypatch.setattr(module, "classify_intent", decision, raising=False)
+    session = analyze(intent, "ต้องการทราบรายละเอียดสินค้า")
+    assert session.intent_group == "Frustrated / Escalating"
+    assert session.intent_color == "#E74C3C"
+    decision.assert_awaited_once()
+    intent[3].assert_not_awaited()
+    intent[2].set_mode.assert_not_awaited()
+    assert session.mode == "AI"
+    assert session.team_agent_id == 22
+
+
+def test_keyword_result_bypasses_decision_and_llm(intent, monkeypatch):
+    module = importlib.import_module("app.intent_service")
+    decision = AsyncMock(return_value="Critical / Human Required")
+    monkeypatch.setattr(module, "classify_intent", decision, raising=False)
+    assert analyze(intent, "ขอบคุณครับ").intent_group == "Smooth Resolution"
+    decision.assert_not_awaited()
+    intent[3].assert_not_awaited()
+
+
+def test_decision_abstention_falls_back_to_llm_once(intent, monkeypatch):
+    module = importlib.import_module("app.intent_service")
+    decision = AsyncMock(return_value=None)
+    monkeypatch.setattr(module, "classify_intent", decision, raising=False)
+    assert analyze(intent, "ต้องการทราบรายละเอียดสินค้า").intent_group == "Smooth Resolution"
+    decision.assert_awaited_once()
+    intent[3].assert_awaited_once()
+    intent[2].set_mode.assert_not_awaited()
+
+
+def test_history_snapshot_is_stable_across_decision_request(intent, monkeypatch):
+    module = importlib.import_module("app.intent_service")
+    history = [{"role": "user", "content": "ต้องการทราบรายละเอียดสินค้า"}]
+    async def abstain(recent):
+        history.append({"role": "user", "content": "ข้อความที่เข้ามาภายหลัง"})
+        return None
+    monkeypatch.setattr(module, "classify_intent", abstain, raising=False)
+    asyncio.run(intent[0].analyze_and_update("test", history))
+    sent = json.loads(intent[3].call_args.kwargs["messages"][1]["content"])
+    assert len(history) == 2
+    assert sent == history[:1]

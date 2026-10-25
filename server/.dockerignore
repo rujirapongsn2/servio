@@ -12,6 +12,7 @@ build/
 .venv/
 venv/
 ENV/
+decision_service/
 
 # Database (will be volume mounted)
 *.db

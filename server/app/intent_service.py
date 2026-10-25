@@ -1,43 +1,13 @@
 import json
+import logging
 import re
 from typing import Optional
 from openai import AsyncOpenAI
 from app.model_settings import client_options, intent_model
 from app.session_manager import session_manager
+from app.intent_decision import classify_intent
 
-# Standard Intent Groups with default keywords (Thai + English)
-STANDARD_INTENT_GROUPS = [
-    {
-        "group": "Smooth Resolution",
-        "color": "#2ECC71",
-        "description": "Customer shows understanding, acceptance, or completion",
-        "default_keywords": ["ขอบคุณ", "เข้าใจแล้ว", "ได้เลย", "โอเค", "ชัดเจน", "thank you", "understood", "got it", "okay", "clear"]
-    },
-    {
-        "group": "Repetitive / Looping",
-        "color": "#F39C12",
-        "description": "Customer asks same questions repeatedly",
-        "default_keywords": ["อีกครั้ง", "ซ้ำ", "ไม่เข้าใจ", "บอกอีกที", "ยังไง", "again", "repeat", "still confused", "tell me again", "how"]
-    },
-    {
-        "group": "Confused / Unclear Intent",
-        "color": "#F1C40F",
-        "description": "Customer's messages are vague or unclear",
-        "default_keywords": ["งง", "สับสน", "ไม่แน่ใจ", "อาจจะ", "บางที", "confused", "unclear", "not sure", "maybe", "perhaps"]
-    },
-    {
-        "group": "Frustrated / Escalating",
-        "color": "#E74C3C",
-        "description": "Customer expresses negative emotions or dissatisfaction",
-        "default_keywords": ["หงุดหงิด", "รำคาญ", "ช้า", "ไม่พอใจ", "แย่", "frustrated", "annoyed", "slow", "dissatisfied", "terrible"]
-    },
-    {
-        "group": "Critical / Human Required",
-        "color": "#8E0E00",
-        "description": "High-risk topics or explicit human assistance request",
-        "default_keywords": ["คืนเงิน", "ทนาย", "ด่วน", "ร้องเรียน", "พูดกับคน", "refund", "lawyer", "urgent", "complaint", "speak to human"]
-    }
-]
+from app.intent_contract import STANDARD_INTENT_GROUPS, INTENT_COLORS
 
 INTENT_PRIORITY = {
     "Critical / Human Required": 0,
@@ -47,6 +17,7 @@ INTENT_PRIORITY = {
     "Smooth Resolution": 4,
 }
 NEGATION = re.compile(r"ไม่|มิได้|อย่า|\b(?:no|not|never|without|cannot)\b|n't\b")
+logger = logging.getLogger(__name__)
 
 class IntentService:
     def __init__(self):
@@ -92,7 +63,7 @@ Output JSON format only:
         try:
             # We only need the last few messages for real-time behavioral monitoring
             # Taking the last 6 messages (3 turns) is usually sufficient context
-            recent_history = history[-6:] if len(history) > 6 else history
+            recent_history = history[-6:]
             
             if not recent_history:
                 return
@@ -101,6 +72,13 @@ Output JSON format only:
             manual_result = self._check_keywords(recent_history)
             if manual_result:
                 await session_manager.update_session_intent(session_id, manual_result["group"], manual_result["color"])
+                logger.info("Intent classification source=keywords")
+                return
+
+            decision_group = await classify_intent(recent_history)
+            if decision_group is not None:
+                await session_manager.update_session_intent(session_id, decision_group, INTENT_COLORS[decision_group])
+                logger.info("Intent classification source=decision")
                 return
 
             # 2. AI Analysis
@@ -121,6 +99,7 @@ Output JSON format only:
             
             if group and color:
                 await session_manager.update_session_intent(session_id, group, color)
+                logger.info("Intent classification source=llm")
                 
         except Exception as e:
             print(f"Error in intent analysis for session {session_id}: {e}")
