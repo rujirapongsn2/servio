@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Optional
 from openai import AsyncOpenAI
 from app.model_settings import client_options, intent_model
@@ -38,6 +39,15 @@ STANDARD_INTENT_GROUPS = [
     }
 ]
 
+INTENT_PRIORITY = {
+    "Critical / Human Required": 0,
+    "Frustrated / Escalating": 1,
+    "Repetitive / Looping": 2,
+    "Confused / Unclear Intent": 3,
+    "Smooth Resolution": 4,
+}
+NEGATION = re.compile(r"ไม่|มิได้|อย่า|\b(?:no|not|never|without|cannot)\b|n't\b")
+
 class IntentService:
     def __init__(self):
         self.client = AsyncOpenAI(**client_options("INTENT"))
@@ -63,6 +73,9 @@ Groups and Definitions:
 
 5. Critical / Human Required (Color: #8E0E00)
    - Prompt: Classify as Critical / Human Required when the conversation involves high-risk topics, sensitive information, complaints, refunds, legal or policy issues, or when the customer explicitly requests human assistance.
+
+When multiple groups apply, prioritize Critical / Human Required, Frustrated / Escalating, Repetitive / Looping, Confused / Unclear Intent, then Smooth Resolution.
+Respect explicit negation and the latest user message. Polite thanks do not mean an unresolved problem is solved.
 
 Output JSON format only:
 {
@@ -95,7 +108,7 @@ Output JSON format only:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": json.dumps(recent_history)}
+                    {"role": "user", "content": json.dumps(recent_history, ensure_ascii=False)}
                 ],
                 response_format={"type": "json_object"}
             )
@@ -123,17 +136,22 @@ Output JSON format only:
             return None
             
         text = last_user_msg.get("content", "").lower().strip()
+        # Keyword presence cannot resolve negation; use contextual analysis.
+        if NEGATION.search(text):
+            return None
         
         try:
             rules = database.get_all_intent_rules()
-            for rule in rules:
+            for rule in sorted(rules, key=lambda rule: (
+                INTENT_PRIORITY.get(rule["group"], len(INTENT_PRIORITY)), rule["group"],
+            )):
                 keywords = rule.get("keywords", [])
                 if not keywords:
                     continue
                     
                 for keyword in keywords:
                     clean_keyword = keyword.lower().strip()
-                    if clean_keyword in text:
+                    if clean_keyword and clean_keyword in text:
                         return {"group": rule["group"], "color": rule["color"]}
         except Exception as e:
             print(f"Error checking keywords: {e}")
