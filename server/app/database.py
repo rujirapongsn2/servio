@@ -1463,6 +1463,41 @@ def update_api_key(
         return True
 
 
+def get_api_key_theme(key_id: int) -> Optional[dict]:
+    """Return the stored widget theme JSON for an API key (None when unset)."""
+    with get_db() as db:
+        key = db.query(ApiKey).filter_by(id=key_id).first()
+        return dict(key.theme) if key and key.theme else None
+
+
+def set_api_key_theme(key_id: int, theme: Optional[dict]) -> bool:
+    """Replace the widget theme JSON of an API key. ``None`` resets to default."""
+    with get_db() as db:
+        key = db.query(ApiKey).filter_by(id=key_id).first()
+        if not key:
+            return False
+        key.theme = theme
+        key.updated_at = datetime.utcnow()
+        return True
+
+
+def get_public_widget_theme_source(api_key: Optional[str] = None, slug: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Look up an active, unexpired widget key and return only its theme.
+
+    Used by public endpoints, so nothing else about the key leaves this function.
+    """
+    if not api_key and not slug:
+        return None
+    with get_db() as db:
+        query = db.query(ApiKey)
+        key = query.filter_by(key=api_key).first() if api_key else query.filter_by(slug=slug).first()
+        if not key or not key.is_active:
+            return None
+        if key.expires_at and key.expires_at < datetime.utcnow():
+            return None
+        return {"theme": dict(key.theme) if key.theme else None}
+
+
 def delete_api_key(key_id: int) -> bool:
     """Delete an API key while preserving conversation history."""
     with get_db() as db:

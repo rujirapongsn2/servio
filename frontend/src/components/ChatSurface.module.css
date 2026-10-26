@@ -1,46 +1,63 @@
 .surface {
+  /* Defaults are the Servio theme; a customer theme overrides them inline (src/lib/chat-theme.ts). */
   --chat-primary: #2786c2;
   --chat-hover: #1a5a8a;
   --chat-ink: #0d1b2a;
+  --chat-muted: #536a7d;
+  --chat-on-primary: #fff;
+  --chat-accent: #1a5a8a;
+  --chat-bubble-from: #2479b3;
+  --chat-bubble-to: #236fa7;
+  --chat-on-bubble: #fff;
+  --chat-submit-bg: linear-gradient(145deg, #3299ce, #2786c2 55%, #236fa7);
+  --chat-tint-1: #b9e8ed;
+  --chat-tint-2: #bad9f4;
+  --chat-tint-3: #ccece0;
+  --chat-base-1: #e8f5f6;
+  --chat-base-2: #eaf1fb;
+  --chat-base-3: #e1f3ed;
   display: flex; width: 100%; height: 100%; min-height: 0; overflow: hidden;
   color: var(--chat-ink); color-scheme: light;
   background:
-    radial-gradient(ellipse at 12% 12%, #b9e8ed 0%, transparent 48%),
-    radial-gradient(ellipse at 88% 30%, #bad9f4 0%, transparent 48%),
-    radial-gradient(ellipse at 52% 100%, #ccece0 0%, transparent 52%),
-    linear-gradient(135deg, #e8f5f6, #eaf1fb 55%, #e1f3ed);
+    radial-gradient(ellipse at 12% 12%, var(--chat-tint-1) 0%, transparent 48%),
+    radial-gradient(ellipse at 88% 30%, var(--chat-tint-2) 0%, transparent 48%),
+    radial-gradient(ellipse at 52% 100%, var(--chat-tint-3) 0%, transparent 52%),
+    linear-gradient(135deg, var(--chat-base-1), var(--chat-base-2) 55%, var(--chat-base-3));
+  transition: opacity .18s ease-out;
 }
 .shell { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; background: rgb(255 255 255 / 30%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 80%); }
 .header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: 12px 18px; border-bottom: 1px solid rgb(255 255 255 / 70%); background: rgb(255 255 255 / 52%); }
 .identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.logo { width: 82px; height: auto; flex-shrink: 0; object-fit: contain; }
+.logo { width: 82px; height: auto; max-height: 36px; flex-shrink: 0; object-fit: contain; object-position: left center; }
 .agentName { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.actions button { display: inline-flex; justify-content: center; align-items: center; gap: 5px; min-width: 36px; min-height: 36px; border-radius: 10px; padding: 8px; color: var(--chat-hover); font-size: 12px; cursor: pointer; }
+.actions button { display: inline-flex; justify-content: center; align-items: center; gap: 5px; min-width: 36px; min-height: 36px; border-radius: 10px; padding: 8px; color: var(--chat-accent); font-size: 12px; cursor: pointer; }
 .actions button:hover { background: rgb(255 255 255 / 75%); box-shadow: 0 2px 8px #1a5a8a0a; }
-.surface button:focus-visible, .surface input:focus-visible { outline: 2px solid var(--chat-primary); outline-offset: 3px; }
+.surface button:focus-visible, .surface input:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 3px; }
 .body { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .welcome { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 30px 20px; text-align: center; flex: 1; min-height: 0; }
-.welcomeMark { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 22px; color: var(--chat-hover); border: 1px solid rgb(255 255 255 / 90%); background: linear-gradient(145deg, rgb(255 255 255 / 90%), rgb(255 255 255 / 35%)); box-shadow: inset 0 1px 0 #fff, 0 12px 32px #2786c21a; margin-bottom: 24px; }
+.welcomeMark { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 22px; color: var(--chat-accent); border: 1px solid rgb(255 255 255 / 90%); background: linear-gradient(145deg, rgb(255 255 255 / 90%), rgb(255 255 255 / 35%)); box-shadow: inset 0 1px 0 #fff, 0 12px 32px #2786c21a; margin-bottom: 24px; }
 .welcome h1 { font-size: clamp(20px, 3vw, 30px); line-height: 1.5; font-weight: 600; letter-spacing: -.025em; }
-.welcome p { font-size: 14px; color: #536a7d; margin-top: 8px; }
+.welcome h1, .welcome p { overflow-wrap: anywhere; max-width: 32ch; }
+.welcome p { font-size: 14px; color: var(--chat-muted); margin-top: 8px; }
+.welcomeLogo { max-width: 160px; max-height: 64px; width: auto; height: auto; object-fit: contain; margin-bottom: 20px; }
 .history { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 .composer { flex-shrink: 0; padding: 16px 20px 8px; width: 100%; max-width: 860px; margin-inline: auto; }
-.footer { flex-shrink: 0; text-align: center; color: #536a7d; font-size: 10px; letter-spacing: .08em; padding: 4px 12px max(10px, env(safe-area-inset-bottom)); }
+.footer { flex-shrink: 0; text-align: center; color: var(--chat-muted); font-size: 10px; letter-spacing: .08em; padding: 4px 12px max(10px, env(safe-area-inset-bottom)); }
 .surface [data-chat-history] { flex: 1; min-height: 0; flex-basis: auto; overscroll-behavior: contain; }
 .surface [data-chat-history] > div { width: 100%; max-width: 860px; margin-inline: auto; padding: 24px 20px; }
 .surface [data-chat-bubble] { min-width: 0; overflow-wrap: anywhere; box-shadow: 0 2px 8px #0d1b2a05; }
-.surface [data-chat-bubble="user"] { background: linear-gradient(140deg, #2479b3, #236fa7); color: #fff; border: 1px solid #ffffff45; border-bottom-right-radius: 5px; }
+.surface [data-chat-bubble="user"] { background: linear-gradient(140deg, var(--chat-bubble-from), var(--chat-bubble-to)); color: var(--chat-on-bubble); border: 1px solid #ffffff45; border-bottom-right-radius: 5px; }
 .surface [data-chat-bubble="assistant"] { background: rgb(255 255 255 / 94%); color: var(--chat-ink); border: 1px solid rgb(255 255 255 / 95%); border-bottom-left-radius: 5px; }
-.surface [data-chat-bubble="assistant"] a { color: var(--chat-hover); }
-.surface [data-chat-bubble="user"] a { color: #fff; }
+.surface [data-chat-bubble="assistant"] a { color: var(--chat-accent); }
+.surface [data-chat-bubble="user"] a { color: var(--chat-on-bubble); }
 .surface [data-chat-composer] { background: rgb(255 255 255 / 62%); border: 1px solid rgb(255 255 255 / 92%); border-radius: 24px; padding: 10px; box-shadow: inset 0 1px 0 #fff, 0 12px 36px #1a5a8a12; -webkit-backdrop-filter: blur(16px) saturate(120%); backdrop-filter: blur(16px) saturate(120%); }
 .surface [data-chat-composer] input[type="text"] { background: transparent; border: 0; border-radius: 10px; color: var(--chat-ink); font-size: 16px; min-height: 44px; padding: 10px 6px; }
 .surface [data-chat-composer] input[type="text"]::placeholder { color: #708393; }
 .surface [data-chat-composer] button { min-height: 40px; min-width: 40px; }
-.surface [data-chat-composer] button[type="submit"] { background: linear-gradient(145deg, #3299ce, var(--chat-primary) 55%, #236fa7); box-shadow: inset 0 1px 0 #ffffff60, 0 3px 10px #2786c224; }
+.surface [data-chat-composer] button[type="submit"] { background: var(--chat-submit-bg); color: var(--chat-on-primary); box-shadow: inset 0 1px 0 #ffffff60, 0 3px 10px #2786c224; }
 .surface [data-chat-composer] button[type="submit"]:hover:enabled { background: var(--chat-hover); }
-.surface [data-chat-composer] button[type="button"] { color: var(--chat-hover); border-color: rgb(255 255 255 / 85%); background: rgb(255 255 255 / 45%); }
+.surface [data-chat-composer] button[type="button"] { color: var(--chat-accent); border-color: rgb(255 255 255 / 85%); background: rgb(255 255 255 / 45%); }
 .surface[data-variant="page"] { padding: 28px; }
 .surface[data-variant="page"] .shell { max-width: 1120px; margin-inline: auto; border: 1px solid rgb(255 255 255 / 85%); border-radius: 32px; overflow: hidden; box-shadow: inset 0 1px 0 #ffffffcc, 0 24px 80px -24px #1a5a8a36; -webkit-backdrop-filter: blur(24px) saturate(125%); backdrop-filter: blur(24px) saturate(125%); }
 .surface[data-variant="page"][data-welcome="true"] .welcome { flex: 0 1 auto; }
@@ -70,7 +87,8 @@
   .actions button { min-width: 32px; padding: 6px; }
 }
 .surface .composer button[aria-label="Start Call"],
-.surface .composer button[aria-label="Hold to speak"] { background: var(--chat-primary); }
+.surface .composer button[aria-label="Hold to speak"] { background: var(--chat-primary); color: var(--chat-on-primary); }
+.surface .composer p { color: var(--chat-muted); }
 .surface .composer button[aria-label="Start Call"]:hover:enabled,
 .surface .composer button[aria-label="Hold to speak"]:hover:enabled { background: var(--chat-hover); }
 .surface [data-chat-history] section,
@@ -79,7 +97,7 @@
 .surface [data-chat-history] dialog { background: #fff; border-color: #dbe8f0; }
 .surface [data-chat-history] details > div { color: var(--chat-ink); }
 .surface [data-chat-history] details [data-chat-bubble="user"] { color: #fff; }
-.surface [data-chat-history] button[class~="bg-blue-600"] { background: var(--chat-primary); }
+.surface [data-chat-history] button[class~="bg-blue-600"] { background: var(--chat-primary); color: var(--chat-on-primary); }
 .surface [data-chat-history] button[class~="bg-blue-600"]:hover:enabled { background: var(--chat-hover); }
 .surface [data-chat-history] [role="status"][aria-live="polite"] { position: static; padding: 12px 0; }
 
@@ -88,3 +106,30 @@
   .surface[data-mode="voice"] .history { height: 35dvh; min-height: 120px; }
   .surface[data-mode="voice"] .welcome { min-height: 140px; padding-block: 16px; }
 }
+
+/* Before a customer theme arrives, keep the default palette from flashing. */
+.surface[data-theme-ready="false"] { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .surface { transition: none; } }
+
+/* Connection status (shown when the chat cannot reach the server). */
+.connection { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 12px; border-radius: 16px; border: 1px solid #f3c9c3; background: rgb(255 247 245 / 92%); color: #7a271a; font-size: 13px; line-height: 1.55; box-shadow: 0 6px 18px #7a271a0f; }
+.connection[data-state="connecting"] { border-color: rgb(255 255 255 / 92%); background: rgb(255 255 255 / 70%); color: var(--chat-ink); box-shadow: none; }
+.connection svg { flex-shrink: 0; margin-top: 2px; }
+.connection strong { display: block; font-weight: 600; }
+.connection span { display: block; color: inherit; opacity: .92; }
+.connection button { margin-inline-start: auto; flex-shrink: 0; align-self: center; min-height: 36px; padding: 6px 12px; border-radius: 999px; border: 1px solid currentColor; background: #fff; color: #7a271a; font-weight: 600; font-size: 12px; cursor: pointer; }
+.connection button:hover { background: #fff1ee; }
+.surface .connection button:focus-visible { outline-color: #7a271a; }
+
+/* /c/[slug] loading and error states share the chat surface. */
+.statusPage { min-height: 100dvh; align-items: center; justify-content: center; padding: 24px; }
+.statusCard { width: min(440px, 100%); padding: 36px 28px; border-radius: 28px; border: 1px solid rgb(255 255 255 / 88%); background: rgb(255 255 255 / 58%); box-shadow: inset 0 1px 0 #fff, 0 24px 70px -28px #1a5a8a40; -webkit-backdrop-filter: blur(20px) saturate(125%); backdrop-filter: blur(20px) saturate(125%); text-align: center; }
+.statusBody { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.statusBody h1 { font-size: 22px; line-height: 1.5; font-weight: 600; color: var(--chat-ink); text-wrap: balance; }
+.statusText { margin: 0; font-size: 15px; line-height: 1.7; color: var(--chat-muted); max-width: 34ch; text-wrap: pretty; }
+.statusIcon { color: var(--chat-accent); }
+.statusMark { display: grid; place-items: center; width: 60px; height: 60px; margin-bottom: 8px; border-radius: 20px; color: var(--chat-accent); border: 1px solid rgb(255 255 255 / 90%); background: linear-gradient(145deg, rgb(255 255 255 / 92%), rgb(255 255 255 / 40%)); box-shadow: inset 0 1px 0 #fff, 0 10px 28px #2786c21a; }
+.statusButton { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; min-height: 44px; padding: 10px 20px; border-radius: 999px; border: 0; background: var(--chat-submit-bg); color: var(--chat-on-primary); font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px #2786c22e; }
+.statusButton:hover { background: var(--chat-hover); }
+.statusButton:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 3px; }
+@media (max-width: 480px) { .statusCard { padding: 28px 20px; border-radius: 24px; } .statusBody h1 { font-size: 20px; } }

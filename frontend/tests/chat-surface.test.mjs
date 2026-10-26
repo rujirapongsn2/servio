@@ -21,21 +21,26 @@ function load(file, mocks = {}) {
 }
 const { ImageSearchComposer } = load('src/components/ImageSearchComposer.tsx');
 const { Composer } = load('src/components/Composer.tsx');
-async function harness(props = {}, { framed = false, query = {}, saved = null } = {}) {
-  const previous = { document: globalThis.document, window: globalThis.window, localStorage: globalThis.localStorage };
+const chatTheme = load('src/lib/chat-theme.ts', { '@/lib/api': { buildApiUrl: (path) => `https://servio.test${path}` } });
+async function harness(props = {}, { framed = false, query = {}, saved = null, themeResponse = null } = {}) {
+  const previous = { document: globalThis.document, window: globalThis.window, localStorage: globalThis.localStorage, fetch: globalThis.fetch };
+  const themeRequests = [];
+  globalThis.fetch = async (url) => { themeRequests.push(String(url)); return { ok: Boolean(themeResponse), json: async () => themeResponse }; };
   let modalOpen = false;
   globalThis.document = { querySelector: () => modalOpen ? {} : null };
   const sent = [], inquiries = [], listeners = new Map(), storage = new Map(saved ? [['servio-widget-mode', saved]] : []);
   globalThis.localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
-  globalThis.window = { parent: { postMessage: (...args) => sent.push(args) }, addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: (name) => listeners.delete(name) };
+  globalThis.window = { parent: { postMessage: (...args) => sent.push(args) }, location: { origin: 'https://servio.test' }, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (id) => clearTimeout(id), addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: (name) => listeners.delete(name) };
   if (!framed) globalThis.window.parent = globalThis.window;
   let socketMounts = 0, audioMounts = 0, audioEnabled, resetCount = 0, socketOptions;
-  const state = { isReady: true, sendAudioMessage() {}, sendTextMessage: (text) => sent.push(text), history: [], resetHistory: () => { resetCount++; }, presentations: {}, sendProductInquiry: (...args) => inquiries.push(['product', ...args]), sendKnowledgeInquiry: (...args) => inquiries.push(['knowledge', ...args]), imageSearchAvailable: true, imageSearchState: { kind: 'idle' }, imageComposerEpoch: 0, sendImageSearch: () => true, productActionError: null, isLoading: false, agentName: 'ฝ่ายบริการ', voiceResponseEnabled: true };
+  let reconnects = 0;
+  const state = { isReady: true, connection: { kind: 'open' }, reconnect: () => { reconnects++; }, sendAudioMessage() {}, sendTextMessage: (text) => sent.push(text), history: [], resetHistory: () => { resetCount++; }, presentations: {}, sendProductInquiry: (...args) => inquiries.push(['product', ...args]), sendKnowledgeInquiry: (...args) => inquiries.push(['knowledge', ...args]), imageSearchAvailable: true, imageSearchState: { kind: 'idle' }, imageComposerEpoch: 0, sendImageSearch: () => true, productActionError: null, isLoading: false, agentName: 'ฝ่ายบริการ', voiceResponseEnabled: true };
   const { default: WidgetContent } = load('src/components/WidgetContent.tsx', {
     './ChatSurface.module.css': { default: new Proxy({}, { get: (_, key) => String(key) }) },
     'next/image': { default: (props) => React.createElement('img', props) },
     'next/navigation': { useSearchParams: () => new URLSearchParams(query) },
     '@/components/icons/WriteIcon': { default: () => null }, '@/components/icons/MicIcon': { default: () => null },
+    '@/lib/chat-theme': chatTheme,
     '@/components/AudioChat': { default: (props) => React.createElement('audio-probe', props) },
     '@/components/Composer': { Composer }, '@/components/ImageSearchComposer': { ImageSearchComposer },
     '@/components/ChatDialog': { ChatHistory: (props) => React.createElement('history-probe', props) },
@@ -48,8 +53,10 @@ async function harness(props = {}, { framed = false, query = {}, saved = null } 
     field: () => renderer.root.findAllByType('input').find((node) => node.props.type === 'text'),
     update: () => act(async () => renderer.update(React.createElement(WidgetContent, props))),
     button: (label) => renderer.root.findAllByType('button').find((node) => node.props['aria-label'] === label),
+    themeRequests, get reconnects() { return reconnects; },
+    text: () => JSON.stringify(renderer.toJSON()),
     get socketMounts() { return socketMounts; }, get audioMounts() { return audioMounts; }, get audioEnabled() { return audioEnabled; }, get resetCount() { return resetCount; }, get socketOptions() { return socketOptions; },
-    async close() { await act(async () => renderer.unmount()); globalThis.document = previous.document; globalThis.window = previous.window; globalThis.localStorage = previous.localStorage; },
+    async close() { await act(async () => renderer.unmount()); globalThis.document = previous.document; globalThis.window = previous.window; globalThis.localStorage = previous.localStorage; globalThis.fetch = previous.fetch; },
   };
 }
 
@@ -148,4 +155,96 @@ test('voice controls retain start, recording and end transitions without microph
     assert.ok(control('Start Call'));
     assert.equal(starts, 1); assert.equal(stops, 1); assert.deepEqual(sent, [audio]);
   } finally { await act(async () => renderer.unmount()); }
+});
+
+const THEME = {
+  version: 1, is_default: false, primary_color: '#0f8a5f', logo_url: '/api/public/widget-logo/k1-abcdefghijklmnopqrstuvwx.png', launcher_logo: false,
+  greeting: { th: { title: 'ยินดีต้อนรับสู่ร้านเรา', subtitle: '<b>ถามได้</b>ทุกเรื่อง' }, en: {} },
+  palette: { primary: '#0f8a5f', primary_strong: '#0c714e', on_primary: '#ffffff', accent_text: '#0d7954', bubble_from: '#0e7f58', bubble_to: '#0d7753', on_bubble: '#ffffff',
+    tint_1: '#b7dccf', tint_2: '#c9e6db', tint_3: '#d8ede5', base_1: '#ebf5f1', base_2: '#f0f8f5', base_3: '#e7f3ef', frame_border: '#d8ede5', frame_bg: '#f6fbf9' },
+};
+
+test('server rejections show an inline banner instead of a silent disabled composer', async () => {
+  const h = await harness({ overrideType: 'chat', theme: null });
+  try {
+    assert.equal(h.socketOptions.inlineErrors, true);
+    Object.assign(h.state, { isReady: false, connection: { kind: 'error', reason: 'auth', message: 'แชตนี้ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลเว็บไซต์' } }); await h.update();
+    const alert = h.renderer.root.findAll((node) => node.props.role === 'alert')[0];
+    assert.ok(alert, 'auth failures are announced');
+    assert.match(h.text(), /แชตยังไม่พร้อมใช้งาน/);
+    assert.equal(h.renderer.root.findAllByType('button').some((node) => node.props.children === 'ลองอีกครั้ง'), false, 'retrying a bad key cannot help');
+    Object.assign(h.state, { connection: { kind: 'error', reason: 'network', message: 'เชื่อมต่อกับผู้ช่วยไม่สำเร็จ' } }); await h.update();
+    const retry = h.renderer.root.findAllByType('button').find((node) => node.props.children === 'ลองอีกครั้ง');
+    await act(async () => retry.props.onClick());
+    assert.equal(h.reconnects, 1);
+    Object.assign(h.state, { isReady: true, connection: { kind: 'open' } }); await h.update();
+    assert.equal(h.renderer.root.findAll((node) => node.props.role === 'alert').length, 0);
+  } finally { await h.close(); }
+});
+
+test('header and welcome use distinct icons for chat, restart and the assistant', async () => {
+  const h = await harness({ overrideType: 'voice', theme: null });
+  try {
+    const toggle = h.button('เปลี่ยนเป็นแชต'), restart = h.button('เริ่มบทสนทนาใหม่');
+    const iconOf = (node) => node.findAll((child) => typeof child.type === 'object' || typeof child.type === 'function')[0]?.type;
+    assert.notEqual(iconOf(toggle), iconOf(restart));
+  } finally { await h.close(); }
+});
+
+test('surface pins light scheme so OS dark mode cannot leak into the widget', async () => {
+  const h = await harness({ overrideType: 'voice', theme: null });
+  try { assert.equal(h.renderer.root.findByType('section').props['data-color-scheme'], 'light'); } finally { await h.close(); }
+});
+
+test('customer theme sets CSS variables, logo and escaped greeting', async () => {
+  const h = await harness({ overrideType: 'chat', theme: chatTheme.parseChatTheme(THEME) });
+  try {
+    const section = h.renderer.root.findByType('section');
+    assert.equal(section.props.style['--chat-primary'], '#0f8a5f');
+    assert.equal(section.props.style['--chat-on-bubble'], '#ffffff');
+    assert.equal(section.props['data-theme-ready'], true);
+    assert.equal(h.themeRequests.length, 0, 'a provided theme is not fetched again');
+    assert.equal(h.renderer.root.findByType('h1').props.children, 'ยินดีต้อนรับสู่ร้านเรา');
+    assert.equal(h.renderer.root.findAllByType('p').some((node) => node.props.children === '<b>ถามได้</b>ทุกเรื่อง'), true);
+    assert.equal(h.renderer.root.findAllByType('img').some((node) => node.props.src === 'https://servio.test/api/public/widget-logo/k1-abcdefghijklmnopqrstuvwx.png'), true);
+  } finally { await h.close(); }
+});
+
+test('embedded widget fetches its theme by key and falls back to Servio defaults', async () => {
+  const h = await harness({ overrideType: 'chat' }, { query: { apiKey: 'sk_live key' }, themeResponse: THEME });
+  try {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    assert.deepEqual(h.themeRequests, ['https://servio.test/api/public/widget-theme?api_key=sk_live%20key']);
+    assert.equal(h.renderer.root.findByType('section').props.style['--chat-primary'], '#0f8a5f');
+  } finally { await h.close(); }
+  const fallback = await harness({ overrideType: 'chat' }, { query: { apiKey: 'k' }, themeResponse: null });
+  try {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const section = fallback.renderer.root.findByType('section');
+    assert.equal(section.props.style, undefined);
+    assert.equal(section.props['data-theme-ready'], true);
+    assert.equal(fallback.renderer.root.findByType('h1').props.children, 'สวัสดีค่ะ ให้เราช่วยอะไรดีคะ');
+  } finally { await fallback.close(); }
+});
+
+test('admin preview never opens a socket and only trusts its same-origin parent', async () => {
+  const h = await harness({}, { framed: true, query: { preview: '1', type: 'chat' } });
+  try {
+    assert.equal(h.socketOptions.enabled, false);
+    assert.equal(h.button('ปิดแชต'), undefined);
+    assert.deepEqual(h.sent.at(-1), [{ type: 'servio.theme.preview.ready' }, 'https://servio.test']);
+    const message = h.listeners.get('message');
+    await act(async () => message({ source: {}, origin: 'https://evil.test', data: { type: 'servio.theme.preview', theme: THEME } }));
+    assert.equal(h.renderer.root.findByType('section').props.style, undefined);
+    await act(async () => message({ source: globalThis.window.parent, origin: 'https://servio.test', data: { type: 'servio.theme.preview', theme: THEME, sample: 'conversation' } }));
+    assert.equal(h.renderer.root.findByType('section').props.style['--chat-primary'], '#0f8a5f');
+    assert.equal(h.renderer.root.findByType('history-probe').props.messages.length, 2);
+  } finally { await h.close(); }
+});
+
+test('theme parser rejects malformed colours and foreign logo URLs', () => {
+  assert.equal(chatTheme.parseChatTheme({ ...THEME, palette: { ...THEME.palette, primary: 'red;background:url(x)' } }), null);
+  assert.equal(chatTheme.parseChatTheme({ ...THEME, logo_url: 'https://evil.test/x.png' }).logo_url, null);
+  assert.equal(chatTheme.parseChatTheme({ ...THEME, logo_url: '/api/public/widget-logo/../x.png' }).logo_url, null);
+  assert.equal(chatTheme.resolveGreeting(null, 'en').title, 'Hi there, how can we help?');
 });

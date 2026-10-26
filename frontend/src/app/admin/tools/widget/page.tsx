@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import MicIcon from "@/components/icons/MicIcon";
 import WriteIcon from "@/components/icons/WriteIcon";
 import { ApiKeyManager } from "@/components/ApiKeyManager";
+import WidgetThemeEditor from "@/components/WidgetThemeEditor";
 import ChannelConfigForm from "@/components/ChannelConfigForm";
 import { useTeam } from "@/lib/team-context";
 import { getChannelConfigs, type ChannelConfig } from "@/lib/channelConfigs";
@@ -124,6 +125,16 @@ export default function ChannelsPage() {
       cancelled = true;
     };
   }, [token, selectedTeamId]);
+
+  const selectedKeyId = apiKeys.find((key) => key.key === selectedApiKey)?.id ?? null;
+
+  // A key created in ApiKeyManager is not in this page's list yet; refresh once.
+  useEffect(() => {
+    if (!token || !selectedTeamId || !selectedApiKey || selectedKeyId !== null) return;
+    let cancelled = false;
+    getAllApiKeys(token, selectedTeamId).then((keys) => { if (!cancelled) setApiKeys(keys); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [token, selectedTeamId, selectedApiKey, selectedKeyId]);
 
   const selectedChannelMeta = CHANNELS.find((channel) => channel.id === selectedChannel) ?? CHANNELS[0];
   const canContinueFromConnect = selectedChannel === "web-widget"
@@ -413,6 +424,10 @@ export default function ChannelsPage() {
                     </p>
                   )}
                 </div>
+
+                {selectedKeyId !== null && token && (
+                  <WidgetThemeEditor key={selectedKeyId} token={token} keyId={selectedKeyId} />
+                )}
               </div>
             ) : (
               <div className="p-5">

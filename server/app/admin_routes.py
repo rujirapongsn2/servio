@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from app import database, model_settings
+from app import database, model_settings, widget_theme
 from app.auth import get_current_user, verify_password, create_access_token
 from app.db_config import get_db
 from app.models import (
@@ -3534,7 +3534,10 @@ async def delete_api_key(
             detail="API key not found"
         )
     require_team_access(current_user, key.get("team_agent_id"), "admin")
+    theme = database.get_api_key_theme(key_id) or {}
     success = database.delete_api_key(key_id)
+    if success:
+        widget_theme.delete_logo(theme.get("logo"))
 
     if not success:
         raise HTTPException(
@@ -3893,6 +3896,7 @@ async def get_widget_config_by_slug(slug: str):
         "voice_response_enabled": key_data.get("voice_response_enabled", True),
         "team_agent_id": key_data.get("team_agent_id"),
         "channel_type": key_data.get("channel_type"),
+        "theme": widget_theme.public_theme(database.get_api_key_theme(key_data["id"])),
     }
 
 

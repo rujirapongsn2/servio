@@ -251,6 +251,7 @@ class ApiKey(Base):
     voice_response_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # Enable TTS voice responses
     team_agent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("team_agents.id"), nullable=True, index=True)
     channel_type: Mapped[str] = mapped_column(String(50), default="web_widget")
+    theme: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Web Chat/Bubble theme, see app.widget_theme
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

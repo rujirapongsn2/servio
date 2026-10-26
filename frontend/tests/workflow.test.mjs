@@ -166,7 +166,7 @@ for (const channelType of ['line', 'facebook']) {
     } };
     const mocks = { ...commonMocks, '@/lib/team-context': { useTeam: () => team }, '@/lib/channelConfigs': channelApi };
     const ChannelForm = load('src/components/ChannelConfigForm.tsx', mocks);
-    const Wizard = load('src/app/admin/tools/widget/page.tsx', { ...mocks, '@/components/ChannelConfigForm': { __esModule: true, default: ChannelForm }, '@/components/ApiKeyManager': { ApiKeyManager: Placeholder }, '@/lib/apiKeys': { getAllApiKeys: async () => [] } });
+    const Wizard = load('src/app/admin/tools/widget/page.tsx', { ...mocks, '@/components/ChannelConfigForm': { __esModule: true, default: ChannelForm }, '@/components/ApiKeyManager': { ApiKeyManager: Placeholder }, '@/components/WidgetThemeEditor': { __esModule: true, default: Placeholder }, '@/lib/apiKeys': { getAllApiKeys: async () => [] } });
     const renderer = await env.mount(Wizard);
     await click(renderer, 'Next');
     const label = channelType === 'line' ? 'LINE Official Account' : 'Facebook Messenger';
