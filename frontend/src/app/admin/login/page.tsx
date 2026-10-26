@@ -83,9 +83,9 @@ export default function AdminLoginPage() {
           </select>
         </label>
       </header>
-      <div className="mx-auto grid w-full max-w-[1440px] flex-1 items-center px-6 pb-10 sm:px-10 lg:grid-cols-[1fr_1.05fr] lg:gap-12 lg:px-10 lg:py-2 xl:gap-20">
-        <section className="flex min-w-0 flex-col self-stretch lg:px-4">
-        <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-14 sm:py-20">
+      <div className="mx-auto grid w-full max-w-[1440px] flex-1 items-center px-6 pb-10 sm:px-10 lg:grid-cols-2 lg:gap-10 lg:px-10 lg:py-2">
+        <section className="flex min-w-0 flex-col lg:px-4">
+        <div className="mx-auto flex w-full max-w-[400px] flex-col justify-center py-10 sm:py-12 lg:py-6">
           <h1 className="text-3xl font-semibold leading-tight tracking-tight">{copy.title}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-500">{copy.subtitle}</p>
           <form className="mt-9 space-y-5" onSubmit={handleLogin} aria-busy={loading}>
@@ -110,20 +110,20 @@ export default function AdminLoginPage() {
           <p className="mt-7 text-center text-xs leading-6 text-slate-500">{copy.help}</p>
         </div>
         </section>
-        <aside className="relative hidden min-w-0 self-stretch overflow-hidden rounded-[24px] border border-[#d7e8fa] bg-[#e3f1ff] px-8 py-10 lg:flex lg:flex-col lg:items-center lg:justify-between xl:px-12">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_55%,rgba(117,177,251,0.45),transparent_65%)]" />
-          <h2 className="relative text-center text-[clamp(1.7rem,2.2vw,2.4rem)] font-semibold leading-[1.5] tracking-tight text-[#18344f] whitespace-pre-line">{copy.headline}</h2>
-          <div aria-hidden="true" className="relative my-8 aspect-square w-full max-w-[420px] shrink-0">
+        <aside className="relative hidden min-w-0 self-center overflow-hidden rounded-[24px] border border-[#d7e8fa] bg-[#e3f1ff] px-8 py-6 lg:flex lg:flex-col lg:items-center lg:justify-center lg:gap-4 xl:px-12">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_55%,rgba(117,177,251,0.28),transparent_65%)]" />
+          <h2 className="relative text-center text-[clamp(1.5rem,1.8vw,2rem)] font-semibold leading-[1.35] tracking-tight text-[#18344f] whitespace-pre-line">{copy.headline}</h2>
+          <div aria-hidden="true" className="relative aspect-square w-full max-w-[clamp(280px,40svh,320px)] shrink-0">
             {["w-[42%]", "w-[62%]", "w-[82%]", "w-full"].map(size => <div key={size} className={`absolute left-1/2 top-1/2 aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 ${size}`} />)}
-            <div className="absolute left-1/2 top-1/2 flex h-[112px] w-[112px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-[6px] border-[#f4f9ff] bg-white shadow-[0_10px_40px_rgba(41,112,208,0.22)]"><img src="/servio_logo.png" alt="" className="h-auto w-[100px]" /></div>
-            <div className="absolute left-1/2 top-[1%] flex -translate-x-1/2 flex-col items-center gap-2"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><MessageSquareText size={25} /></span><span className="text-xs font-medium text-[#365574]">Web Chat</span></div>
-            <div className="absolute left-[3%] top-[29%] flex flex-col items-center gap-2"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#e1ecfa] bg-white shadow-sm"><img src="/icons8-line-48.png" alt="" className="h-9 w-9" /></span><span className="text-xs font-medium text-[#365574]">LINE</span></div>
-            <div className="absolute right-[1%] top-[29%] flex flex-col items-center gap-2"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#e1ecfa] bg-white shadow-sm"><img src="/icons8-facebook-messenger-48.png" alt="" className="h-9 w-9" /></span><span className="text-xs font-medium text-[#365574]">Messenger</span></div>
-            <div className="absolute bottom-[17%] left-[6%] flex flex-col items-center gap-2"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><Headphones size={25} /></span><span className="text-xs font-medium text-[#365574]">{copy.voice}</span></div>
-            <div className="absolute bottom-[17%] right-[2%] flex flex-col items-center gap-2"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><Package size={25} /></span><span className="text-xs font-medium text-[#365574]">{copy.products}</span></div>
-            <div className="absolute bottom-[-1%] left-1/2 flex -translate-x-1/2 flex-col items-center gap-2"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><ShieldCheck size={25} /></span><span className="text-xs font-medium text-[#365574]">{copy.warranty}</span></div>
+            <div className="absolute left-1/2 top-1/2 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-[6px] border-[#f4f9ff] bg-white shadow-[0_10px_40px_rgba(41,112,208,0.22)]"><img src="/servio_logo.png" alt="" className="h-auto w-[84px]" /></div>
+            <div className="absolute left-1/2 top-[1%] flex w-12 -translate-x-1/2 flex-col items-center gap-2"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><MessageSquareText size={25} /></span><span className="whitespace-nowrap text-xs font-medium text-[#365574]">Web Chat</span></div>
+            <div className="absolute left-[3%] top-[29%] flex w-12 flex-col items-center gap-2"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e1ecfa] bg-white shadow-sm"><img src="/icons8-line-48.png" alt="" className="h-9 w-9" /></span><span className="whitespace-nowrap text-xs font-medium text-[#365574]">LINE</span></div>
+            <div className="absolute right-[1%] top-[29%] flex w-12 flex-col items-center gap-2"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e1ecfa] bg-white shadow-sm"><img src="/icons8-facebook-messenger-48.png" alt="" className="h-9 w-9" /></span><span className="whitespace-nowrap text-xs font-medium text-[#365574]">Messenger</span></div>
+            <div className="absolute bottom-[17%] left-[6%] flex w-12 flex-col items-center gap-2"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><Headphones size={25} /></span><span className="whitespace-nowrap text-xs font-medium text-[#365574]">{copy.voice}</span></div>
+            <div className="absolute bottom-[17%] right-[2%] flex w-12 flex-col items-center gap-2"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><Package size={25} /></span><span className="whitespace-nowrap text-xs font-medium text-[#365574]">{copy.products}</span></div>
+            <div className="absolute bottom-0 left-1/2 flex w-12 -translate-x-1/2 flex-col items-center gap-2"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e1ecfa] bg-white text-[#2673d9] shadow-sm"><ShieldCheck size={25} /></span><span className="whitespace-nowrap text-xs font-medium text-[#365574]">{copy.warranty}</span></div>
           </div>
-          <p className="relative max-w-sm text-center text-sm leading-7 text-[#44617d]">{copy.caption}</p>
+          <p style={{ margin: 0 }} className="relative max-w-sm text-center text-sm leading-6 text-[#44617d]">{copy.caption}</p>
         </aside>
       </div>
       <footer className="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-4 px-6 py-5 text-[11px] text-slate-500 sm:px-10 lg:px-16"><span>Servio by Softnix</span><span>AI for Customer Service</span></footer>
