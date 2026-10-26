@@ -101,8 +101,8 @@ function agentSetup(t, { isNew = false, autoSelect = true } = {}) {
 function providerSelect(renderer) { return renderer.root.findAllByType('select')[0]; }
 function agentFetch(delays = {}) {
   return async (url, options) => {
-    if (url === '/api/admin/model-defaults') return delays.defaults?.() ?? response({ default_agent_model: 'runtime-agent-model', agent_models: ['runtime-agent-model', 'runtime-second-model'] });
-    if (options?.method === 'PUT') return response({ message: 'Agent updated' });
+    if (url === '/api/admin/default-chat-models') return delays.defaults?.() ?? response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna', 'gpt-5.4-mini'] });
+    if (options?.method === 'PUT' || options?.method === 'POST') return response({ message: 'Agent updated' });
     if (url.endsWith('/registered-models')) return delays.registered?.(url) ?? response([]);
     if (url.endsWith('/models')) return delays.models?.(url) ?? response([{ id: url.includes('/99/') ? 'new-model' : 'old-model' }]);
     if (url === '/api/admin/llm-providers') return delays.providers?.promise ?? response([{ id: 1, name: 'Old provider' }, { id: 99, name: 'New provider' }]);
@@ -274,29 +274,20 @@ for (const failure of ['http', 'network', 'malformed']) {
     assert.match(text(renderer.root.findByProps({ role: 'status' })), /could not be loaded/);
   });
 }
-test('Default custom model is trimmed in draft and save, restores its input, and rejects whitespace', async (t) => {
+test('default provider permits only catalog models and saves an eligible selection', async (t) => {
   const env = agentSetup(t, { autoSelect: false });
   const saves = captureSaves(agentFetch());
-  let renderer = await env.mount(env.Agent);
+  const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
-  await selectValue(modelSelect(renderer), '__custom_model__');
-  let input = renderer.root.findByProps({ id: 'custom-model-id' });
-  assert.equal(input.props.required, true);
-  assert.ok(!new RegExp(input.props.pattern).test('   '));
-  assert.equal(renderer.root.findByProps({ htmlFor: 'custom-model-id' }).children.join(''), 'Model ID');
-  await selectValue(input, '   ');
+  assert.ok(!modelIds(renderer).includes('__custom_model__'));
+  assert.equal(renderer.root.findAllByProps({ id: 'custom-model-id' }).length, 0);
+  await selectValue(modelSelect(renderer), 'mistyped-model');
   await submitAgent(renderer);
   assert.equal(saves.length, 0);
-  await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), '  my/custom-default  ');
-  const draft = JSON.parse(env.storage.get('agent-draft:1:7:draft1'));
-  assert.equal(draft.model, 'my/custom-default');
-  assert.equal(draft.llm_provider_id, null);
-  await act(async () => renderer.unmount());
-  renderer = await env.mount(env.Agent);
-  assert.equal(providerSelect(renderer).props.value, 'default');
-  assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/custom-default');
+  assert.equal(modelSelect(renderer).props.value, '');
+  await selectValue(modelSelect(renderer), 'gpt-5.4-mini');
   await submitAgent(renderer);
-  assert.equal(saves.at(-1).model, 'my/custom-default');
+  assert.equal(saves.at(-1).model, 'gpt-5.4-mini');
   assert.equal(saves.at(-1).llm_provider_id, null);
 });
 for (const nextProvider of ['default', '']) {
@@ -317,7 +308,7 @@ for (const nextProvider of ['default', '']) {
     assert.ok(!modelIds(renderer).includes('stale-model'));
     assert.equal(renderer.root.findAllByProps({ role: 'status' }).length, 0);
     assert.equal(modelSelect(renderer).props.disabled, nextProvider === '');
-    if (nextProvider === 'default') assert.ok(modelIds(renderer).includes('runtime-agent-model'));
+    if (nextProvider === 'default') assert.ok(modelIds(renderer).includes('gpt-6-luna'));
     assert.equal(renderer.root.findAllByProps({ id: 'custom-model-id' }).length, 0);
   });
 }
@@ -358,33 +349,62 @@ test('Workflow agent setup keeps its destination through provider and capability
 });
 
 
-test('new legacy Agent uses runtime model default after choosing Default provider', async (t) => {
+test('new legacy Agent chooses only an eligible default from the filtered catalog', async (t) => {
   const env = agentSetup(t, { isNew: true, autoSelect: false });
-  global.fetch = agentFetch();
+  const saves = captureSaves(agentFetch());
   const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
-  assert.equal(modelSelect(renderer).props.value, 'runtime-agent-model');
-  assert.ok(modelIds(renderer).includes('runtime-second-model'));
+  assert.equal(modelSelect(renderer).props.value, 'gpt-6-luna');
+  assert.deepEqual(modelIds(renderer), ['', 'gpt-6-luna', 'gpt-5.4-mini']);
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'gpt-6-luna');
 });
 
-test('late runtime defaults cannot overwrite a newly typed model ID', async (t) => {
+test('late default catalog cannot replace a custom provider or its typed ID', async (t) => {
   const env = agentSetup(t, { isNew: true, autoSelect: false });
   const pending = deferred();
   global.fetch = agentFetch({ defaults: () => pending.promise });
   const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
+  assert.equal(modelSelect(renderer).props.disabled, true);
+  await selectValue(providerSelect(renderer), '1');
   await selectValue(modelSelect(renderer), '__custom_model__');
   await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), 'my/model');
-  await act(async () => pending.resolve(response({ default_agent_model: 'runtime-late', agent_models: ['runtime-late'] })));
+  await act(async () => pending.resolve(response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna'] })));
   assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/model');
+  assert.ok(!modelIds(renderer).includes('gpt-6-luna'));
 });
 
-test('unavailable runtime defaults leave manual model entry usable', async (t) => {
+test('default catalog outage blocks new default assignments and recovers through Retry', async (t) => {
   const env = agentSetup(t, { isNew: true, autoSelect: false });
-  global.fetch = agentFetch({ defaults: () => ({ ok: false }) });
+  let offline = true;
+  const saves = captureSaves(agentFetch({ defaults: () => offline ? { ok: false } : response({ default_model: null, models: ['gpt-6-luna'] }) }));
   const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
-  assert.match(text(renderer.root.findByProps({ role: 'status' })), /Enter a model ID/);
-  await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), 'my/manual-model');
-  assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/manual-model');
+  assert.match(text(renderer.root.findByProps({ role: 'status' })), /Unable to load OpenAI models/);
+  assert.equal(modelSelect(renderer).props.disabled, true);
+  assert.ok(!modelIds(renderer).includes('__custom_model__'));
+  await submitAgent(renderer);
+  assert.equal(saves.length, 0);
+  offline = false;
+  await click(renderer, 'Retry');
+  assert.equal(modelSelect(renderer).props.disabled, false);
+  await selectValue(modelSelect(renderer), 'gpt-6-luna');
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'gpt-6-luna');
+});
+
+test('saved legacy default model remains visible and unrelated edits save during catalog outage', async (t) => {
+  const env = agentSetup(t, { autoSelect: false });
+  const fetcher = agentFetch({ defaults: () => ({ ok: false }) });
+  const saves = captureSaves((url, options) => url === '/api/admin/agents/7?team_agent_id=1' && !options?.method ? response({ ...agentData, model: 'gpt-6-sol', llm_provider: null }) : fetcher(url, options));
+  const renderer = await env.mount(env.Agent);
+  assert.equal(providerSelect(renderer).props.value, 'default');
+  assert.equal(modelSelect(renderer).props.value, 'gpt-6-sol');
+  const previous = modelSelect(renderer).findAllByType('option').find(node => node.props.value === 'gpt-6-sol');
+  assert.equal(previous.props.disabled, true);
+  await selectValue(renderer.root.findAllByType('input')[0], 'Renamed legacy');
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'gpt-6-sol');
+  assert.equal(saves.at(-1).name, 'Renamed legacy');
 });

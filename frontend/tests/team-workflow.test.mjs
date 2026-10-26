@@ -65,7 +65,7 @@ function setup(t, saved = snapshot()) {
   global.window = { addEventListener() {}, removeEventListener() {}, confirm: () => true, location: { search: '', reload() {} } };
   global.document = { addEventListener() {}, removeEventListener() {}, getElementById: () => null };
   global.fetch = async (url, init) => {
-    if (url.endsWith('/model-defaults')) return response({ default_agent_model: 'runtime-agent-model', agent_models: ['runtime-agent-model', 'runtime-second-model'] });
+    if (url.endsWith('/default-chat-models')) return response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna', 'gpt-5.4-mini'] });
     if (url.endsWith('/auth/me')) return response({is_super_admin: true});
     if (url.endsWith('/models')) return response([{ id: 'discovered-model' }]);
     if (url.endsWith('/registered-models')) return response([{ model_id: 'registered-model', enabled: true, capabilities: ['text'] }]);
@@ -186,10 +186,10 @@ test('agent edits save in the active team and refresh the diagram', async (t) =>
   const env = setup(t); const renderer = await env.mount();
   assert.equal(renderer.root.findByType('workflow-graph').props.fallbackAgentId, 1);
   await change(renderer, 'workflow-agent-name', ' Updated support ');
-  await change(renderer, 'workflow-model', 'custom/model');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   await save(renderer);
   assert.equal(env.saves[0].name, 'Updated support');
-  assert.equal(env.saves[0].model, 'custom/model');
+  assert.equal(env.saves[0].model, 'gpt-6-luna');
   assert.equal(env.saves[0].expected_fallback_agent_id, 1);
   assert.equal(env.saves[0].expected_updated_at, '2026-10-23T01:00:00');
   assert.equal(renderer.root.findByType('workflow-graph').props.agents[0].name, 'Updated support');
@@ -269,6 +269,7 @@ test('empty teams create an Agent without leaving Workflow', async (t) => {
   await act(async () => button(renderer, 'Create agent').props.onClick());
   await change(renderer, 'workflow-agent-name', 'First agent');
   await change(renderer, 'workflow-instructions', 'Handle incoming requests');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   await save(renderer);
   assert.equal(env.routes.length, 0);
   assert.equal(env.creates.length, 1);
@@ -354,6 +355,7 @@ test('new Agent drafts survive selection and reload with the same request ID', a
   await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'New specialist');
   await change(renderer, 'workflow-instructions', 'Handle specialist requests');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   const requestId = JSON.parse(env.storage.get('team-workflow-new:1')).requestId;
   await select(renderer, 1);
   assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Existing draft');
@@ -372,6 +374,7 @@ test('an uncertain Agent creation retries the same request without duplicate Age
   await act(async () => button(renderer, 'Create agent').props.onClick());
   await change(renderer, 'workflow-agent-name', 'Only one');
   await change(renderer, 'workflow-instructions', 'Handle requests');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   env.controls.loseCreateResponse = true;
   await save(renderer);
   assert.match(text(renderer.root.findByProps({ role: 'alert' })), /Connection lost/);
@@ -386,6 +389,7 @@ test('a successful create with failed refresh can refresh without posting again'
   await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'Created once');
   await change(renderer, 'workflow-instructions', 'Handle requests');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   env.controls.failRefresh = true;
   await save(renderer);
   assert.match(text(renderer.root.findByProps({ role: 'alert' })), /saved.*could not be refreshed/);
@@ -418,6 +422,7 @@ test('new Agent knowledge is staged without binding to a persisted Agent', async
   await act(async () => renderer.root.findByType('workflow-graph').props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'Knowledge expert');
   await change(renderer, 'workflow-instructions', 'Use assigned knowledge');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   await act(async () => renderer.root.findAllByType('button').find(node => !node.props.role && text(node).trim() === 'Knowledge').props.onClick());
   const modal = renderer.root.findByType('knowledge-creator');
   assert.equal(modal.props.teamAgentId, 1);
@@ -678,17 +683,17 @@ test('deleting a non-fallback Agent retains the existing team fallback', async (
 });
 
 
-test('Workflow creates with runtime defaults and preserves restored custom drafts', async (t) => {
+test('Workflow new agents require catalog selection and preserve restored model drafts', async (t) => {
   const data = snapshot(); data.agents = []; data.fallback_agent_id = null;
   const env = setup(t, data); let renderer = await env.mount();
   await act(async () => button(renderer, 'Create agent').props.onClick());
-  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'runtime-agent-model');
-  assert.deepEqual(renderer.root.findByProps({ id: 'workflow-models' }).findAllByType('option').map(node => node.props.value), ['runtime-agent-model', 'runtime-second-model']);
-  await change(renderer, 'workflow-model', 'saved/custom-model');
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, '');
+  assert.deepEqual(renderer.root.findByProps({ id: 'workflow-model' }).findAllByType('option').map(node => node.props.value), ['', 'gpt-6-luna', 'gpt-5.4-mini']);
+  await change(renderer, 'workflow-model', 'gpt-5.4-mini');
   await act(async () => renderer.unmount());
   data.default_agent_model = 'changed-server-default';
   renderer = await env.mount();
-  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'saved/custom-model');
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'gpt-5.4-mini');
 });
 
 test('Workflow without a runtime default leaves the new model blank', () => {
@@ -714,25 +719,37 @@ test('late Workflow defaults cannot replace options for a different provider', a
   const env = setup(t);
   const originalFetch = global.fetch;
   let finish;
-  global.fetch = (url, init) => url.endsWith('/model-defaults') ? new Promise(resolve => { finish = resolve; }) : originalFetch(url, init);
+  global.fetch = (url, init) => url.endsWith('/default-chat-models') ? new Promise(resolve => { finish = resolve; }) : originalFetch(url, init);
   const renderer = await env.mount();
   await change(renderer, 'workflow-provider', '1');
   await change(renderer, 'workflow-model', 'typed/custom-model');
-  await act(async () => finish(response({ default_agent_model: 'late/default', agent_models: ['late/default'] })));
+  await act(async () => finish(response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna'] })));
   const options = renderer.root.findByProps({ id: 'workflow-models' }).findAllByType('option').map(node => node.props.value);
   assert.deepEqual(options.sort(), ['discovered-model', 'registered-model']);
   assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'typed/custom-model');
 });
 
-test('Workflow keeps manual model entry usable when defaults are unavailable', async (t) => {
+test('Workflow discovery failure preserves saved assignment and blocks new models until retry', async (t) => {
   const env = setup(t);
   const originalFetch = global.fetch;
-  global.fetch = (url, init) => url.endsWith('/model-defaults') ? Promise.resolve(response({ detail: 'Unavailable' }, 503)) : originalFetch(url, init);
+  let unavailable = true;
+  global.fetch = (url, init) => url.endsWith('/default-chat-models') && unavailable ? Promise.resolve(response({ detail: 'Unavailable' }, 503)) : originalFetch(url, init);
   const renderer = await env.mount();
-  assert.ok(renderer.root.findAllByProps({ role: 'status' }).some(node => /enter a model ID/.test(text(node))));
-  await change(renderer, 'workflow-model', 'manual/local-model');
+  const control = renderer.root.findByProps({ id: 'workflow-model' });
+  assert.equal(control.type, 'select');
+  assert.equal(control.props.disabled, true);
+  assert.equal(control.props.value, 'test-model');
+  assert.ok(renderer.root.findAllByProps({ role: 'status' }).some(node => /Unable to load OpenAI/.test(text(node))));
+  await change(renderer, 'workflow-agent-name', 'Renamed legacy agent');
   await save(renderer);
-  assert.equal(env.saves[0].model, 'manual/local-model');
+  assert.equal(env.saves[0].model, 'test-model');
+  await change(renderer, 'workflow-model', 'mistyped');
+  assert.equal(button(renderer, 'Save agent').props.disabled, true);
+  unavailable = false;
+  await act(async () => button(renderer, 'Retry').props.onClick());
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.disabled, false);
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
+  assert.equal(button(renderer, 'Save agent').props.disabled, false);
 });
 
 test('canvas Add agent is a native action independent of handoff editing', async () => {
@@ -779,6 +796,7 @@ test('canvas creation preserves one unsaved draft across repeat and resume actio
   await act(async () => graph().props.onAddAgent());
   await change(renderer, 'workflow-agent-name', 'Saved canvas agent');
   await change(renderer, 'workflow-instructions', 'Handle canvas requests');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
   await save(renderer);
   assert.equal(env.creates.length, 1);
   assert.equal(graph().props.hasNewAgentDraft, false);
@@ -921,4 +939,27 @@ test('saved Workspace status changes language without another workflow fetch', a
   assert.equal(env.workflowReads.length, reads);
   assert.equal(env.saves.length, 1);
   assert.equal(env.saves[0].instructions, 'Keep original content');
+});
+
+test('default catalog parser does not inject runtime defaults or accept invalid defaults', () => {
+  const parse = modules()('src/lib/provider-models.ts').parseDefaultChatModels;
+  assert.deepEqual(parse({ models: ['gpt-6-luna', 'gpt-6-luna'], default_model: null }), { models: ['gpt-6-luna'], default_model: null });
+  for (const invalid of [null, [], { models: [1], default_model: null }, { models: ['gpt-6-luna'], default_model: 'gpt-6-sol' }]) assert.throws(() => parse(invalid));
+});
+
+test('default selection never silently replaces saved high-tier models and provider switch clears the choice', async t => {
+  const data = snapshot(); data.agents[0].model = 'gpt-6-sol';
+  const env = setup(t, data); const renderer = await env.mount();
+  const select = renderer.root.findByProps({ id: 'workflow-model' });
+  assert.equal(select.type, 'select');
+  const options = select.findAllByType('option');
+  assert.deepEqual(options.filter(node => !node.props.disabled).map(node => node.props.value), ['', 'gpt-6-luna', 'gpt-5.4-mini']);
+  assert.equal(options.find(node => node.props.value === 'gpt-6-sol').props.disabled, true);
+  assert.equal(select.props.value, 'gpt-6-sol');
+  await change(renderer, 'workflow-provider', '1');
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).type, 'input');
+  await change(renderer, 'workflow-model', 'custom/model');
+  await change(renderer, 'workflow-provider', 'default');
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, '');
+  assert.equal(button(renderer, 'Save agent').props.disabled, true);
 });

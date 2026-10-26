@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app import database
+from app import database, default_chat_models
 from app.auth import get_current_user
 from app.orm_models import LLMProvider, Tool
 
@@ -150,11 +150,11 @@ def _validate_access(team_id, agents):
                     raise HTTPException(409, "Provider configuration changed. Start a new preview.")
 
 
-def _capture(team_id, request):
+def _capture(team_id, request, saved_agents=None):
     team = deepcopy(database.get_team_agent_by_id(team_id))
     if not team:
         raise HTTPException(404, "Team Agent not found")
-    agents = deepcopy(database.get_all_agents(team_agent_id=team_id))
+    agents = deepcopy(saved_agents if saved_agents is not None else database.get_all_agents(team_agent_id=team_id))
     if not agents:
         raise HTTPException(400, "Save an agent in this team before starting a preview.")
     if len(agents) > 32 or len(json.dumps(agents).encode()) > 512_000:
@@ -236,7 +236,12 @@ async def create_preview(team_id: int, request: CreatePreview, current_user: str
     _prune()
     if len(_sessions) >= MAX_SESSIONS or sum(session.owner == current_user for session in _sessions.values()) >= MAX_USER_SESSIONS:
         raise HTTPException(429, "Close an existing preview before starting another.")
-    team, agents = _capture(team_id, request)
+    saved = {agent["id"]: agent for agent in database.get_all_agents(team_agent_id=team_id)}
+    for item in request.drafts:
+        if item.agent_id not in saved:
+            raise HTTPException(400, "Save the agent in this team before previewing it.")
+        await default_chat_models.validate_selection(item.draft.model, item.draft.llm_provider_id, saved[item.agent_id])
+    team, agents = _capture(team_id, request, list(saved.values()))
     try:
         agent, blocked = _build(team_id, team, agents, request.target_agent_id)
     except HTTPException:

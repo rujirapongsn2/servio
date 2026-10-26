@@ -8,7 +8,7 @@ import WorkflowNavigator from "@/components/WorkflowNavigator";
 import { Sparkles, Wrench } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
-import { parseAgentModelDefaults, parseModelIds } from "@/lib/provider-models";
+import { parseDefaultChatModels, parseModelIds } from "@/lib/provider-models";
 
 interface Tool {
   id: number;
@@ -90,6 +90,7 @@ export default function AgentEditorPage() {
   >([]);
   const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [savedAssignment, setSavedAssignment] = useState<{ model: string; providerId: number | null } | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState("");
   const [customModel, setCustomModel] = useState(false);
@@ -138,6 +139,8 @@ export default function AgentEditorPage() {
     providersQuery,
   ].filter(Boolean).join("&")}`;
   const safeInstructions = typeof formData.instructions === "string" ? formData.instructions : "";
+  const unchangedModel = savedAssignment !== null && savedAssignment.model === formData.model.trim() && savedAssignment.providerId === formData.llm_provider_id;
+  const validModel = formData.llm_provider_id !== null || unchangedModel || (!fetchingModels && !modelsError && availableModels.includes(formData.model));
 
   const getCapabilityDisplayName = (tool: Tool): string => {
     if ((tool.type || "") === "gemini_file_search" || (tool.type || "") === "okf_knowledge_graph") {
@@ -182,24 +185,23 @@ export default function AgentEditorPage() {
     const token = localStorage.getItem("adminToken");
     if (providerId === null) {
       try {
-        const response = await fetch(`${apiBaseUrl}/api/admin/model-defaults`, {
+        const response = await fetch(`${apiBaseUrl}/api/admin/default-chat-models`, {
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
         });
         if (!response.ok) throw new Error("Failed to load model defaults");
-        const defaults = parseAgentModelDefaults(await response.json());
+        const defaults = parseDefaultChatModels(await response.json());
         if (requestId !== modelRequestId.current) return;
-        setAvailableModels(defaults.agent_models);
+        setAvailableModels(defaults.models);
         if (editVersion === modelEditVersion.current) {
-          setCustomModel(!!currentModel && !defaults.agent_models.includes(currentModel));
-          if (isNew && applyDefault && !currentModel) {
+          setCustomModel(false);
+          if (isNew && applyDefault && !currentModel && defaults.default_model) {
             setFormData((previous) => previous.llm_provider_id === null && !previous.model ?
-              { ...previous, model: defaults.default_agent_model } : previous);
+              { ...previous, model: defaults.default_model ?? "" } : previous);
           }
         }
       } catch {
         if (requestId !== modelRequestId.current) return;
-        setModelsError("Models unavailable. Enter a model ID.");
-        if (editVersion === modelEditVersion.current) setCustomModel(true);
+        setModelsError("Unable to load OpenAI models.");
       } finally {
         if (requestId === modelRequestId.current) setFetchingModels(false);
       }
@@ -419,6 +421,7 @@ export default function AgentEditorPage() {
       // Extract provider ID from nested object if present
       const providerId = data.llm_provider?.id || null;
 
+      setSavedAssignment({ model: typeof data.model === "string" ? data.model.trim() : "", providerId });
       setFormData({
         ...data,
         name: typeof data.name === "string" ? data.name : "",
@@ -440,8 +443,8 @@ export default function AgentEditorPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!formData.model.trim()) {
-      setError("Enter a model ID.");
+    if (!formData.model.trim() || !validModel) {
+      setError(formData.llm_provider_id === null ? "Select an available OpenAI chatbot model." : "Enter a model ID.");
       return;
     }
     setSaving(true);
@@ -730,14 +733,14 @@ export default function AgentEditorPage() {
               </label>
               <select
                 id="agent-model"
-                value={customModel ? CUSTOM_MODEL : formData.model}
+                value={formData.llm_provider_id === null ? unchangedModel || availableModels.includes(formData.model) ? formData.model : "" : customModel ? CUSTOM_MODEL : formData.model}
                 onChange={(e) => {
                   modelEditVersion.current += 1;
-                  const custom = e.target.value === CUSTOM_MODEL;
+                  const custom = formData.llm_provider_id !== null && e.target.value === CUSTOM_MODEL;
                   setCustomModel(custom);
                   setFormData({ ...formData, model: custom ? "" : e.target.value });
                 }}
-                disabled={formData.llm_provider_id === undefined}
+                disabled={formData.llm_provider_id === undefined || (formData.llm_provider_id === null && (fetchingModels || !!modelsError))}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white disabled:opacity-50"
                 required
               >
@@ -749,12 +752,12 @@ export default function AgentEditorPage() {
                 {availableModels.map(m => (
                   <option key={m} value={m}>{m}</option>
                 ))}
-                {!customModel && !availableModels.includes(formData.model) && formData.model && (
-                  <option value={formData.model}>{formData.model} (Current)</option>
+                {!customModel && !availableModels.includes(formData.model) && formData.model && (formData.llm_provider_id !== null || unchangedModel) && (
+                  <option value={formData.model} disabled={formData.llm_provider_id === null}>{formData.model} (Current)</option>
                 )}
-                <option value={CUSTOM_MODEL}>+ Enter model ID…</option>
+                {formData.llm_provider_id !== null && <option value={CUSTOM_MODEL}>+ Enter model ID…</option>}
               </select>
-              {customModel && (
+              {formData.llm_provider_id !== null && customModel && (
                 <div className="mt-3">
                   <label htmlFor="custom-model-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Model ID</label>
                   <input
@@ -768,7 +771,8 @@ export default function AgentEditorPage() {
                   />
                 </div>
               )}
-              {modelsError && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{modelsError}</p>}
+              {modelsError && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{modelsError}{formData.llm_provider_id === null && <button type="button" onClick={() => void fetchModels(null, formData.model)} className="ml-2 underline">Retry</button>}</p>}
+              {formData.llm_provider_id === null && !fetchingModels && !modelsError && availableModels.length === 0 && <p role="status" className="mt-1 text-xs text-gray-500">No suitable chatbot models are available.</p>}
             </div>
 
             <div>
@@ -779,7 +783,7 @@ export default function AgentEditorPage() {
                 <button
                   type="button"
                   onClick={handleOptimizePrompt}
-                  disabled={optimizing || !safeInstructions.trim()}
+                  disabled={optimizing || !validModel || !safeInstructions.trim()}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/20 hover:bg-purple-200 dark:hover:bg-purple-900/30 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Use AI to optimize and improve your instructions"
                 >
@@ -920,7 +924,7 @@ export default function AgentEditorPage() {
           </button>
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || !validModel}
             className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
           >
             {saving ? "Saving..." : isNew ? "Create Agent" : "Save Changes"}

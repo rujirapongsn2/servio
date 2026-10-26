@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from app import database, model_settings, widget_theme
+from app import database, model_settings, widget_theme, default_chat_models
 from app.auth import get_current_user, verify_password, create_access_token
 from app.db_config import get_db
 from app.models import (
@@ -645,6 +645,11 @@ async def update_team_workflow_agent(
     from app.team_workflow import WorkflowConflict, update_workflow_agent
 
     require_team_access(current_user, team_id, "admin")
+    snapshot = database.get_all_agents(team_agent_id=team_id)
+    previous = next((agent for agent in snapshot if agent["id"] == agent_id), None)
+    if previous is None:
+        raise HTTPException(404, "Agent not found in this Team Agent")
+    await default_chat_models.validate_selection(request.model, request.llm_provider_id, previous)
     try:
         return {"agent_id": update_workflow_agent(team_id, agent_id, request)}
     except WorkflowConflict as error:
@@ -661,6 +666,12 @@ async def create_team_workflow_agent(team_id: int, request: CreateWorkflowAgentR
     from app.team_workflow import WorkflowConflict, create_workflow_agent
 
     require_team_access(current_user, team_id, "admin")
+    from app.orm_models import WorkflowCreationReceipt
+    with database.get_db() as db:
+        receipt = db.get(WorkflowCreationReceipt, (team_id, str(request.request_id)))
+        replay_id = receipt.resource_id if receipt and receipt.resource_kind == "agent" else None
+    previous = database.get_agent_by_id(replay_id) if replay_id else None
+    await default_chat_models.validate_selection(request.model, request.llm_provider_id, previous)
     try:
         return {"agent_id": create_workflow_agent(team_id, request)}
     except WorkflowConflict as error:
@@ -803,6 +814,11 @@ async def update_team_users(
 
 
 # Agent endpoints
+@router.get("/default-chat-models")
+async def get_default_chat_models(current_user: str = Depends(get_current_user)):
+    return await default_chat_models.available_default_chat_models()
+
+
 @router.get("/model-defaults")
 async def get_model_defaults(current_user: str = Depends(get_current_user)):
     return {"default_agent_model": model_settings.default_agent_model(),
@@ -867,6 +883,7 @@ async def create_agent(
 ):
     """Create a new agent"""
     require_team_access(current_user, team_agent_id, "admin")
+    await default_chat_models.validate_selection(request.model, request.llm_provider_id)
     try:
         agent_id = database.create_agent(
             name=request.name,
@@ -905,6 +922,8 @@ async def update_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found"
         )
+    await default_chat_models.validate_selection(
+        request.model, request.llm_provider_id, database.get_agent_by_id(agent_id))
     try:
         success = database.update_agent(
             agent_id=agent_id,
