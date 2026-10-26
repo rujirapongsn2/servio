@@ -90,6 +90,7 @@ export default function AgentEditorPage() {
   >([]);
   const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [availableDefaultModels, setAvailableDefaultModels] = useState<string[]>([]);
   const [savedAssignment, setSavedAssignment] = useState<{ model: string; providerId: number | null } | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsError, setModelsError] = useState("");
@@ -140,7 +141,7 @@ export default function AgentEditorPage() {
   ].filter(Boolean).join("&")}`;
   const safeInstructions = typeof formData.instructions === "string" ? formData.instructions : "";
   const unchangedModel = savedAssignment !== null && savedAssignment.model === formData.model.trim() && savedAssignment.providerId === formData.llm_provider_id;
-  const validModel = formData.llm_provider_id !== null || unchangedModel || (!fetchingModels && !modelsError && availableModels.includes(formData.model));
+  const validModel = formData.llm_provider_id !== null || unchangedModel || (!fetchingModels && !modelsError && availableDefaultModels.includes(formData.model.trim()));
 
   const getCapabilityDisplayName = (tool: Tool): string => {
     if ((tool.type || "") === "gemini_file_search" || (tool.type || "") === "okf_knowledge_graph") {
@@ -173,12 +174,13 @@ export default function AgentEditorPage() {
       .join(" ");
   };
 
-  const fetchModels = useCallback(async (providerId: number | null | undefined, currentModel = "", applyDefault = false) => {
+  const fetchModels = useCallback(async (providerId: number | null | undefined, currentModel = "", applyDefault = false, savedModel = false) => {
     const requestId = ++modelRequestId.current;
     setModelsError("");
     const editVersion = modelEditVersion.current;
-    setCustomModel(false);
+    if (providerId !== null) setCustomModel(false);
     setAvailableModels([]);
+    setAvailableDefaultModels([]);
     setFetchingModels(providerId !== undefined);
     if (providerId === undefined) return;
 
@@ -192,8 +194,9 @@ export default function AgentEditorPage() {
         const defaults = parseDefaultChatModels(await response.json());
         if (requestId !== modelRequestId.current) return;
         setAvailableModels(defaults.models);
+        setAvailableDefaultModels(defaults.available_models);
         if (editVersion === modelEditVersion.current) {
-          setCustomModel(false);
+          setCustomModel(previous => previous || (!!currentModel && !defaults.models.includes(currentModel) && (defaults.available_models.includes(currentModel.trim()) || !savedModel)));
           if (isNew && applyDefault && !currentModel && defaults.default_model) {
             setFormData((previous) => previous.llm_provider_id === null && !previous.model ?
               { ...previous, model: defaults.default_model ?? "" } : previous);
@@ -432,7 +435,7 @@ export default function AgentEditorPage() {
         llm_provider_id: providerId
       });
 
-      fetchModels(providerId, typeof data.model === "string" ? data.model.trim() : "");
+      fetchModels(providerId, typeof data.model === "string" ? data.model.trim() : "", false, true);
     } catch (error) {
       console.error("Failed to fetch agent:", error);
     } finally {
@@ -586,6 +589,7 @@ export default function AgentEditorPage() {
     });
 
     modelEditVersion.current += 1;
+    setCustomModel(false);
     fetchModels(finalProviderId, "", true);
   };
 
@@ -733,10 +737,10 @@ export default function AgentEditorPage() {
               </label>
               <select
                 id="agent-model"
-                value={formData.llm_provider_id === null ? unchangedModel || availableModels.includes(formData.model) ? formData.model : "" : customModel ? CUSTOM_MODEL : formData.model}
+                value={customModel ? CUSTOM_MODEL : formData.llm_provider_id === null ? unchangedModel || availableModels.includes(formData.model) ? formData.model : "" : formData.model}
                 onChange={(e) => {
                   modelEditVersion.current += 1;
-                  const custom = formData.llm_provider_id !== null && e.target.value === CUSTOM_MODEL;
+                  const custom = e.target.value === CUSTOM_MODEL;
                   setCustomModel(custom);
                   setFormData({ ...formData, model: custom ? "" : e.target.value });
                 }}
@@ -755,9 +759,9 @@ export default function AgentEditorPage() {
                 {!customModel && !availableModels.includes(formData.model) && formData.model && (formData.llm_provider_id !== null || unchangedModel) && (
                   <option value={formData.model} disabled={formData.llm_provider_id === null}>{formData.model} (Current)</option>
                 )}
-                {formData.llm_provider_id !== null && <option value={CUSTOM_MODEL}>+ Enter model ID…</option>}
+                <option value={CUSTOM_MODEL}>{formData.llm_provider_id === null ? "ระบุโมเดลอื่น…" : "+ Enter model ID…"}</option>
               </select>
-              {formData.llm_provider_id !== null && customModel && (
+              {customModel && (
                 <div className="mt-3">
                   <label htmlFor="custom-model-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Model ID</label>
                   <input
@@ -766,13 +770,16 @@ export default function AgentEditorPage() {
                     required
                     pattern={".*\\S.*"}
                     value={formData.model}
+                    aria-invalid={formData.llm_provider_id === null && !!formData.model.trim() && !fetchingModels && !modelsError && !validModel}
+                    aria-describedby={formData.llm_provider_id === null && formData.model.trim() && !fetchingModels && !modelsError && !validModel ? "custom-model-error" : undefined}
                     onChange={(e) => { modelEditVersion.current += 1; setFormData({ ...formData, model: e.target.value }); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
                   />
+                  {formData.llm_provider_id === null && formData.model.trim() && !fetchingModels && !modelsError && !validModel && <p id="custom-model-error" role="alert" className="mt-1 text-xs text-red-700">ไม่พบ Model ID หรือโมเดลนี้ไม่อนุญาตสำหรับแชตบอต</p>}
                 </div>
               )}
-              {modelsError && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{modelsError}{formData.llm_provider_id === null && <button type="button" onClick={() => void fetchModels(null, formData.model)} className="ml-2 underline">Retry</button>}</p>}
-              {formData.llm_provider_id === null && !fetchingModels && !modelsError && availableModels.length === 0 && <p role="status" className="mt-1 text-xs text-gray-500">No suitable chatbot models are available.</p>}
+              {modelsError && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{modelsError}{formData.llm_provider_id === null && <button type="button" onClick={() => void fetchModels(null, formData.model, false, unchangedModel)} className="ml-2 underline">Retry</button>}</p>}
+              {formData.llm_provider_id === null && !fetchingModels && !modelsError && availableDefaultModels.length === 0 && <p role="status" className="mt-1 text-xs text-gray-500">No suitable chatbot models are available.</p>}
             </div>
 
             <div>

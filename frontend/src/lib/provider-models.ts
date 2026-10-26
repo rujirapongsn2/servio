@@ -28,16 +28,21 @@ export function parseModelIds(data: unknown, registered: boolean): string[] {
 
 export interface DefaultChatModelCatalog {
   models: string[];
+  available_models: string[];
   default_model: string | null;
 }
 
 export function parseDefaultChatModels(value: unknown): DefaultChatModelCatalog {
   if (typeof value !== "object" || value === null || !("models" in value) || !Array.isArray(value.models) ||
     !value.models.every((item: unknown) => typeof item === "string" && !!item.trim()) ||
+    !("available_models" in value) || !Array.isArray(value.available_models) ||
+    !value.available_models.every((item: unknown) => typeof item === "string" && !!item.trim()) ||
     !("default_model" in value) || (value.default_model !== null && typeof value.default_model !== "string")) {
     throw new Error("Invalid chatbot model list");
   }
   const models = Array.from(new Set(value.models.map((item: string) => item.trim())));
+  const available_models = Array.from(new Set(value.available_models.map((item: string) => item.trim())));
+  if (!models.every(model => available_models.includes(model))) throw new Error("Invalid recommended chatbot models");
   if (value.default_model !== null && !models.includes(value.default_model)) throw new Error("Invalid default chatbot model");
-  return { models, default_model: value.default_model };
+  return { models, available_models, default_model: value.default_model };
 }

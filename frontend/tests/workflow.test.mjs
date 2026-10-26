@@ -101,7 +101,7 @@ function agentSetup(t, { isNew = false, autoSelect = true } = {}) {
 function providerSelect(renderer) { return renderer.root.findAllByType('select')[0]; }
 function agentFetch(delays = {}) {
   return async (url, options) => {
-    if (url === '/api/admin/default-chat-models') return delays.defaults?.() ?? response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna', 'gpt-5.4-mini'] });
+    if (url === '/api/admin/default-chat-models') return delays.defaults?.() ?? response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna', 'gpt-5.4-mini'], available_models: ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-4.1-mini'] });
     if (options?.method === 'PUT' || options?.method === 'POST') return response({ message: 'Agent updated' });
     if (url.endsWith('/registered-models')) return delays.registered?.(url) ?? response([]);
     if (url.endsWith('/models')) return delays.models?.(url) ?? response([{ id: url.includes('/99/') ? 'new-model' : 'old-model' }]);
@@ -279,7 +279,7 @@ test('default provider permits only catalog models and saves an eligible selecti
   const saves = captureSaves(agentFetch());
   const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
-  assert.ok(!modelIds(renderer).includes('__custom_model__'));
+  assert.ok(modelIds(renderer).includes('__custom_model__'));
   assert.equal(renderer.root.findAllByProps({ id: 'custom-model-id' }).length, 0);
   await selectValue(modelSelect(renderer), 'mistyped-model');
   await submitAgent(renderer);
@@ -355,7 +355,7 @@ test('new legacy Agent chooses only an eligible default from the filtered catalo
   const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
   assert.equal(modelSelect(renderer).props.value, 'gpt-6-luna');
-  assert.deepEqual(modelIds(renderer), ['', 'gpt-6-luna', 'gpt-5.4-mini']);
+  assert.deepEqual(modelIds(renderer), ['', 'gpt-6-luna', 'gpt-5.4-mini', '__custom_model__']);
   await submitAgent(renderer);
   assert.equal(saves.at(-1).model, 'gpt-6-luna');
 });
@@ -370,7 +370,7 @@ test('late default catalog cannot replace a custom provider or its typed ID', as
   await selectValue(providerSelect(renderer), '1');
   await selectValue(modelSelect(renderer), '__custom_model__');
   await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), 'my/model');
-  await act(async () => pending.resolve(response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna'] })));
+  await act(async () => pending.resolve(response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna'], available_models: ['gpt-6-luna'] })));
   assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props.value, 'my/model');
   assert.ok(!modelIds(renderer).includes('gpt-6-luna'));
 });
@@ -378,12 +378,12 @@ test('late default catalog cannot replace a custom provider or its typed ID', as
 test('default catalog outage blocks new default assignments and recovers through Retry', async (t) => {
   const env = agentSetup(t, { isNew: true, autoSelect: false });
   let offline = true;
-  const saves = captureSaves(agentFetch({ defaults: () => offline ? { ok: false } : response({ default_model: null, models: ['gpt-6-luna'] }) }));
+  const saves = captureSaves(agentFetch({ defaults: () => offline ? { ok: false } : response({ default_model: null, models: ['gpt-6-luna'], available_models: ['gpt-6-luna'] }) }));
   const renderer = await env.mount(env.Agent);
   await selectValue(providerSelect(renderer), 'default');
   assert.match(text(renderer.root.findByProps({ role: 'status' })), /Unable to load OpenAI models/);
   assert.equal(modelSelect(renderer).props.disabled, true);
-  assert.ok(!modelIds(renderer).includes('__custom_model__'));
+  assert.ok(modelIds(renderer).includes('__custom_model__'));
   await submitAgent(renderer);
   assert.equal(saves.length, 0);
   offline = false;
@@ -407,4 +407,42 @@ test('saved legacy default model remains visible and unrelated edits save during
   await submitAgent(renderer);
   assert.equal(saves.at(-1).model, 'gpt-6-sol');
   assert.equal(saves.at(-1).name, 'Renamed legacy');
+});
+
+test('legacy OpenAI manual entry validates catalog membership before saving', async t => {
+  const env = agentSetup(t, { isNew: true, autoSelect: false });
+  const saves = captureSaves(agentFetch()); const renderer = await env.mount(env.Agent);
+  await selectValue(providerSelect(renderer), 'default');
+  await selectValue(modelSelect(renderer), '__custom_model__');
+  assert.equal(modelSelect(renderer).props.value, '__custom_model__');
+  for (const model of ['mistyped', 'gpt-6-sol', 'gpt-6-astra', 'gpt-audio-mini']) {
+    await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), model);
+    await submitAgent(renderer);
+    assert.equal(saves.length, 0);
+    assert.equal(renderer.root.findByProps({ id: 'custom-model-id' }).props['aria-invalid'], true);
+  }
+  await selectValue(renderer.root.findByProps({ id: 'custom-model-id' }), ' gpt-4.1-mini ');
+  await submitAgent(renderer);
+  assert.equal(saves.at(-1).model, 'gpt-4.1-mini');
+});
+
+test('legacy restored manual OpenAI draft remains editable through catalog outage and retry', async t => {
+  const env = agentSetup(t, { isNew: true, autoSelect: false });
+  env.storage.set('agent-draft:draft1', JSON.stringify({ name: 'Draft', instructions: 'Helpful', model: 'gpt-4.1-mini', llm_provider_id: null, tool_ids: [], handoff_ids: [] }));
+  let offline = true;
+  const saves = captureSaves(agentFetch({ defaults: () => offline ? {ok:false} : response({models: [], available_models: ['gpt-4.1-mini'], default_model:null}) }));
+  const renderer = await env.mount(env.Agent);
+  await submitAgent(renderer); assert.equal(saves.length, 0);
+  offline = false; await click(renderer, 'Retry');
+  assert.equal(renderer.root.findByProps({id:'custom-model-id'}).props.value, 'gpt-4.1-mini');
+  assert.ok(!JSON.stringify(renderer.toJSON()).includes('No suitable chatbot models'));
+  await submitAgent(renderer); assert.equal(saves.at(-1).model, 'gpt-4.1-mini');
+});
+
+test('saved manual legacy OpenAI model opens its editable Model ID field', async t => {
+  const env = agentSetup(t, {autoSelect:false}); const fetcher = agentFetch();
+  global.fetch = (url, options) => url === '/api/admin/agents/7?team_agent_id=1' && !options?.method ? response({...agentData,model:'gpt-4.1-mini',llm_provider:null}) : fetcher(url,options);
+  const renderer = await env.mount(env.Agent);
+  assert.equal(renderer.root.findByProps({id:'custom-model-id'}).props.value,'gpt-4.1-mini');
+  assert.equal(modelSelect(renderer).props.value,'__custom_model__');
 });

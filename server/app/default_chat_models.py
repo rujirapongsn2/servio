@@ -1,6 +1,7 @@
 """Selectable default-provider models for customer-service chatbots."""
 import hashlib
 import os
+import re
 import time
 from datetime import date
 from typing import Any
@@ -11,6 +12,8 @@ from openai import AsyncOpenAI
 from app import model_settings
 
 CHAT_MODELS = ("gpt-6-luna", "gpt-5.6-luna", "gpt-5.4-mini")
+CHAT_MODEL_ID = re.compile(r"gpt-\d+(?:\.\d+)?o?(?:-(?:luna|terra|mini|nano))?(?:-\d{4}-\d{2}-\d{2})?", re.IGNORECASE)
+BLOCKED_MODEL_TIER = re.compile(r"(?:^|[-_/.])(?:sol|astra)(?:$|[-_/.])", re.IGNORECASE)
 CACHE_SECONDS = 60
 _cache: tuple[str, float, tuple[str, ...]] | None = None
 
@@ -32,20 +35,22 @@ async def available_default_chat_models() -> dict:
     fingerprint = hashlib.sha256("\0".join((base_url or "", key, os.getenv("OPENAI_ORG_ID", ""), os.getenv("OPENAI_PROJECT_ID", ""))).encode()).hexdigest()
     now = time.monotonic()
     if _cache and _cache[0] == fingerprint and _cache[1] > now:
-        models = list(_cache[2])
+        available_models = list(_cache[2])
     else:
         if not key:
             raise HTTPException(503, "OpenAI model list is unavailable. Check the default provider configuration and retry.")
         try:
             async with AsyncOpenAI(api_key=key, base_url=base_url, timeout=8, max_retries=0) as client:
                 response = await client.models.list()
-            available = {model.id for model in response.data if _active(model)}
-            models = [model for model in CHAT_MODELS if model in available]
+            available_models = sorted({model.id for model in response.data
+                                       if _active(model) and CHAT_MODEL_ID.fullmatch(model.id)
+                                       and not BLOCKED_MODEL_TIER.search(model.id)})
         except Exception:
             raise HTTPException(503, "OpenAI model list is unavailable. Please retry.") from None
-        _cache = (fingerprint, time.monotonic() + CACHE_SECONDS, tuple(models))
+        _cache = (fingerprint, time.monotonic() + CACHE_SECONDS, tuple(available_models))
+    models = [model for model in CHAT_MODELS if model in available_models]
     default = model_settings.default_agent_model()
-    return {"models": models, "default_model": default if default in models else None}
+    return {"models": models, "available_models": available_models, "default_model": default if default in models else None}
 
 
 def previous_assignment(agent: dict | None) -> tuple[str | None, int | None]:
@@ -59,8 +64,8 @@ async def validate_selection(model: str, provider_id: int | None, previous: dict
     selected = model.strip()
     if provider_id is not None or previous_assignment(previous) == (selected, provider_id):
         return
-    if selected not in CHAT_MODELS:
+    if BLOCKED_MODEL_TIER.search(selected) or not CHAT_MODEL_ID.fullmatch(selected):
         raise HTTPException(400, "Select an available chatbot model from the OpenAI model list.")
     catalog = await available_default_chat_models()
-    if selected not in catalog["models"]:
+    if selected not in catalog["available_models"]:
         raise HTTPException(400, "This OpenAI chatbot model is no longer available. Reload the model list.")

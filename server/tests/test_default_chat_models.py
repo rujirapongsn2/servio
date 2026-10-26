@@ -37,7 +37,7 @@ def fake_models(monkeypatch, ids, calls=None, failure=False):
 def test_real_list_intersection_excludes_specialized_high_tier_and_expired_models(monkeypatch):
     fake_models(monkeypatch, ["gpt-6-astra", "gpt-6-sol", "gpt-5.4-mini", "gpt-6-luna", "gpt-6-luna", "gpt-image-mini", "gpt-realtime-mini", "gpt-4o-mini", "gpt-5.4-nano", SimpleNamespace(id="gpt-5.6-luna", shutdown_date=str(date.today() - timedelta(days=1)))])
     monkeypatch.setenv("DEFAULT_AGENT_MODEL", "gpt-6-sol")
-    assert asyncio.run(catalog.available_default_chat_models()) == {"models": ["gpt-6-luna", "gpt-5.4-mini"], "default_model": None}
+    assert asyncio.run(catalog.available_default_chat_models()) == {"models": ["gpt-6-luna", "gpt-5.4-mini"], "available_models": ["gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-6-luna"], "default_model": None}
     monkeypatch.setenv("DEFAULT_AGENT_MODEL", "gpt-6-luna")
     assert asyncio.run(catalog.available_default_chat_models())["default_model"] == "gpt-6-luna"
 
@@ -113,3 +113,68 @@ def test_updates_and_draft_preview_cannot_bypass_selection_policy(workspace, mon
     response = client.post("/api/admin/team-agents/1/workflow/previews", json={"drafts": [{"agent_id": 1, "draft": {**draft, "model": "gpt-6-sol"}}]}, headers=headers())
     assert response.status_code == 400, response.text
     assert client.put("/api/admin/team-agents/1/workflow/agents/1", json=body, headers=headers()).status_code == 200
+
+
+def test_manual_chatbot_model_from_live_list_can_be_saved(workspace, monkeypatch):
+    client, get_db = workspace
+    fake_models(monkeypatch, ["gpt-6-luna", "gpt-4.1-mini"])
+    body = agent_body(model=" gpt-4.1-mini ", llm_provider_id=None)
+    response = client.post("/api/admin/team-agents/1/workflow/agents", json=body, headers=headers())
+    assert response.status_code == 200, response.text
+    saved = client.get(f"/api/admin/agents/{response.json()['agent_id']}?team_agent_id=1", headers=headers()).json()
+    assert saved["model"] == "gpt-4.1-mini"
+
+
+@pytest.mark.parametrize("model", ["gpt-6-sol", "gpt-6-SOL-2026-01-01", "openai/gpt-6-astra", "GPT-6-ASTRA", "gpt-6-astra-mini", "gpt-image-1-mini", "gpt-realtime-mini", "gpt-4o-mini-transcribe", "gpt-5.4-mini-search", "gpt-5.1-codex-mini", "text-embedding-3-small", "gpt-6-pro", "gpt-6-mini-deep-research"])
+def test_manual_entry_rejects_forbidden_ids_even_when_upstream_lists_them(monkeypatch, model):
+    fake_models(monkeypatch, [model])
+    assert asyncio.run(catalog.available_default_chat_models())["available_models"] == []
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(catalog.validate_selection(model, None))
+    assert error.value.status_code == 400
+
+
+def test_manual_snapshots_expiration_and_unknown_ids(monkeypatch):
+    fake_models(monkeypatch, ["gpt-4.1-mini-2025-04-14", "gpt-4o-mini", "gpt-7.1-luna", SimpleNamespace(id="gpt-5-nano", shutdown_date=str(date.today()))])
+    result = asyncio.run(catalog.available_default_chat_models())
+    assert result["models"] == []
+    assert result["available_models"] == ["gpt-4.1-mini-2025-04-14", "gpt-4o-mini", "gpt-7.1-luna"]
+    for model in result["available_models"]:
+        asyncio.run(catalog.validate_selection(model, None))
+    for model in ["gpt-5-nano", "gpt-9-mini"]:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(catalog.validate_selection(model, None))
+        assert error.value.status_code == 400
+
+
+def test_manual_model_is_validated_across_legacy_save_workflow_update_and_preview(workspace, monkeypatch):
+    from app import workflow_preview
+    client, get_db = workspace
+    fake_models(monkeypatch, ["gpt-4.1-mini", "gpt-4o-mini"])
+    legacy = dict(name="Manual", instructions="Helpful", model=" gpt-4.1-mini ", llm_provider_id=None, tool_ids=[], handoff_agent_ids=[])
+    created = client.post("/api/admin/agents?team_agent_id=1", json=legacy, headers=headers())
+    assert created.status_code == 200, created.text
+    assert client.put("/api/admin/agents/1?team_agent_id=1", json=legacy, headers=headers()).status_code == 200
+    saved = client.get("/api/admin/team-agents/1/workflow", headers=headers()).json()["agents"][0]
+    body = dict(name="Manual", instructions="Helpful", model="gpt-4o-mini", llm_provider_id=None, tool_ids=[], handoff_agent_ids=[], is_fallback=True, expected_updated_at=saved["updated_at"], expected_fallback_agent_id=1)
+    assert client.put("/api/admin/team-agents/1/workflow/agents/1", json=body, headers=headers()).status_code == 200
+    draft = {key: body[key] for key in ("name", "instructions", "model", "llm_provider_id", "tool_ids", "handoff_agent_ids", "is_fallback")}
+    draft["model"] = "gpt-4.1-mini"
+    response = client.post("/api/admin/team-agents/1/workflow/previews", json={"target_agent_id":1,"drafts":[{"agent_id":1,"draft":draft}]}, headers=headers())
+    assert response.status_code == 200, response.text
+    workflow_preview._sessions.clear()
+    for model in ["gpt-9-mini", "gpt-6-sol", "GPT-6-ASTRA"]:
+        response = client.post("/api/admin/team-agents/1/workflow/previews", json={"drafts":[{"agent_id":1,"draft":{**draft,"model":model}}]}, headers=headers())
+        assert response.status_code == 400, response.text
+
+
+@pytest.mark.parametrize("model", ["gpt-4.1", "gpt-4o", "gpt-4o-2024-08-06", "gpt-5.6-terra", "gpt-5.6-terra-2026-01-01"])
+def test_manual_general_chat_models_require_exact_live_membership(monkeypatch, model):
+    fake_models(monkeypatch, [model])
+    result = asyncio.run(catalog.available_default_chat_models())
+    assert result["models"] == []
+    assert result["available_models"] == [model]
+    asyncio.run(catalog.validate_selection(" " + model + " ", None))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(catalog.validate_selection("gpt-9.9", None))
+    assert error.value.status_code == 400

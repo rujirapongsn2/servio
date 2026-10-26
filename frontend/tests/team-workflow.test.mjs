@@ -65,7 +65,7 @@ function setup(t, saved = snapshot()) {
   global.window = { addEventListener() {}, removeEventListener() {}, confirm: () => true, location: { search: '', reload() {} } };
   global.document = { addEventListener() {}, removeEventListener() {}, getElementById: () => null };
   global.fetch = async (url, init) => {
-    if (url.endsWith('/default-chat-models')) return response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna', 'gpt-5.4-mini'] });
+    if (url.endsWith('/default-chat-models')) return response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna', 'gpt-5.4-mini'], available_models: ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-4.1-mini'] });
     if (url.endsWith('/auth/me')) return response({is_super_admin: true});
     if (url.endsWith('/models')) return response([{ id: 'discovered-model' }]);
     if (url.endsWith('/registered-models')) return response([{ model_id: 'registered-model', enabled: true, capabilities: ['text'] }]);
@@ -221,7 +221,7 @@ test('stale restored drafts require discard before they can be saved', async (t)
     is_fallback: true, expected_updated_at: 'old-revision', expected_fallback_agent_id: 1,
   } }]));
   const renderer = await env.mount();
-  assert.match(text(renderer.root.findByProps({ role: 'alert' })), /older version/);
+  assert.ok(renderer.root.findAllByProps({ role: 'alert' }).some(node => /older version/.test(text(node))));
   assert.equal(button(renderer, 'Save agent').props.disabled, true);
   await act(async () => button(renderer, 'Discard').props.onClick());
   assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Support agent');
@@ -688,7 +688,7 @@ test('Workflow new agents require catalog selection and preserve restored model 
   const env = setup(t, data); let renderer = await env.mount();
   await act(async () => button(renderer, 'Create agent').props.onClick());
   assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, '');
-  assert.deepEqual(renderer.root.findByProps({ id: 'workflow-model' }).findAllByType('option').map(node => node.props.value), ['', 'gpt-6-luna', 'gpt-5.4-mini']);
+  assert.deepEqual(renderer.root.findByProps({ id: 'workflow-model' }).findAllByType('option').map(node => node.props.value), ['', 'gpt-6-luna', 'gpt-5.4-mini', '__custom_model__']);
   await change(renderer, 'workflow-model', 'gpt-5.4-mini');
   await act(async () => renderer.unmount());
   data.default_agent_model = 'changed-server-default';
@@ -723,7 +723,7 @@ test('late Workflow defaults cannot replace options for a different provider', a
   const renderer = await env.mount();
   await change(renderer, 'workflow-provider', '1');
   await change(renderer, 'workflow-model', 'typed/custom-model');
-  await act(async () => finish(response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna'] })));
+  await act(async () => finish(response({ default_model: 'gpt-6-luna', models: ['gpt-6-luna'], available_models: ['gpt-6-luna'] })));
   const options = renderer.root.findByProps({ id: 'workflow-models' }).findAllByType('option').map(node => node.props.value);
   assert.deepEqual(options.sort(), ['discovered-model', 'registered-model']);
   assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, 'typed/custom-model');
@@ -943,8 +943,8 @@ test('saved Workspace status changes language without another workflow fetch', a
 
 test('default catalog parser does not inject runtime defaults or accept invalid defaults', () => {
   const parse = modules()('src/lib/provider-models.ts').parseDefaultChatModels;
-  assert.deepEqual(parse({ models: ['gpt-6-luna', 'gpt-6-luna'], default_model: null }), { models: ['gpt-6-luna'], default_model: null });
-  for (const invalid of [null, [], { models: [1], default_model: null }, { models: ['gpt-6-luna'], default_model: 'gpt-6-sol' }]) assert.throws(() => parse(invalid));
+  assert.deepEqual(parse({ models: ['gpt-6-luna', 'gpt-6-luna'], available_models: ['gpt-6-luna', 'gpt-4.1-mini'], default_model: null }), { models: ['gpt-6-luna'], available_models: ['gpt-6-luna', 'gpt-4.1-mini'], default_model: null });
+  for (const invalid of [null, [], { models: [1], default_model: null }, { models: ['gpt-6-luna'], available_models: ['gpt-6-luna'], default_model: 'gpt-6-sol' }]) assert.throws(() => parse(invalid));
 });
 
 test('default selection never silently replaces saved high-tier models and provider switch clears the choice', async t => {
@@ -953,7 +953,7 @@ test('default selection never silently replaces saved high-tier models and provi
   const select = renderer.root.findByProps({ id: 'workflow-model' });
   assert.equal(select.type, 'select');
   const options = select.findAllByType('option');
-  assert.deepEqual(options.filter(node => !node.props.disabled).map(node => node.props.value), ['', 'gpt-6-luna', 'gpt-5.4-mini']);
+  assert.deepEqual(options.filter(node => !node.props.disabled).map(node => node.props.value), ['', 'gpt-6-luna', 'gpt-5.4-mini', '__custom_model__']);
   assert.equal(options.find(node => node.props.value === 'gpt-6-sol').props.disabled, true);
   assert.equal(select.props.value, 'gpt-6-sol');
   await change(renderer, 'workflow-provider', '1');
@@ -962,4 +962,57 @@ test('default selection never silently replaces saved high-tier models and provi
   await change(renderer, 'workflow-provider', 'default');
   assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, '');
   assert.equal(button(renderer, 'Save agent').props.disabled, true);
+});
+
+test('Workflow manual OpenAI ID validates live membership, trims save and returns to recommended choices', async t => {
+  const env = setup(t); const renderer = await env.mount();
+  await change(renderer, 'workflow-model', '__custom_model__');
+  assert.equal(renderer.root.findByProps({ id: 'workflow-model' }).props.value, '__custom_model__');
+  assert.equal(button(renderer, 'Save agent').props.disabled, true);
+  for (const model of ['mistyped', 'gpt-6-sol', 'gpt-6-astra', 'gpt-image-mini']) {
+    await change(renderer, 'workflow-custom-model', model);
+    assert.equal(button(renderer, 'Save agent').props.disabled, true);
+    assert.equal(renderer.root.findByProps({ id: 'workflow-custom-model' }).props['aria-invalid'], true);
+    await save(renderer);
+  }
+  assert.equal(env.saves.length, 0);
+  await change(renderer, 'workflow-custom-model', ' gpt-4.1-mini ');
+  assert.equal(button(renderer, 'Save agent').props.disabled, false);
+  await save(renderer);
+  assert.equal(env.saves.at(-1).model, 'gpt-4.1-mini');
+  await change(renderer, 'workflow-model', 'gpt-6-luna');
+  assert.equal(renderer.root.findAllByProps({ id: 'workflow-custom-model' }).length, 0);
+});
+
+test('Workflow manual ID and mode survive catalog retry and restored drafts', async t => {
+  const env = setup(t); const originalFetch = global.fetch; let offline = false;
+  global.fetch = (url, init) => url.endsWith('/default-chat-models') && offline ? Promise.resolve(response({}, 503)) : originalFetch(url, init);
+  let renderer = await env.mount();
+  await change(renderer, 'workflow-model', '__custom_model__');
+  await change(renderer, 'workflow-custom-model', 'gpt-4.1-mini');
+  await act(async () => renderer.unmount());
+  offline = true; renderer = await env.mount();
+  assert.equal(button(renderer, 'Save agent').props.disabled, true);
+  offline = false;
+  await act(async () => button(renderer, 'Retry').props.onClick());
+  assert.equal(renderer.root.findByProps({ id: 'workflow-custom-model' }).props.value, 'gpt-4.1-mini');
+  assert.equal(button(renderer, 'Save agent').props.disabled, false);
+});
+
+test('Workflow manual option remains usable without recommended aliases', async t => {
+  const env = setup(t); const originalFetch = global.fetch;
+  global.fetch = (url, init) => url.endsWith('/default-chat-models') ? Promise.resolve(response({models: [], available_models: ['gpt-4.1-mini'], default_model: null})) : originalFetch(url, init);
+  const renderer = await env.mount();
+  assert.ok(!JSON.stringify(renderer.toJSON()).includes('No suitable chatbot models'));
+  await change(renderer, 'workflow-model', '__custom_model__');
+  await change(renderer, 'workflow-custom-model', 'gpt-4.1-mini');
+  await save(renderer);
+  assert.equal(env.saves.at(-1).model, 'gpt-4.1-mini');
+});
+
+test('saved manual Workflow model opens its editable Model ID field', async t => {
+  const data = snapshot(); data.agents[0].model = 'gpt-4.1-mini';
+  const env = setup(t, data); const renderer = await env.mount();
+  assert.equal(renderer.root.findByProps({id:'workflow-custom-model'}).props.value, 'gpt-4.1-mini');
+  assert.equal(renderer.root.findByProps({id:'workflow-model'}).props.value, '__custom_model__');
 });

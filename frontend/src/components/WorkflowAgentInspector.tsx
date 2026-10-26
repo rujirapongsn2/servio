@@ -14,6 +14,7 @@ const sections = [
   { id: "knowledge", icon: BookOpen },
   { id: "handoffs", icon: GitBranch },
 ] satisfies { id: Section; icon: typeof Bot }[];
+const CUSTOM_MODEL = "__custom_model__";
 const inputClass = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-slate-50";
 
 export default function WorkflowAgentInspector({ workflow, editor, dirty, saving, locked = false, onChange, onSave, onDiscard, onCreateTool, onCreateKnowledge, onTest, onDelete, onCreateProvider }: {
@@ -36,12 +37,15 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
   const draft = editor.draft;
   const [section, setSection] = useState<Section>("agent");
   const [expanded, setExpanded] = useState(false);
-  const [catalog, setCatalog] = useState<{ providerId: number | null; status: "loading" | "unavailable" | "idle"; models: string[] }>({ providerId: draft.llm_provider_id, status: "loading", models: [] });
+  const [catalog, setCatalog] = useState<{ providerId: number | null; status: "loading" | "unavailable" | "idle"; models: string[]; availableModels: string[] }>({ providerId: draft.llm_provider_id, status: "loading", models: [], availableModels: [] });
   const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [manualModel, setManualModel] = useState(false);
   const models = catalog.providerId === draft.llm_provider_id ? catalog.models : [];
+  const availableModels = catalog.providerId === draft.llm_provider_id ? catalog.availableModels : [];
   const modelStatus = catalog.providerId === draft.llm_provider_id ? catalog.status : "loading";
   const unchangedModel = agent !== null && agent.model === draft.model.trim() && agent.llm_provider_id === draft.llm_provider_id;
-  const validModel = draft.llm_provider_id !== null || unchangedModel || (modelStatus === "idle" && models.includes(draft.model));
+  const validModel = draft.llm_provider_id !== null || unchangedModel || (modelStatus === "idle" && availableModels.includes(draft.model.trim()));
+  const customDefaultModel = manualModel || (modelStatus === "idle" && !!draft.model && !models.includes(draft.model) && (availableModels.includes(draft.model.trim()) || !unchangedModel));
   const [optimizing, setOptimizing] = useState(false);
   const [optimization, setOptimization] = useState<{ original: string; result: string } | null>(null);
   const [optimizeError, setOptimizeError] = useState("");
@@ -63,7 +67,7 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
   useEffect(() => {
     const controller = new AbortController();
     const providerId = draft.llm_provider_id;
-    setCatalog({ providerId, status: "loading", models: [] });
+    setCatalog({ providerId, status: "loading", models: [], availableModels: [] });
     const load = async (endpoint: string, registered: boolean) => {
       const data = await workflowRequest(`/llm-providers/${draft.llm_provider_id}/${endpoint}`, { signal: controller.signal });
       const ids = parseModelIds(data, registered);
@@ -73,7 +77,7 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
     const requests = draft.llm_provider_id === null ? [
       workflowRequest("/default-chat-models", { signal: controller.signal }).then((data) => {
         const result = parseDefaultChatModels(data);
-        if (!controller.signal.aborted) setCatalog({ providerId, status: "loading", models: result.models });
+        if (!controller.signal.aborted) setCatalog({ providerId, status: "loading", models: result.models, availableModels: result.available_models });
       }),
     ] : [load("models", false), load("registered-models", true)];
     void Promise.allSettled(requests).then((results) => {
@@ -145,20 +149,27 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
               <input id="workflow-agent-name" required maxLength={255} pattern={".*\\S.*"} value={draft.name} data-admin-write="true" onChange={(event) => onChange({ ...draft, name: event.target.value })} className={inputClass} /></div>
             <div><div className="mb-1 flex items-center justify-between"><label htmlFor="workflow-provider" className="block text-sm font-medium">{copy.provider}</label>{onCreateProvider && <button type="button" onClick={onCreateProvider} data-admin-write="true" aria-label={copy.createProvider} title={copy.createProvider} className="rounded p-1 text-sky-700"><Plus className="h-4 w-4" /></button>}</div>
               <select id="workflow-provider" value={draft.llm_provider_id ?? "default"}
-                data-admin-write="true" onChange={(event) => onChange({ ...draft, llm_provider_id: event.target.value === "default" ? null : Number(event.target.value), model: "" })} className={inputClass}>
+                data-admin-write="true" onChange={(event) => { setManualModel(false); onChange({ ...draft, llm_provider_id: event.target.value === "default" ? null : Number(event.target.value), model: "" }); }} className={inputClass}>
                 <option value="default">{copy.defaultProvider}</option>
                 {workflow.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
                 {draft.llm_provider_id !== null && !workflow.providers.some((provider) => provider.id === draft.llm_provider_id) && <option value={draft.llm_provider_id}>{copy.currentProvider}</option>}
               </select></div>
             <div><label htmlFor="workflow-model" className="mb-1 block text-sm font-medium">{copy.model}</label>
               {draft.llm_provider_id === null ? <>
-                <select id="workflow-model" required value={unchangedModel || models.includes(draft.model) ? draft.model : ""} disabled={modelStatus !== "idle"} data-admin-write="true"
-                  onChange={(event) => onChange({ ...draft, model: event.target.value })} className={inputClass}>
+                <select id="workflow-model" required value={customDefaultModel ? CUSTOM_MODEL : unchangedModel || models.includes(draft.model) ? draft.model : ""} disabled={modelStatus !== "idle"} data-admin-write="true"
+                  onChange={(event) => { const custom = event.target.value === CUSTOM_MODEL; setManualModel(custom); onChange({ ...draft, model: custom ? "" : event.target.value }); }} className={inputClass}>
                   <option value="">{copy.chooseChatModel}</option>
                   {unchangedModel && draft.model && !models.includes(draft.model) && <option value={draft.model} disabled>{draft.model} ({copy.previousModel})</option>}
                   {models.map((model) => <option key={model} value={model}>{model}</option>)}
+                  <option value={CUSTOM_MODEL}>{copy.otherChatModel}</option>
                 </select>
-                {modelStatus === "idle" && models.length === 0 && <p role="status" className="mt-1 text-xs text-slate-500">{copy.noChatModels}</p>}
+                {customDefaultModel && <div className="mt-2"><label htmlFor="workflow-custom-model" className="mb-1 block text-sm font-medium">{copy.modelId}</label>
+                  <input id="workflow-custom-model" required maxLength={100} value={draft.model} data-admin-write="true" aria-invalid={!!draft.model.trim() && modelStatus === "idle" && !validModel}
+                    aria-describedby={draft.model.trim() && modelStatus === "idle" && !validModel ? "workflow-model-error" : undefined}
+                    onChange={(event) => onChange({ ...draft, model: event.target.value })} className={inputClass} />
+                  {draft.model.trim() && modelStatus === "idle" && !validModel && <p id="workflow-model-error" role="alert" className="mt-1 text-xs text-red-700">{copy.invalidChatModel}</p>}
+                </div>}
+                {modelStatus === "idle" && availableModels.length === 0 && <p role="status" className="mt-1 text-xs text-slate-500">{copy.noChatModels}</p>}
                 {modelStatus === "unavailable" && <div role="status" className="mt-1 flex items-center gap-2 text-xs text-slate-500">{copy.chatModelsUnavailable}<button type="button" onClick={() => setCatalogAttempt((attempt) => attempt + 1)} className="text-sky-700 underline">{copy.retryChatModels}</button></div>}
                 {modelStatus === "loading" && <p role="status" className="mt-1 text-xs text-slate-500">{copy.modelLoading}</p>}
               </> : <>
@@ -199,7 +210,7 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
         {readOnly && section === "agent" && <button type="button" onClick={() => setExpanded(true)} className="mt-2 text-sm text-sky-700">{copy.readFullInstructions}</button>}
       </div>
       {!readOnly && <div className="sticky bottom-0 z-10 flex items-center justify-between gap-2 rounded-b-2xl border-t border-slate-200 bg-white p-4">
-        <button type="button" data-admin-write="true" disabled={!dirty || saving} onClick={onDiscard} className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40">{copy.discard}</button>
+        <button type="button" data-admin-write="true" disabled={!dirty || saving} onClick={() => { setManualModel(false); onDiscard(); }} className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40">{copy.discard}</button>
         <button type="submit" data-admin-write="true" disabled={!dirty || saving || stale || !validModel || !draft.name.trim() || !draft.model.trim() || !draft.instructions.trim()}
           className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-40"><Save className="h-4 w-4" />{saving ? copy.saveAgentProgress : editor.kind === "new" ? copy.createAgent : copy.saveAgent}</button>
       </div>}
