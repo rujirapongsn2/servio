@@ -11,16 +11,37 @@ export type ImageSearchState =
   | { kind: "error"; message: string; retryable: boolean }
   | { kind: "complete"; status: "matched" | "no_match" };
 
+export type ConnectionState =
+  | { kind: "idle" }
+  | { kind: "connecting" }
+  | { kind: "open" }
+  | { kind: "error"; reason: "auth" | "network"; message: string };
+
+/** Map server-side rejection messages to something a customer can act on. */
+export function describeConnectionError(serverMessage: unknown): ConnectionState {
+  const text = typeof serverMessage === "string" ? serverMessage : "";
+  if (/api key|authentication|invalid token|access/i.test(text)) {
+    return { kind: "error", reason: "auth", message: "แชตนี้ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลเว็บไซต์" };
+  }
+  return { kind: "error", reason: "network", message: "เชื่อมต่อกับผู้ช่วยไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง" };
+}
+
 export function useWebsocket({
   url,
   apiKey,
   onNewAudio,
   onAudioDone,
+  enabled = true,
+  inlineErrors = false,
 }: {
   url?: string;
   apiKey?: string;
   onNewAudio?: (audio: Int16Array<ArrayBuffer>) => void;
   onAudioDone?: () => void;
+  /** When false no socket is opened (e.g. the admin theme preview). */
+  enabled?: boolean;
+  /** Report server rejections through `connection` instead of window.alert. */
+  inlineErrors?: boolean;
 } = {}) {
   const defaultWs = getWebsocketBaseUrl();
 
@@ -44,8 +65,17 @@ export function useWebsocket({
   const websocket = useRef<WebSocket | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [voiceResponseEnabled, setVoiceResponseEnabled] = useState(true);
+  const [connection, setConnection] = useState<ConnectionState>({ kind: enabled ? "connecting" : "idle" });
+  const [attempt, setAttempt] = useState(0);
+  const reconnect = () => setAttempt((value) => value + 1);
 
   useEffect(() => {
+    if (!enabled) {
+      setConnection({ kind: "idle" });
+      return;
+    }
+    setConnection({ kind: "connecting" });
+    let rejected = false;
     imageRequest.current = null;
     setImageSearchAvailable(false);
     setImageSearchState({ kind: "idle" });
@@ -60,9 +90,11 @@ export function useWebsocket({
     ws.addEventListener("open", () => {
       if (websocket.current !== ws) return;
       setIsReady(true);
+      setConnection({ kind: "open" });
     });
     ws.addEventListener("close", () => {
       if (websocket.current !== ws) return;
+      if (!rejected) setConnection(describeConnectionError(null));
       setIsReady(false);
       setIsLoading(false);
       if (imageRequest.current) setImageSearchState({ kind: "error", message: "การเชื่อมต่อขัดข้อง กรุณาเชื่อมต่อใหม่", retryable: true });
@@ -70,6 +102,7 @@ export function useWebsocket({
     });
     ws.addEventListener("error", (event) => {
       if (websocket.current !== ws) return;
+      if (!rejected) setConnection(describeConnectionError(null));
       setIsReady(false);
       setIsLoading(false);
       imageRequest.current = null;
@@ -97,7 +130,12 @@ export function useWebsocket({
       }
       if (data.type === "error") {
         console.error("WebSocket Error:", data.message);
-        alert(data.message); // Alert the user
+        if (inlineErrors) {
+          rejected = true;
+          setConnection(describeConnectionError(data.message));
+        } else {
+          alert(data.message); // Alert the user
+        }
         setIsLoading(false);
         return;
       }
@@ -138,7 +176,7 @@ export function useWebsocket({
       ws.close();
       if (websocket.current === ws) websocket.current = null;
     };
-  }, [url, onNewAudio, onAudioDone]);
+  }, [url, onNewAudio, onAudioDone, enabled, inlineErrors, attempt]);
 
   function sendTextMessage(message: string) {
     if (websocket.current?.readyState !== WebSocket.OPEN || isLoading) return;
@@ -237,6 +275,8 @@ export function useWebsocket({
 
   return {
     isReady,
+    connection,
+    reconnect,
     imageSearchAvailable,
     imageSearchState,
     imageComposerEpoch,

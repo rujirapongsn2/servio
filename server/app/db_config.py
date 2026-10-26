@@ -125,6 +125,8 @@ def init_database():
         for col_name, col_type in [
             ("team_agent_id", "INTEGER REFERENCES team_agents(id)"),
             ("channel_type", "VARCHAR(50) DEFAULT 'web_widget'"),
+            # Web Chat/Bubble theme (database/migrations/002_add_api_key_theme.sql)
+            ("theme", "JSON"),
         ]:
             result = conn.execute(text(
                 f"SELECT column_name FROM information_schema.columns "

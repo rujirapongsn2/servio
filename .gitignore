@@ -47,6 +47,7 @@ next-env.d.ts
 server/data/*.db
 server/data/agents.db*
 server/data/okf_bundles/
+server/data/widget_logos/
 
 # nginx
 nginx/certs/*.crt

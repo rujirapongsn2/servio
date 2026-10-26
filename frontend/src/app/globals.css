@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/*
+ * `dark:` follows the OS setting, except inside surfaces that pin a light
+ * palette (the customer Web Chat sets data-color-scheme="light").
+ */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-color-scheme="light"], [data-color-scheme="light"] *)) {
+      @slot;
+    }
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #0D1B2A;

@@ -51,6 +51,9 @@ app = FastAPI()
 from app.admin_routes import router as admin_router, public_router
 app.include_router(admin_router)
 app.include_router(public_router)
+from app.widget_theme_routes import admin_router as widget_theme_admin_router, public_router as widget_theme_public_router
+app.include_router(widget_theme_admin_router)
+app.include_router(widget_theme_public_router)
 from app.local_image_rag import router as knowledge_image_router
 app.include_router(knowledge_image_router)
 from app.local_audio_rag import router as knowledge_audio_router
