@@ -112,7 +112,7 @@ export function ImageSearchComposer({ available, disabled, searchState, onImageS
     }
   }
 
-  return <form className="w-full min-w-0 space-y-2" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+  return <form data-chat-composer className="w-full min-w-0 space-y-2" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
     {preview && <div className="flex items-center gap-3 rounded-xl border border-gray-200 p-2 dark:border-gray-700">
       <img src={preview} alt="รูปภาพที่เลือกค้นหา" className="h-16 w-16 rounded-lg bg-gray-50 object-contain" />
       <div className="min-w-0 flex-1 text-sm"><p className="truncate">{"file" in draft ? draft.file.name : ""}</p><p className="text-xs text-gray-500">ค้นหาสินค้าจากรูปภาพ</p></div>
@@ -121,7 +121,7 @@ export function ImageSearchComposer({ available, disabled, searchState, onImageS
     <div className="flex min-w-0 items-center gap-2">
       {available && <><input ref={picker} type="file" accept="image/jpeg,image/png" aria-label="แนบรูปภาพ JPG หรือ PNG เพื่อค้นหาสินค้า" className="sr-only" disabled={busy} onChange={(event) => { void selectImage(event.target.files?.[0]); event.target.value = ""; }} /><button type="button" disabled={busy} aria-label={preview ? "เปลี่ยนรูปภาพค้นหา" : "แนบรูปภาพค้นหาสินค้า"} title={preview ? "เปลี่ยนรูปภาพ" : "ค้นหาด้วยรูปภาพ"} className="shrink-0 rounded-full border p-2.5 text-gray-600 disabled:opacity-50 dark:text-gray-200" onClick={() => picker.current?.click()}><ImagePlus size={20} /></button></>}
       <label className="sr-only" htmlFor="widget-chat-message">ข้อความ</label>
-      <input id="widget-chat-message" name="message" type="text" value={text} disabled={busy} maxLength={draft.kind === "empty" ? undefined : 2000} onChange={(event) => setText(event.target.value)} placeholder={draft.kind !== "empty" ? "ระบุความต้องการเพิ่มเติม (ไม่บังคับ)" : "Type a message..."} className="min-w-0 flex-1 rounded-full border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900" autoComplete="off" />
+      <input id="widget-chat-message" name="message" type="text" value={text} disabled={busy} maxLength={draft.kind === "empty" ? undefined : 2000} onChange={(event) => setText(event.target.value)} placeholder={draft.kind !== "empty" ? "ระบุความต้องการเพิ่มเติม (ไม่บังคับ)" : "พิมพ์ข้อความ…"} className="min-w-0 flex-1 rounded-full border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900" autoComplete="off" />
       <button type="submit" disabled={busy || (draft.kind === "empty" && !text.trim())} aria-label={preview ? "ค้นหาสินค้าจากรูปภาพ" : "ส่งข้อความ"} title={preview ? "ค้นหาจากรูปภาพ" : "ส่งข้อความ"} className="h-10 w-10 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 disabled:opacity-50"><Send size={18} /></button>
     </div>
     {(draft.kind === "validating" || searchState.kind === "pending") && <p role="status" className="text-xs text-gray-500">{draft.kind === "validating" ? "กำลังตรวจสอบรูปภาพ…" : "กำลังค้นหาสินค้า…"}</p>}

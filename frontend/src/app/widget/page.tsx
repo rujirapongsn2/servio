@@ -5,8 +5,8 @@ import WidgetContent from "@/components/WidgetContent";
 
 export default function WidgetPage() {
     return (
-        <Suspense fallback={<div>Loading...</div>}>
+        <div className="w-full h-dvh min-h-0 overflow-hidden"><Suspense fallback={<div role="status">กำลังโหลด…</div>}>
             <WidgetContent />
-        </Suspense>
+        </Suspense></div>
     );
 }

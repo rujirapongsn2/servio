@@ -86,6 +86,7 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
 
   return (
     <div
+      data-chat-history
       className={clsx(
         "flex w-full min-w-0 flex-col gap-3 flex-1 overflow-y-auto relative transition-all duration-300",
         messages.length === 0 && "flex-grow-0 basis-[calc(50%-72px-52px)]"

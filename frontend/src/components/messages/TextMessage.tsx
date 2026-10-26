@@ -35,6 +35,7 @@ export function TextMessage({ text, isUser, collapsed = false }: TextMessageProp
       })}
     >
       <div
+        data-chat-bubble={isUser ? "user" : "assistant"}
         className={clsx("rounded-2xl py-3 px-4 shadow-sm overflow-hidden", {
           "max-w-[85%] text-white bg-blue-600 dark:bg-blue-600": isUser,
           "max-w-[95%] text-gray-900 bg-gray-100 dark:bg-gray-700 dark:text-gray-100": !isUser,
