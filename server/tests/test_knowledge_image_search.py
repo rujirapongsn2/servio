@@ -808,3 +808,55 @@ def test_caption_embedding_error_uses_existing_socket_unavailable_flow(socket_ru
         assert rt.connections[0].history == []
         return {"type": "history.update", "inputs": []}
     asyncio.run(rt.endpoint(rt.Socket([caption_request("blue").model_dump(), check]), api_key="test"))
+
+
+def assign_second_bundle(runtime, source_row):
+    get_db, root = runtime
+    with get_db() as db:
+        db.add_all([OKFBundle(id=2, name="second", display_name="Second", owner_team_agent_id=1, storage_path=str(root)),
+            Tool(id=2, name="second", type="okf_knowledge_graph", config={"okf_bundle_id": 2}, owner_team_agent_id=1),
+            AgentTool(agent_id=7, tool_id=2),
+            OKFConceptIndex(bundle_id=2, concept_id=source_row["concept_id"], type="document", search_text="product",
+                title=source_row["title"], description=source_row["description"], resource=source_row["resource"],
+                file_path=source_row["concept_id"] + ".md", content_hash=source_row["source_hash"])])
+    return {**source_row, "bundle_id": 2}
+
+
+@pytest.mark.parametrize("rerank", [False, True])
+def test_threshold_is_per_bundle_in_both_search_modes(runtime, nearest_rows, monkeypatch, rerank):
+    from app import knowledge_image_policy as policy
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", str(rerank).lower())
+    first = {**add_concept(runtime, "strict", "green"), "score": .65}
+    second = assign_second_bundle(runtime, {**add_concept(runtime, "relaxed", "blue"), "score": .64})
+    mode = "rerank" if rerank else "similarity"
+    with runtime[0]() as db:
+        policy.set_override(db, 1, mode, .7)
+        policy.set_override(db, 2, mode, .6)
+    candidates = []
+    def reranker(_, supplied, settings):
+        candidates.extend(supplied)
+        assert settings.min_confidence == .8
+        return tuple(item.id for item in supplied)
+    monkeypatch.setattr(search.reranker, "rerank", reranker)
+    nearest_rows.extend([first, second])
+    result = search.search_image(1, request())
+    assert [match.reference.bundle for match in result.matches] == [2]
+    if rerank: assert [item.asset_hash for item in candidates] == [second["asset_id"]]
+    with runtime[0]() as db:
+        policy.set_override(db, 2, mode, .8)
+    assert search.search_image(1, request()).status == "no_match"
+
+
+@pytest.mark.parametrize("rerank", [False, True])
+def test_rejected_duplicate_does_not_hide_qualifying_bundle(runtime, nearest_rows, monkeypatch, rerank):
+    from app import knowledge_image_policy as policy
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", str(rerank).lower())
+    first = {**add_concept(runtime, "shared-asset", "blue"), "score": .65}
+    second = assign_second_bundle(runtime, first)
+    mode = "rerank" if rerank else "similarity"
+    with runtime[0]() as db:
+        policy.set_override(db, 1, mode, .7)
+        policy.set_override(db, 2, mode, .6)
+    monkeypatch.setattr(search.reranker, "rerank", lambda _, supplied, settings: tuple(item.id for item in supplied))
+    nearest_rows.extend([first, second])
+    assert [match.reference.bundle for match in search.search_image(1, request()).matches] == [2]

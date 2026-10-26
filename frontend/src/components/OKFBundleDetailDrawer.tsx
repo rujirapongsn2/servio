@@ -17,6 +17,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { KnowledgeImageSearchSettings } from "@/components/KnowledgeImageSearchSettings";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { KnowledgeDocumentImage } from "@/components/KnowledgeDocumentImage";
@@ -557,6 +558,8 @@ export default function OKFBundleDetailDrawer({
                       </div>
                     </div>
                   </div>
+
+                  {bundleId && concepts.some((concept) => concept.has_image) && <KnowledgeImageSearchSettings key={`${bundleId}-${teamAgentId ?? "default"}`} bundleId={bundleId} teamAgentId={teamAgentId} canEdit={canEdit} />}
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <InfoRow label="Owner Team" value={bundle?.owner_team_name || tool.owner_team_name || "N/A"} />

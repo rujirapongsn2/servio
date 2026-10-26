@@ -45,6 +45,8 @@ from app.models import (
     TestFileStoreRequest,
     TestFileStoreResponse,
     OKFBundleResponse,
+    ImageSearchSettingsRequest,
+    ImageSearchSettingsResponse,
     OKFImportJobResponse,
     OKFConceptResponse,
     UpdateOKFConceptRequest,
@@ -77,7 +79,9 @@ from app.models import (
     UpdateTeamUsersRequest,
 )
 from app.okf_service import MAX_ARCHIVE_BYTES, OKFService, OKFValidationError, OKFSourceUnavailableError
-from app.orm_models import OKFImportJob
+from app.orm_models import OKFImportJob, OKFBundle
+from app import knowledge_image_policy
+from app.okf_service import _bundle_available_to_team
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -1950,6 +1954,53 @@ async def import_okf_bundle(
     finally:
         if temp_dir is not None:
             temp_dir.cleanup()
+
+
+def _image_policy_bundle(db, bundle_id: int, team_agent_id: int, *, lock: bool = False):
+    query = db.query(OKFBundle).filter_by(id=bundle_id)
+    bundle = (query.with_for_update() if lock else query).first()
+    if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+        raise HTTPException(status_code=404, detail="OKF bundle not found")
+    return bundle
+
+
+def _can_edit_image_policy(current_user: str, team_agent_id: int, bundle: OKFBundle) -> bool:
+    admin = database.get_admin_by_username(current_user)
+    super_admin = bool(admin and admin.get("is_super_admin"))
+    return database.has_team_access(current_user, team_agent_id, "admin") and (
+        bundle.owner_team_agent_id is None or bundle.owner_team_agent_id == team_agent_id or super_admin)
+
+
+@router.get("/okf-bundles/{bundle_id}/image-search-settings", response_model=ImageSearchSettingsResponse)
+async def get_image_search_settings(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
+    with get_db() as db:
+        bundle = _image_policy_bundle(db, bundle_id, team_agent_id)
+        return knowledge_image_policy.describe(db, bundle_id, _can_edit_image_policy(current_user, team_agent_id, bundle))
+
+
+@router.patch("/okf-bundles/{bundle_id}/image-search-settings", response_model=ImageSearchSettingsResponse)
+async def update_image_search_settings(
+    bundle_id: int,
+    request: ImageSearchSettingsRequest,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
+    with get_db() as db:
+        bundle = _image_policy_bundle(db, bundle_id, team_agent_id, lock=True)
+        if not _can_edit_image_policy(current_user, team_agent_id, bundle):
+            raise HTTPException(status_code=403, detail="Only the owning team can edit image search settings")
+        if request.mode != knowledge_image_policy.active_mode():
+            raise HTTPException(status_code=409, detail="Image search mode changed. Reload the settings before saving.")
+        knowledge_image_policy.set_override(db, bundle_id, request.mode, request.min_score)
+        result = knowledge_image_policy.describe(db, bundle_id, True, request.mode)
+        db.commit()
+        return result
 
 
 @router.get("/okf-bundles/{bundle_id}", response_model=OKFBundleResponse)

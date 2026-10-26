@@ -13,6 +13,7 @@ function drawer() {
   const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
   const mocks = {
+    '@/components/KnowledgeImageSearchSettings': { KnowledgeImageSearchSettings: props => React.createElement('image-search-settings', props) },
     'react-dom': { createPortal: (children, host) => React.createElement('drawer-portal', { host }, children) },
     '@/components/KnowledgeDocumentImage': { KnowledgeDocumentImage: props => React.createElement('document-image', props) },
     '@/components/KnowledgeImages': { KnowledgeImages: () => null },
@@ -38,6 +39,8 @@ test('image documents show scoped previews and expandable text while ordinary do
   let tree;
   try {
     await act(async () => { tree = create(React.createElement(drawer(), { tool: { id: 1, name: 'Products', config: '{"okf_bundle_id":1}' }, teamAgentId: 21, onClose() {} })); });
+    assert.equal(tree.root.findAllByType('image-search-settings').length, 1);
+    assert.equal(tree.root.findByType('image-search-settings').props.bundleId, 1);
     await act(async () => button(tree, 'Documents (3)').props.onClick());
     assert.equal(tree.root.findByType('drawer-portal').props.host, globalThis.document.body);
     assert.equal(tree.root.findAllByType('document-image').filter(node => node.props.thumbnail).length, 2);
@@ -87,3 +90,15 @@ for (const sourceStatus of ['missing', 'partial']) {
     }
   });
 }
+
+test('text-only knowledge does not show image search controls', async () => {
+  const previous = { fetch: globalThis.fetch, localStorage: globalThis.localStorage, document: globalThis.document };
+  globalThis.document = { body: {} };
+  globalThis.localStorage = { getItem: () => 'test-token' };
+  globalThis.fetch = async url => ({ ok: true, json: async () => url.includes('/concepts/') ? concepts[2] : url.includes('/concepts') ? [concepts[2]] : { id: 1, status: 'ready' } });
+  let tree;
+  try {
+    await act(async () => { tree = create(React.createElement(drawer(), { tool: { id: 1, name: 'Policy', config: '{"okf_bundle_id":1}' }, onClose() {} })); });
+    assert.equal(tree.root.findAllByType('image-search-settings').length, 0);
+  } finally { if (tree) await act(async () => tree.unmount()); Object.assign(globalThis, previous); }
+});

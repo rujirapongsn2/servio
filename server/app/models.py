@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any, Literal, Annotated
+import math
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.model_settings import default_agent_model
 from app.knowledge_image_presentations import KnowledgeImages
@@ -298,6 +299,26 @@ class OKFSourceAvailability(BaseModel):
     status: Literal["available", "missing", "partial", "unreadable"]
     missing_file_count: int = Field(ge=0)
     message: Optional[str] = None
+
+
+class ImageSearchSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    mode: Literal["similarity", "rerank"]
+    min_score: Optional[float] = Field(ge=-1, le=1, allow_inf_nan=False)
+
+    @field_validator("min_score", mode="before")
+    @classmethod
+    def json_safe_score(cls, value: Any) -> Any:
+        # FastAPI includes rejected input in its JSON validation response.
+        return repr(value) if isinstance(value, float) and not math.isfinite(value) else value
+
+
+class ImageSearchSettingsResponse(BaseModel):
+    mode: Literal["similarity", "rerank"]
+    default_min_score: float
+    override_min_score: Optional[float]
+    effective_min_score: float
+    can_edit: bool
 
 
 class OKFBundleResponse(BaseModel):

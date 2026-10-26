@@ -356,6 +356,19 @@ class OKFBundle(Base):
     )
 
 
+class OKFImageSearchPolicy(Base):
+    __tablename__ = "okf_image_search_policies"
+
+    bundle_id: Mapped[int] = mapped_column(ForeignKey("okf_bundles.id", ondelete="CASCADE"), primary_key=True)
+    similarity_min_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    rerank_candidate_min_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("similarity_min_score IS NULL OR (similarity_min_score >= -1 AND similarity_min_score <= 1)", name="ck_okf_image_similarity_score"),
+        CheckConstraint("rerank_candidate_min_score IS NULL OR (rerank_candidate_min_score >= -1 AND rerank_candidate_min_score <= 1)", name="ck_okf_image_rerank_score"),
+    )
+
+
 class OKFImportJob(Base):
     """Tracks background local knowledge import jobs for user-visible status."""
     __tablename__ = "okf_import_jobs"

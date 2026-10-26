@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import bindparam, text
 
 from app import product_image_rerank as reranker
+from app import knowledge_image_policy as image_policy
 from app import local_image_rag as images
 from app.db_config import get_db
 from app.orm_models import AgentTool, OKFBundle, OKFConceptIndex, TeamAgent, TeamAgentMember, TeamToolAssignment, Tool
@@ -165,10 +166,9 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
     rows = _nearest(bundles, client.space, vector, text_vector) if text_vector is not None else _nearest(bundles, client.space, vector)
     if use_reranker:
         return _reranked_search(team_id, data, rows, request.query) if request.query else _reranked_search(team_id, data, rows)
-    threshold = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MIN_SCORE", "0.82"))
+    with get_db() as db:
+        thresholds = image_policy.thresholds(db, bundles, "similarity")
     score_gap = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "0.06"))
-    if not math.isfinite(threshold) or not -1 <= threshold <= 1:
-        raise ValueError("Invalid image similarity threshold")
     if not math.isfinite(score_gap) or not 0 <= score_gap <= 2:
         raise ValueError("Invalid image similarity score gap")
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
@@ -179,7 +179,7 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
     for row in rows:
         score = float(row["score"])
         if (row["bundle_id"] not in current or not math.isfinite(score)
-                or not -1 <= score <= 1 or score < threshold or row["asset_id"] in seen):
+                or not -1 <= score <= 1 or score < thresholds[row["bundle_id"]] or row["asset_id"] in seen):
             continue
         ref = KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
         try:
@@ -192,7 +192,7 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
             text_scores[ref.asset] = float(row["text_score"])
     matches.sort(key=lambda match: match.score, reverse=True)
     if matches:
-        cutoff = max(threshold, matches[0].score - score_gap)
+        cutoff = matches[0].score - score_gap
         matches = [match for match in matches if match.score >= cutoff]
         if text_vector is not None:
             matches.sort(key=lambda match: (text_scores[match.reference.asset], match.score), reverse=True)
@@ -204,6 +204,8 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
     settings = reranker.RerankSettings.from_environment()
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
     current = assigned_bundles(team_id)
+    with get_db() as db:
+        thresholds = image_policy.thresholds(db, current, "rerank")
     candidates = []
     matches = {}
     seen = set()
@@ -212,7 +214,7 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
     for row in rows:
         score = float(row["score"])
         if (row["bundle_id"] not in current or row["asset_id"] in seen
-                or not math.isfinite(score) or not -1 <= score <= 1 or score < settings.candidate_min_score):
+                or not math.isfinite(score) or not -1 <= score <= 1 or score < thresholds[row["bundle_id"]]):
             continue
         ref = KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
         try:
