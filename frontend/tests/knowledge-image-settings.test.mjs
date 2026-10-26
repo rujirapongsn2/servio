@@ -49,19 +49,20 @@ test('active mode uses server defaults, saves bundle-specific score and resets i
   const h = await harness();
   try {
     assert.equal(h.input().props.value, '20');
-    assert.ok(text(h.tree.toJSON()).includes('คะแนนคัดภาพเบื้องต้นขั้นต่ำ'));
+    assert.ok(text(h.tree.toJSON()).includes('MULTIMODAL_IMAGE_RERANK_CANDIDATE_MIN_SCORE'));
+    assert.ok(text(h.tree.toJSON()).includes('ระดับความคล้ายของรูปภาพ'));
     assert.equal(h.requests[0].url, '/api/admin/okf-bundles/4/image-search-settings?team_agent_id=21');
-    assert.equal(h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.disabled, true);
+    assert.equal(h.button('บันทึกระดับความคล้าย').props.disabled, true);
     await h.change('35.5');
-    await act(async () => h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.onClick());
+    await act(async () => h.button('บันทึกระดับความคล้าย').props.onClick());
     assert.deepEqual(JSON.parse(h.requests.at(-1).body), { mode: 'rerank', min_score: .355 });
     assert.equal(h.input().props.value, '35.5');
-    assert.ok(text(h.tree.toJSON()).includes('กำหนดเฉพาะแหล่งความรู้นี้'));
+    assert.ok(text(h.tree.toJSON()).includes('กำหนดเอง'));
     h.setDefault(.25);
-    await act(async () => h.button('ใช้ค่าเริ่มต้นระบบ').props.onClick());
+    await act(async () => h.button('กลับไปใช้ค่าเริ่มต้นของโหมดนี้').props.onClick());
     assert.deepEqual(JSON.parse(h.requests.at(-1).body), { mode: 'rerank', min_score: null });
     assert.equal(h.input().props.value, '25');
-    assert.ok(text(h.tree.toJSON()).includes('ค่าเริ่มต้นระบบ'));
+    assert.ok(text(h.tree.toJSON()).includes('ใช้ค่าเริ่มต้นของโหมดนี้'));
   } finally { await h.close(); }
 });
 
@@ -69,9 +70,11 @@ test('plain similarity mode uses its own label and env default', async () => {
   const h = await harness({ settings: { mode: 'similarity', default_min_score: .82, effective_min_score: .82 } });
   try {
     assert.equal(h.input().props.value, '82');
-    assert.ok(text(h.tree.toJSON()).includes('คะแนนความใกล้เคียงขั้นต่ำ'));
+    assert.ok(text(h.tree.toJSON()).includes('MULTIMODAL_IMAGE_QUERY_MIN_SCORE'));
+    assert.ok(text(h.tree.toJSON()).includes('ค้นหาด้วยความคล้าย'));
+    assert.ok(text(h.tree.toJSON()).includes('ระดับความคล้ายของรูปภาพ'));
     await h.change('-10');
-    await act(async () => h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.onClick());
+    await act(async () => h.button('บันทึกระดับความคล้าย').props.onClick());
     assert.deepEqual(JSON.parse(h.requests.at(-1).body), { mode: 'similarity', min_score: -.1 });
   } finally { await h.close(); }
 });
@@ -81,7 +84,7 @@ for (const value of ['', '101', '-101', 'NaN', 'Infinity']) {
     const h = await harness();
     try {
       await h.change(value);
-      assert.equal(h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.disabled, true);
+      assert.equal(h.button('บันทึกระดับความคล้าย').props.disabled, true);
       assert.equal(h.input().props['aria-invalid'], true);
       assert.equal(h.requests.length, 1);
     } finally { await h.close(); }
@@ -92,13 +95,13 @@ test('failed saves preserve draft; stale mode requires reload', async () => {
   const h = await harness();
   try {
     await h.change('45'); h.fail(500);
-    await act(async () => h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.onClick());
+    await act(async () => h.button('บันทึกระดับความคล้าย').props.onClick());
     assert.equal(h.input().props.value, '45');
     assert.ok(text(h.tree.toJSON()).includes('บันทึกไม่สำเร็จ'));
     h.fail(409);
-    await act(async () => h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.onClick());
+    await act(async () => h.button('บันทึกระดับความคล้าย').props.onClick());
     assert.equal(h.input().props.disabled, true);
-    assert.equal(h.button('บันทึกเกณฑ์ค้นหารูปภาพ').props.disabled, true);
+    assert.equal(h.button('บันทึกระดับความคล้าย').props.disabled, true);
     await act(async () => h.button('โหลดค่าล่าสุด').props.onClick());
     assert.equal(h.input().props.value, '20');
     assert.equal(h.input().props.disabled, false);
@@ -110,8 +113,8 @@ for (const permissions of [{ canEdit: false }, { settings: { can_edit: false } }
     const h = await harness(permissions);
     try {
       assert.equal(h.input().props.readOnly, true);
-      assert.equal(h.button('บันทึกเกณฑ์ค้นหารูปภาพ'), undefined);
-      assert.equal(h.button('ใช้ค่าเริ่มต้นระบบ'), undefined);
+      assert.equal(h.button('บันทึกระดับความคล้าย'), undefined);
+      assert.equal(h.button('กลับไปใช้ค่าเริ่มต้นของโหมดนี้'), undefined);
     } finally { await h.close(); }
   });
 }
