@@ -424,22 +424,25 @@ li {
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-  font-size: 0.875rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 th, td {
-  border: 1px solid var(--border-color);
-  padding: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  padding: 0.4375rem 0.75rem;
   text-align: left;
 }
 
 th {
-  background-color: rgba(0, 0, 0, 0.05);
-  font-weight: 600;
+  background-color: var(--bg-app);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary);
 }
 
 .dark th {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.04);
 }

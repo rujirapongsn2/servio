@@ -5,7 +5,6 @@ import { useAdminLocale } from "@/lib/admin-locale";
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
 import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
@@ -17,6 +16,7 @@ import {
   Users,
   Shield,
   Menu,
+  ChevronLeft,
 } from "lucide-react";
 import { AdminLocaleProvider } from "@/lib/admin-locale";
 import { TeamProvider } from "@/lib/team-context";
@@ -198,7 +198,7 @@ function AdminLayoutInner({
   }
 
   return (
-    <div lang={locale} className="min-h-screen bg-surface text-fg" data-viewer-only={isViewerOnly ? "1" : "0"}>
+    <div lang={locale} className="min-h-screen bg-app text-fg" data-viewer-only={isViewerOnly ? "1" : "0"}>
       {responsiveNavigation && mobileSidebarOpen && <button type="button" aria-label={copy.closeNavigation} onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
       {/* Sidebar */}
       <div
@@ -213,18 +213,16 @@ function AdminLayoutInner({
               alt="Servio"
               className={`${collapsed ? "w-[40px]" : "w-[140px]"} h-auto transition-all`}
             />
-            <Button
-              size="iconSmall"
-              variant="outline"
+            <button
+              type="button"
               aria-label={collapsed ? copy.expandSidebar : copy.collapseSidebar}
               title={collapsed ? copy.expandSidebar : copy.collapseSidebar}
               onClick={toggleSidebar}
-              className="border-hairline bg-hover text-fg hover:bg-surface"
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-2 press hover:bg-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              <span className={`transform transition-transform ${collapsed ? "rotate-180" : ""}`}>
-                ›
-              </span>
-            </Button>
+              <ChevronLeft className={`size-3.5 transition-transform duration-200 ease-out ${collapsed ? "rotate-180" : ""}`} aria-hidden />
+              <span className="sr-only">{collapsed ? copy.expandSidebar : copy.collapseSidebar}</span>
+            </button>
           </div>
 
           {/* Navigation */}
@@ -343,11 +341,11 @@ function AdminLayoutInner({
 
       {/* Main content */}
       <div
-        className={`${responsiveNavigation ? collapsed ? "ml-0 lg:ml-16 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:4rem]" : "ml-0 lg:ml-64 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:16rem]" : collapsed ? "ml-16" : "ml-64"} transition-all duration-200 relative z-0`}
+        className={`${responsiveNavigation ? collapsed ? "ml-0 lg:ml-16 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:4rem]" : "ml-0 lg:ml-64 [--admin-sidebar-width:0rem] lg:[--admin-sidebar-width:16rem]" : collapsed ? "ml-16" : "ml-64"} transition-all duration-200 relative z-0 min-h-screen bg-app`}
         style={responsiveNavigation ? undefined : { "--admin-sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
       >
         {/* Top bar */}
-        <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-hairline bg-surface px-4 sm:px-8">
+        <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-hairline bg-app px-4 sm:px-8">
           {responsiveNavigation && <button type="button" aria-label={copy.openNavigation} aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />{copy.navigation}</button>}
           <label className="mr-3 flex items-center gap-2 text-xs font-medium text-fg-2">
             <span className="sr-only sm:not-sr-only">{copy.language}</span>
