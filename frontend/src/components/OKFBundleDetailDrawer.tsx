@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
@@ -17,6 +17,8 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { AdminLocaleContext } from "@/lib/admin-locale";
+import { KnowledgeTablePanel } from "@/components/KnowledgeTablePanel";
 import { KnowledgeImageSearchSettings } from "@/components/KnowledgeImageSearchSettings";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
@@ -109,7 +111,7 @@ interface OKFBundleDetailDrawerProps {
   canEdit?: boolean;
 }
 
-type DetailTab = "overview" | "documents" | "ask" | "issues";
+type DetailTab = "overview" | "documents" | "ask" | "issues" | "tables";
 
 const formatDate = (value?: string | null) => {
   if (!value) return "N/A";
@@ -127,12 +129,17 @@ export default function OKFBundleDetailDrawer({
   onReindexed,
   canEdit = true,
 }: OKFBundleDetailDrawerProps) {
+  const locale = useContext(AdminLocaleContext);
+  const tableLabel = locale?.copy.tables ?? "Tables";
+  const discardTablePrompt = locale?.copy.tableDiscard ?? "Discard unsaved table changes?";
   const apiBaseUrl = getApiBaseUrl();
   const config = useMemo(() => { try { const parsed = tool.config ? JSON.parse(tool.config) : {}; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; } }, [tool.config]);
   const bundleId = config.okf_bundle_id as number | undefined;
   const displayName = (config.display_name as string | undefined) || tool.name;
   const params = teamAgentId ? `?team_agent_id=${teamAgentId}` : "";
 
+  const [tableDirty, setTableDirty] = useState(false);
+  const [tableExpanded, setTableExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [bundle, setBundle] = useState<OKFBundle | null>(null);
   const [concepts, setConcepts] = useState<OKFConcept[]>([]);
@@ -162,6 +169,10 @@ export default function OKFBundleDetailDrawer({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conceptError, setConceptError] = useState<string | null>(null);
 
+  const tableSources = bundle?.validation_summary?.tables;
+  const selectedIsTable = typeof selectedConcept?.frontmatter?.queryable_table === "string" || (
+    Array.isArray(tableSources) && tableSources.some((item: unknown) => item && typeof item === "object" && "source_file" in item && typeof item.source_file === "string" && item.source_file === selectedConcept?.frontmatter?.source_file)
+  );
   const warnings = bundle?.validation_summary?.warnings || [];
   const sourceIssue = bundle?.source_availability && bundle.source_availability.status !== "available"
     ? bundle.source_availability : null;
@@ -449,8 +460,8 @@ export default function OKFBundleDetailDrawer({
   };
 
   const drawer = (
-    <div role="dialog" aria-modal="true" aria-label="Knowledge details" tabIndex={-1} className="fixed inset-0 z-50 bg-black/40">
-      <div className="absolute inset-y-0 right-0 flex w-full max-w-6xl flex-col bg-white shadow-2xl dark:bg-gray-900">
+    <div role="dialog" aria-modal="true" aria-label="Knowledge details" tabIndex={-1} onKeyDown={event => { if (event.key === "Escape" && tableExpanded) { event.preventDefault(); event.stopPropagation(); setTableExpanded(false); } }} className="fixed inset-0 z-50 bg-black/40">
+      <div className={`absolute inset-y-0 right-0 flex w-full ${tableExpanded ? "max-w-none" : "max-w-6xl"} flex-col bg-white shadow-2xl dark:bg-gray-900`}>
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-gray-800">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -469,7 +480,7 @@ export default function OKFBundleDetailDrawer({
             <button
               type="button"
               onClick={handleReindex}
-              disabled={!canEdit || loading || sourceUnavailable || reindexing || refreshingSource || savingConcept || !bundleId}
+              disabled={!canEdit || tableDirty || loading || sourceUnavailable || reindexing || refreshingSource || savingConcept || !bundleId}
               title={sourceIssue?.message || undefined}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
             >
@@ -478,7 +489,7 @@ export default function OKFBundleDetailDrawer({
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => { if (!tableDirty || window.confirm(discardTablePrompt)) onClose(); }}
               className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200"
               aria-label="Close"
             >
@@ -492,13 +503,14 @@ export default function OKFBundleDetailDrawer({
             {[
               ["overview", "Overview"],
               ["documents", `Documents (${concepts.length})`],
+              ...(bundle?.validation_summary?.queryable ? [["tables", tableLabel]] : []),
               ["ask", "Ask a Question"],
               ["issues", issueCount > 0 ? `Issues (${issueCount})` : "Issues"],
             ].map(([id, label]) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setActiveTab(id as DetailTab)}
+                onClick={() => { setActiveTab(id as DetailTab); setTableExpanded(false); }}
                 className={[
                   "shrink-0 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-semibold",
                   activeTab === id
@@ -530,6 +542,7 @@ export default function OKFBundleDetailDrawer({
             </div>
           ) : (
             <>
+              {bundleId && bundle?.validation_summary?.queryable === true && <div className={activeTab === "tables" ? "min-w-0" : "hidden"}><KnowledgeTablePanel expanded={tableExpanded} onToggleExpanded={() => setTableExpanded(value => !value)} key={`${bundleId}-${teamAgentId ?? "default"}`} bundleId={bundleId} teamAgentId={teamAgentId} canEdit={canEdit} onDirtyChange={setTableDirty} onSaved={() => { onReindexed?.(); }} /></div>}
               {activeTab === "overview" && (
                 <div className="space-y-5">
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -726,12 +739,12 @@ export default function OKFBundleDetailDrawer({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={handleEditConcept}
-                                  disabled={!canEdit || sourceUnavailable || refreshingSource || reindexing}
+                                  onClick={() => { if (selectedIsTable) setActiveTab("tables"); else handleEditConcept(); }}
+                                  disabled={(!canEdit && !selectedIsTable) || sourceUnavailable || refreshingSource || reindexing}
                                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                 >
                                   <Edit3 className="h-4 w-4" />
-                                  Edit
+                                  {selectedIsTable ? locale?.copy.editTables ?? "Open table" : "Edit"}
                                 </button>
                               )}
                             </div>

@@ -62,6 +62,7 @@ test('player seeks to canonical timestamp, exposes native controls and expandabl
 for (const { body, isAudio } of [{ body: '[00:00] Cats purr.', isAudio: true }, { body: '', isAudio: true }, { body: '', isAudio: false }]) {
   test(`document editor handles metadata save with ${body ? 'ready' : 'empty'} ${isAudio ? 'audio' : 'ordinary'} body`, async () => {
     const { default: Drawer } = load('src/components/OKFBundleDetailDrawer.tsx', {
+      '@/components/KnowledgeTablePanel': { KnowledgeTablePanel: () => null }, '@/lib/admin-locale': { AdminLocaleContext: React.createContext(null) },
       '@/components/KnowledgeAudio': { KnowledgeAudio: () => null },
       '@/components/KnowledgeImageSearchSettings': { KnowledgeImageSearchSettings: () => null }, '@/components/KnowledgeDocumentImage': { KnowledgeDocumentImage: () => null }, '@/components/KnowledgeImages': { KnowledgeImages: () => null },
       '@/lib/product-presentations': parser,

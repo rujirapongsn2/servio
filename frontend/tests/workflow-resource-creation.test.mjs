@@ -102,7 +102,7 @@ test('pending submissions lock fields and reject duplicate submits', async () =>
 });
 const knowledge = load('src/lib/knowledge-import.ts');
 const Knowledge = load('src/components/CreateOKFBundleModal.tsx', {
-  '@/lib/admin-locale': adminLocale,
+  '@/lib/admin-locale': adminLocale, '@/lib/knowledge-tables': load('src/lib/knowledge-tables.ts'), '@/components/KnowledgeTableEditor': { KnowledgeTableEditor: () => null },
   'react-dom': { createPortal: children => children }, '@/lib/api': { getApiBaseUrl: () => '' }, '@/lib/knowledge-import': knowledge,
 }).default;
 for (const scenario of ['success', 'failed', 'invalid-result']) test(`knowledge resumes a stored job with ${scenario}`, async () => {

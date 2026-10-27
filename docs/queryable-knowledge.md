@@ -12,6 +12,16 @@ Example tool arguments (column names depend on the uploaded file):
 
 Use `sql: "SCHEMA"` to retrieve the table inventory again. An empty SQL string retains normal Knowledge search. The existing tool assignment and team sharing rules apply. Access is checked on every invocation, including after a share is revoked.
 
+## Create and edit a table
+
+In **Add Knowledge → ตาราง** (Table), create a worksheet and enter headings and values directly. Add or remove rows and columns, paste a range copied from Excel, or import `.xlsx`/CSV into the grid. The grid displays a page of rows at a time; switching pages or worksheets retains the draft. Review and import using the same Knowledge workflow. Tables created here are queryable automatically.
+
+Open an existing Queryable Knowledge and select **ตาราง** to edit its data, including tables originally uploaded as Excel/CSV. **Save** publishes the entire edited workbook to Agent queries; **Cancel** restores the saved version. If someone else saved a newer version, the server rejects the stale save and keeps the local draft for review. Viewing a shared table does not grant editing rights: writes require an owning-team administrator or a super administrator.
+
+Use **ขยายตาราง** (Expand table) for a full-window view in either creation or editing. Save/review actions stay available. **กลับมุมมองปกติ** (Restore view) or Escape returns to the previous size without discarding edits. Read-only viewers can also expand the table.
+
+The grid edits stored values and headings; it does not run Excel formulas or macros. At least one populated data row is needed when creating a new Knowledge through the import workflow.
+
 ## Prepare a file
 
 - Use the first nonempty row as column headings and one record per subsequent row. Each Excel worksheet becomes a separate table.
@@ -32,13 +42,15 @@ SQL accepts one read-only query over imported tables, including filtering, aggre
 
 Each enabled bundle stores an isolated `queryable.sqlite`, `queryable.json` schema and copies of the original files in `table_sources/`, alongside its existing Markdown source. No separate service, external database account, environment setting or PostgreSQL migration is required.
 
-The tables are a snapshot of the uploaded files. Editing extracted text or reindexing Knowledge does not change table values. Reimport an updated spreadsheet to refresh the data. Reindexing preserves table artifacts; deleting the Knowledge removes them with its existing storage directory. Existing imports remain text-only and require reimporting with the option enabled to gain table querying.
+Table edits build a complete new source revision, including SQLite, canonical CSV and searchable text, before switching the bundle pointer in one database transaction. Agent queries read one complete revision. Old source revisions remain available for in-flight readers until the Knowledge is deleted, and therefore consume storage space. Deleting a Knowledge removes all its revisions.
+
+Editing extracted text does not change table values. Use the Table tab for structured edits. Reindexing retains saved table edits rather than rebuilding from a historical Excel upload. Existing text-only imports still require reimporting with the Queryable option enabled to gain table querying.
 
 ## Verification
 
 ```sh
 cd server
-.venv/bin/python -m pytest tests/test_knowledge_tables.py tests/test_queryable_knowledge.py -q
+.venv/bin/python -m pytest tests/test_knowledge_tables.py tests/test_queryable_knowledge.py tests/test_knowledge_table_editor.py tests/test_table_tool_schema.py -q
 ```
 
-Tests execute real CSV/XLSX imports and SQLite queries, Agent tool calls, both HTTP import paths, preview, sharing revocation, reindex and deletion. They use disposable local data and do not call an external LLM or alter live Knowledge.
+Tests execute real CSV/XLSX imports and SQLite queries, Agent tool calls, both HTTP import paths, editable table snapshots, stale-save and stale-schema rejection, rollback, preview, sharing revocation, reindex and deletion. They use disposable local data and do not call an external LLM or alter live Knowledge.

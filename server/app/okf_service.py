@@ -11,6 +11,7 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
@@ -19,7 +20,7 @@ from typing import Callable, Any, Dict, Iterable, List, Literal, Optional
 from xml.etree import ElementTree as ET
 
 import yaml
-from sqlalchemy import or_
+from sqlalchemy import inspect, or_, text as sql_text
 
 from app.db_config import get_db
 from app.orm_models import (
@@ -952,15 +953,100 @@ class OKFService:
             self._require_source_available(db, bundle)
             return schema(Path(bundle.storage_path))
 
-    def query_tables(self, bundle_id: int, sql: str, team_agent_id: int) -> Dict[str, Any]:
-        from app.knowledge_tables import query
+    def query_tables(self, bundle_id: int, sql: str, team_agent_id: int, *, expected_schema: Optional[str] = None) -> Dict[str, Any]:
+        from app.knowledge_tables import TableImportError, query, schema, schema_signature
         with get_db() as db:
             bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
             if team_agent_id is None or not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
                 raise KeyError("Knowledge not found or unavailable to this team")
             self._require_source_available(db, bundle)
-            result = query(Path(bundle.storage_path), sql)
+            source = Path(bundle.storage_path)
+            if expected_schema is not None and schema_signature(schema(source)) != expected_schema:
+                raise TableImportError("Table schema changed. Call this tool with sql=SCHEMA before retrying.")
+            result = query(source, sql)
             return {**result, "bundle_id": bundle.id, "source": bundle.display_name}
+
+    def editable_tables(self, bundle_id: int, team_agent_id: int) -> Dict[str, Any]:
+        from app.knowledge_table_editor import read_drafts, revision
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if team_agent_id is None or not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                raise KeyError("Knowledge not found or unavailable to this team")
+            self._require_source_available(db, bundle)
+            return {"revision": revision(bundle), **read_drafts(Path(bundle.storage_path)).model_dump()}
+
+    def save_editable_tables(self, bundle_id: int, team_agent_id: int, request, *, super_admin: bool = False) -> Dict[str, Any]:
+        from app.knowledge_table_editor import TableRevisionConflict, csv_text, read_drafts, revision, write_drafts
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if team_agent_id is None or not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                raise KeyError("Knowledge not found or unavailable to this team")
+            if bundle.owner_team_agent_id not in (None, team_agent_id) and not super_admin:
+                raise PermissionError("Only the owning team can edit tables")
+            if revision(bundle) != request.expected_revision:
+                raise TableRevisionConflict("This knowledge changed. Reload it before saving.")
+            self._require_source_available(db, bundle)
+            source = Path(bundle.storage_path)
+            _ensure_within(self.storage_root / str(bundle_id), source)
+            from app.knowledge_tables import schema
+            original_files = {item["source_file"] for item in schema(source)}
+            snapshot_path = bundle.storage_path
+
+        staged = self.storage_root / str(bundle_id) / "source-revisions" / uuid.uuid4().hex
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        committed = False
+        try:
+            shutil.copytree(source, staged)
+            catalog = write_drafts(request, staged)
+            old_concepts, _ = parse_okf_directory(staged)
+            for concept in old_concepts:
+                if concept.frontmatter.get("queryable_table") or (
+                    concept.frontmatter.get("document_type") in {"csv", "xlsx"}
+                    and concept.frontmatter.get("source_file") in original_files
+                ):
+                    (staged / concept.file_path).unlink()
+            table_dir = staged / "tables"
+            table_dir.mkdir(exist_ok=True)
+            for table, metadata in zip(request.tables, catalog):
+                frontmatter = {"type": "knowledge", "title": table.name,
+                               "description": f"Queryable table: {table.name}", "resource": metadata["source_file"],
+                               "source_file": metadata["source_file"], "document_type": "csv",
+                               "queryable_table": table.table_name, "tags": ["table", "csv"]}
+                body = f"# {table.name}\n\n```csv\n{csv_text(table)}```\n"
+                (table_dir / f"{table.table_name}.md").write_text(self._source_markdown(frontmatter, body), encoding="utf-8")
+            concepts, metadata = parse_okf_directory(staged)
+            with get_db() as db:
+                bundle = db.query(OKFBundle).filter_by(id=bundle_id).with_for_update().first()
+                if team_agent_id is None or not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                    raise KeyError("Knowledge not found or unavailable to this team")
+                if bundle.owner_team_agent_id not in (None, team_agent_id) and not super_admin:
+                    raise PermissionError("Only the owning team can edit tables")
+                if revision(bundle) != request.expected_revision or bundle.storage_path != snapshot_path:
+                    raise TableRevisionConflict("This knowledge changed. Reload it before saving.")
+                self._replace_index(db, bundle, concepts)
+                connection = db.connection()
+                if inspect(connection).has_table("okf_rag_chunks"):
+                    connection.execute(sql_text("DELETE FROM okf_rag_chunks WHERE bundle_id = :bundle"), {"bundle": bundle_id})
+                bundle.storage_path = str(staged)
+                warnings = list(dict.fromkeys([*(bundle.validation_summary or {}).get("warnings", []), *metadata.get("warnings", [])]))
+                bundle.validation_summary = {**(bundle.validation_summary or {}), "queryable": True,
+                                             "tables": catalog, "warnings": warnings}
+                bundle.updated_at = datetime.utcnow()
+                db.flush()
+                result = {"revision": revision(bundle), **read_drafts(staged).model_dump()}
+                db.commit()
+                committed = True
+            return result
+        finally:
+            if not committed:
+                try:
+                    with get_db() as db:
+                        current = db.query(OKFBundle).filter_by(id=bundle_id).first()
+                        referenced = current is not None and current.storage_path == str(staged)
+                except Exception:
+                    referenced = True
+                if not referenced:
+                    shutil.rmtree(staged, ignore_errors=True)
 
     def _source_snapshot(self, bundle_id: int, team_agent_id: Optional[int]):
         with get_db() as db:
@@ -1371,6 +1457,13 @@ class OKFService:
             raise KeyError("OKF concept not found")
         if expected_updated_at and versions.get(concept_id) != expected_updated_at:
             raise OKFValidationError("This document changed since it was opened. Reload it before saving.")
+        if body.strip() != concept.body.strip():
+            table_backed = bool(concept.frontmatter.get("queryable_table"))
+            if concept.frontmatter.get("document_type") in {"csv", "xlsx"} and (source / "queryable.json").is_file():
+                from app.knowledge_tables import schema
+                table_backed = table_backed or concept.frontmatter.get("source_file") in {item["source_file"] for item in schema(source)}
+            if table_backed:
+                raise OKFValidationError("Edit table data in the Tables tab.")
         if 'audio' in concept.frontmatter:
             if body.strip() != concept.body.strip():
                 raise OKFValidationError('Audio transcripts are generated and read-only. Re-index the source to refresh the transcript.')
@@ -1406,8 +1499,9 @@ class OKFService:
                     db.query(TeamToolAssignment).filter_by(tool_id=tool.id).delete()
                     db.query(AgentTool).filter_by(tool_id=tool.id).delete()
                     db.delete(tool)
-            storage_path = Path(bundle.storage_path) if bundle.storage_path else self.storage_root / str(bundle.id) / "source"
-            bundle_dir = storage_path.parent if storage_path.name == "source" else storage_path
+            bundle_dir = self.storage_root / str(bundle.id)
+            if bundle.storage_path:
+                _ensure_within(bundle_dir, Path(bundle.storage_path))
             _ensure_within(self.storage_root, bundle_dir)
             db.delete(bundle)
         if bundle_dir.exists():

@@ -13,6 +13,7 @@ function drawer() {
   const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
   const mocks = {
+    '@/components/KnowledgeTablePanel': { KnowledgeTablePanel: () => null }, '@/lib/admin-locale': { AdminLocaleContext: React.createContext(null) },
     '@/components/KnowledgeImageSearchSettings': { KnowledgeImageSearchSettings: props => React.createElement('image-search-settings', props) },
     'react-dom': { createPortal: (children, host) => React.createElement('drawer-portal', { host }, children) },
     '@/components/KnowledgeDocumentImage': { KnowledgeDocumentImage: props => React.createElement('document-image', props) },

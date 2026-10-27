@@ -389,6 +389,8 @@ def create_okf_knowledge_graph_tool(
         except (KeyError, ValueError):
             tables = []
         if tables:
+            from app.knowledge_tables import schema_signature
+            known_schema = schema_signature(tables)
             visible_tables = []
             for table in tables:
                 if len(json.dumps([*visible_tables, table], ensure_ascii=False)) > 16000:
@@ -406,6 +408,7 @@ def create_okf_knowledge_graph_tool(
             )
 
             async def queryable_okf_tool(query: str, sql: str = ""):
+                nonlocal known_schema
                 if not sql.strip():
                     return await dynamic_okf_tool(query)
                 try:
@@ -413,8 +416,10 @@ def create_okf_knowledge_graph_tool(
                     service = OKFService()
                     if sql.strip().upper() == "SCHEMA":
                         result = {"tables": await asyncio.to_thread(service.table_inventory, bundle_id, runtime_team_agent_id)}
+                        known_schema = schema_signature(result["tables"])
                     else:
-                        result = await asyncio.to_thread(service.query_tables, bundle_id, sql, runtime_team_agent_id)
+                        result = await asyncio.to_thread(service.query_tables, bundle_id, sql, runtime_team_agent_id,
+                                                         expected_schema=known_schema)
                     return json.dumps(result, ensure_ascii=False)
                 except KeyError:
                     return "Knowledge not found or unavailable to this team."

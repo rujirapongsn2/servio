@@ -4,9 +4,12 @@ import type { AdminCopy } from "@/lib/admin-copy";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, ImageIcon, Music2, Loader2, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, Grid3X3, ImageIcon, Music2, Loader2, Trash2, Upload, X } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 import { FILE_EXTENSIONS, fileIssue, fileMediaKind, formatDuration, formatFileSize, parseCapabilities, type CapabilitiesState, type FileMediaKind } from "@/lib/knowledge-import";
+
+import { KnowledgeTableEditor } from "@/components/KnowledgeTableEditor";
+import { emptyTable, tableDraftIssue, tablesToFiles, type TableDraft } from "@/lib/knowledge-tables";
 
 function presentFileIssue(issue: string | null, copy: AdminCopy) {
   if (!issue) return null;
@@ -59,7 +62,7 @@ interface CreateOKFBundleModalProps {
 
 export type KnowledgeImportResult = { job_id: string; bundle_id: number; tool_id: number; display_name: string };
 
-type ImportMode = "files" | "paste" | "urls" | "archive";
+type ImportMode = "files" | "paste" | "urls" | "archive" | "table";
 
 interface KnowledgePreview {
   source_count: number;
@@ -127,6 +130,7 @@ const MODE_OPTIONS = [
   { id: "files", Icon: FileText },
   { id: "paste", Icon: Clipboard },
   { id: "urls", Icon: Globe },
+  { id: "table", Icon: Grid3X3 },
 ] satisfies Array<{ id: ImportMode; Icon: typeof FileText }>;
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -164,6 +168,10 @@ export default function CreateOKFBundleModal({
   const [mode, setMode] = useState<ImportMode>("files");
   const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
   const [archiveFiles, setArchiveFiles] = useState<File[]>([]);
+  const [tableDrafts, setTableDrafts] = useState<TableDraft[]>(() => [emptyTable()]);
+  const [tableImporting, setTableImporting] = useState(false);
+  const [tableDirty, setTableDirty] = useState(false);
+  const [tableExpanded, setTableExpanded] = useState(false);
   const [queryable, setQueryable] = useState(false);
   const hasTableFiles = mode === "files" && knowledgeFiles.some((file) => /\.(csv|xlsx)$/i.test(file.name));
   useEffect(() => { if (!hasTableFiles) setQueryable(false); }, [hasTableFiles]);
@@ -196,10 +204,17 @@ export default function CreateOKFBundleModal({
   const hasSource = useMemo(() => {
     if (mode === "urls") return urls.length > 0;
     if (mode === "paste") return pastedText.trim().length > 0;
+    if (mode === "table") return tableDrafts.some(table => table.rows.some(row => row.some(cell => cell.trim())));
     return files.length > 0;
-  }, [files.length, mode, pastedText, urls.length]);
+  }, [files.length, mode, pastedText, urls.length, tableDrafts]);
   const importSucceeded = importJob?.status === "succeeded";
   const importFailed = importJob?.status === "failed";
+  useEffect(() => {
+    if (!tableDirty || importSucceeded || typeof window === "undefined") return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [tableDirty, importSucceeded]);
 
   const accept = mode === "archive" ? FILE_EXTENSIONS.archive : [FILE_EXTENSIONS.document, FILE_EXTENSIONS.archive,
     capabilities.status === "loaded" && capabilities.value.images.status === "ready" ? FILE_EXTENSIONS.image : "",
@@ -210,6 +225,7 @@ export default function CreateOKFBundleModal({
 
   const resetSource = (nextMode: ImportMode) => {
     setMode(nextMode);
+    setTableExpanded(false);
     setQueryable(false);
     setPreview(null);
     setImportJob(null);
@@ -264,9 +280,11 @@ export default function CreateOKFBundleModal({
     formData.append("visibility", visibility);
     formData.append("import_mode", mode === "archive" ? "archive" : mode === "urls" ? "urls" : "knowledge");
     formData.append("create_tool", "true");
-    if (hasTableFiles && queryable) formData.append("queryable", "true");
+    if ((hasTableFiles && queryable) || mode === "table") formData.append("queryable", "true");
     if (assignAgentId) formData.append("assign_agent_id", String(assignAgentId));
-    if (mode === "urls") {
+    if (mode === "table") {
+      tablesToFiles(tableDrafts).forEach(file => formData.append("files", file));
+    } else if (mode === "urls") {
       urls.forEach((url) => formData.append("urls", url));
     } else if (mode === "paste") {
       formData.append("pasted_text", pastedText.trim());
@@ -277,9 +295,10 @@ export default function CreateOKFBundleModal({
   };
 
   const handlePreview = async () => {
-    if (!displayName.trim() || !hasSource || mode === "archive" || selectedIssues.length) return;
+    if (tableImporting || !displayName.trim() || !hasSource || mode === "archive" || selectedIssues.length) return;
 
     try {
+      if (mode === "table" && tableDraftIssue(tableDrafts)) throw new Error(copy.tableDataIssue);
       setPreviewing(true);
       setError(null);
       const token = localStorage.getItem("adminToken");
@@ -310,12 +329,13 @@ export default function CreateOKFBundleModal({
       await pollImportJob(pendingImport.current);
       return;
     }
-    if (importInFlight.current || !displayName.trim() || !hasSource || selectedIssues.length) return;
+    if (tableImporting || importInFlight.current || !displayName.trim() || !hasSource || selectedIssues.length) return;
     importInFlight.current = true;
     const controller = new AbortController();
     startController.current = controller;
 
     try {
+      if (mode === "table" && tableDraftIssue(tableDrafts)) throw new Error(copy.tableDataIssue);
       setImporting(true);
       setImportJob(null);
       setError(null);
@@ -410,7 +430,7 @@ export default function CreateOKFBundleModal({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!displayName.trim() || !hasSource || selectedIssues.length) return;
+    if (tableImporting || !displayName.trim() || !hasSource || selectedIssues.length) return;
     if (mode !== "archive" && !preview) {
       await handlePreview();
       return;
@@ -418,11 +438,13 @@ export default function CreateOKFBundleModal({
     await handleImport();
   };
 
+  const close = () => { if (!tableDirty || importSucceeded || window.confirm(copy.tableDiscard)) onClose(); };
+
   if (!portalHost) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex h-dvh w-screen items-center justify-center bg-black/50 p-4">
-      <div role="dialog" aria-modal={true} aria-busy={importing || previewing} aria-labelledby={headingId} className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800">
+    <div className={`fixed inset-0 z-50 flex h-dvh w-screen items-center justify-center bg-black/50 ${tableExpanded ? "p-0" : "p-4"}`}>
+      <div role="dialog" aria-modal={true} aria-busy={importing || previewing || tableImporting} aria-labelledby={headingId} onKeyDown={event => { if (event.key === "Escape" && tableExpanded) { event.preventDefault(); event.stopPropagation(); setTableExpanded(false); } }} className={`w-full overflow-hidden bg-white shadow-xl dark:bg-gray-800 ${tableExpanded ? "h-dvh max-h-dvh rounded-none" : `max-h-[92vh] rounded-lg ${mode === "table" ? "max-w-6xl" : "max-w-3xl"}`}`}>
         <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div>
             <h2 id={headingId} className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -431,22 +453,22 @@ export default function CreateOKFBundleModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             aria-label={copy.closeAddKnowledge}
-            disabled={importing || previewing}
+            disabled={importing || previewing || tableImporting}
             className="text-gray-400 hover:text-gray-500 disabled:opacity-50 dark:hover:text-gray-300"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="max-h-[calc(92vh-90px)] overflow-y-auto p-4 sm:p-6">
+        <form onSubmit={handleSubmit} className={`${tableExpanded ? "max-h-[calc(100dvh-90px)]" : "max-h-[calc(92vh-90px)]"} overflow-y-auto p-4 sm:p-6`}>
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-900" role="group" aria-label={copy.knowledgeSource}>
-            {MODE_OPTIONS.map(({ id, Icon }) => <button key={id} type="button" aria-pressed={mode === id} data-admin-write="true" onClick={() => resetSource(id)} disabled={importing || previewing} className={`flex flex-1 items-center justify-center gap-2 rounded-md px-2 py-2 text-sm font-medium ${mode === id ? "bg-white text-emerald-800 shadow-sm dark:bg-gray-700 dark:text-emerald-200" : "text-gray-600 dark:text-gray-300"}`}><Icon className="h-4 w-4" />{id === "files" ? copy.files : id === "paste" ? copy.pasteText : copy.websites}</button>)}
+            {MODE_OPTIONS.map(({ id, Icon }) => <button key={id} type="button" aria-pressed={mode === id} data-admin-write="true" onClick={() => resetSource(id)} disabled={importing || previewing || tableImporting} className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-md sm:flex-row sm:gap-2 px-2 py-2 text-sm font-medium ${mode === id ? "bg-white text-emerald-800 shadow-sm dark:bg-gray-700 dark:text-emerald-200" : "text-gray-600 dark:text-gray-300"}`}><Icon className="h-4 w-4" />{id === "files" ? copy.files : id === "paste" ? copy.pasteText : id === "table" ? copy.tables : copy.websites}</button>)}
           </div>
           <details className="mt-3 text-xs text-gray-500" open={mode === "archive" ? true : undefined}>
             <summary className="cursor-pointer">{copy.advanced}</summary>
-            <button type="button" data-admin-write="true" onClick={() => resetSource("archive")} disabled={importing || previewing} className={`mt-2 inline-flex items-center gap-2 rounded border px-3 py-2 ${mode === "archive" ? "border-emerald-500 text-emerald-700" : "border-gray-200"}`}><Archive className="h-4 w-4" />{copy.preparedArchive}</button>
+            <button type="button" data-admin-write="true" onClick={() => resetSource("archive")} disabled={importing || previewing || tableImporting} className={`mt-2 inline-flex items-center gap-2 rounded border px-3 py-2 ${mode === "archive" ? "border-emerald-500 text-emerald-700" : "border-gray-200"}`}><Archive className="h-4 w-4" />{copy.preparedArchive}</button>
           </details>
 
           <div className="mt-4 space-y-4">
@@ -462,7 +484,7 @@ export default function CreateOKFBundleModal({
                   setDisplayName(event.target.value);
                   setPreview(null);
                 }}
-                disabled={importing || previewing}
+                disabled={importing || previewing || tableImporting}
                 placeholder=""
                 className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 required
@@ -481,7 +503,7 @@ export default function CreateOKFBundleModal({
                     setVisibility(event.target.value);
                     setPreview(null);
                   }}
-                  disabled={importing || previewing}
+                  disabled={importing || previewing || tableImporting}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 >
                   <option value="team">{copy.privateTeam}</option>
@@ -490,7 +512,7 @@ export default function CreateOKFBundleModal({
               </div>
             )}
 
-            {mode === "urls" ? (
+            {mode === "table" ? <KnowledgeTableEditor expanded={tableExpanded} onToggleExpanded={() => setTableExpanded(value => !value)} tables={tableDrafts} onChange={next => { setTableDrafts(next); setTableDirty(true); setPreview(null); setImportJob(null); setError(null); }} teamAgentId={teamAgentId} onBusyChange={setTableImporting} disabled={importing || previewing} /> : mode === "urls" ? (
               <div>
                 <label htmlFor="knowledge-urls" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   {copy.sourceUrls}
@@ -504,7 +526,7 @@ export default function CreateOKFBundleModal({
                     setImportJob(null);
                     setError(null);
                   }}
-                  disabled={importing || previewing}
+                  disabled={importing || previewing || tableImporting}
                   rows={6}
                   placeholder={"https://example.com/policy\nhttps://example.com/faq"}
                   aria-describedby="knowledge-urls-hint"
@@ -525,7 +547,7 @@ export default function CreateOKFBundleModal({
                     setPreview(null);
                     setError(null);
                   }}
-                  disabled={importing || previewing}
+                  disabled={importing || previewing || tableImporting}
                   rows={10}
                   placeholder={copy.knowledgePlaceholder}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
@@ -550,23 +572,23 @@ export default function CreateOKFBundleModal({
                 </div>}
                 {mode === "files" && <div className="mb-3 text-xs text-gray-500" aria-live="polite">
                   {capabilities.status === "unknown" ? copy.mediaReadinessUnknown : capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio].some((item) => item.status === "unavailable") ? <>{copy.mediaUnavailable}<details className="mt-1"><summary>{copy.errorDetails}</summary>{[capabilities.value.images, capabilities.value.audio].filter((item) => item.status === "unavailable").map((item) => item.status === "unavailable" ? item.reason : "").join(" · ")}</details></> : ""}
-                  {(capabilities.status === "unknown" || (capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio].some((item) => item.status === "unavailable" && item.retryable))) && <button type="button" className="ml-2 text-emerald-700 underline" onClick={() => { setError(null); setReadinessRevision((value) => value + 1); }} disabled={importing || previewing}>{copy.retry}</button>}
+                  {(capabilities.status === "unknown" || (capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio].some((item) => item.status === "unavailable" && item.retryable))) && <button type="button" className="ml-2 text-emerald-700 underline" onClick={() => { setError(null); setReadinessRevision((value) => value + 1); }} disabled={importing || previewing || tableImporting}>{copy.retry}</button>}
                   {capabilities.status === "loaded" && capabilities.value.images.status === "ready" && <span className="block mt-1">{capabilities.value.image_ocr.status === "configured" ? copy.ocrConfigured : copy.ocrUnavailable}</span>}
                 </div>}
                 <label className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 text-sm text-gray-600 dark:text-gray-300 ${importing || previewing ? "opacity-60" : "cursor-pointer focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2"} ${draggingFiles ? "border-emerald-500 bg-emerald-50" : "border-gray-300 dark:border-gray-600"}`}
                   onDragOver={(event) => { event.preventDefault(); if (!importing && !previewing) setDraggingFiles(true); }} onDragLeave={() => setDraggingFiles(false)} onDrop={(event) => { event.preventDefault(); setDraggingFiles(false); addFiles(event.dataTransfer.files); }}>
-                  <input type="file" data-admin-write="true" aria-label={mode === "archive" ? copy.addArchive : copy.addFiles} accept={accept} multiple={mode !== "archive"} className="sr-only" disabled={importing || previewing} onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
+                  <input type="file" data-admin-write="true" aria-label={mode === "archive" ? copy.addArchive : copy.addFiles} accept={accept} multiple={mode !== "archive"} className="sr-only" disabled={importing || previewing || tableImporting} onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
                   <Upload className="h-5 w-5 shrink-0" />{mode === "archive" ? copy.chooseArchive : copy.dropFiles}
                 </label>
                 {mode === "files" && <p className="mt-1 text-xs text-gray-500">{copy.uploadTotal}</p>}
                 {files.length > 0 && <div className="mt-3">
-                  <div className="mb-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{copy.filesSelected(files.length, formatFileSize(selectedBytes))}</span><button type="button" onClick={clearFiles} disabled={importing || previewing} className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"><Trash2 className="h-3.5 w-3.5" />{copy.clearAll}</button></div>
+                  <div className="mb-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{copy.filesSelected(files.length, formatFileSize(selectedBytes))}</span><button type="button" onClick={clearFiles} disabled={importing || previewing || tableImporting} className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100"><Trash2 className="h-3.5 w-3.5" />{copy.clearAll}</button></div>
                   {uploadIssue && <p role="alert" className="mb-2 text-sm text-red-700 dark:text-red-300">{uploadIssue}</p>}
-                  <div className="max-h-72 space-y-2 overflow-y-auto">{files.map((file) => <FilePreview key={fileKey(file)} file={file} issue={fileIssue(file, capabilities, mode === "archive")} disabled={importing || previewing} onRemove={() => removeFile(file)} />)}</div>
+                  <div className="max-h-72 space-y-2 overflow-y-auto">{files.map((file) => <FilePreview key={fileKey(file)} file={file} issue={fileIssue(file, capabilities, mode === "archive")} disabled={importing || previewing || tableImporting} onRemove={() => removeFile(file)} />)}</div>
                 </div>}
                 {hasTableFiles && <div className="mt-3 rounded-md border border-gray-200 p-3 dark:border-gray-700">
                   <label className="flex items-start gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
-                    <input type="checkbox" checked={queryable} data-admin-write="true" aria-describedby={`${headingId}-queryable-hint`} disabled={importing || previewing} onChange={(event) => { setQueryable(event.target.checked); setPreview(null); setImportJob(null); setError(null); }} className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                    <input type="checkbox" checked={queryable} data-admin-write="true" aria-describedby={`${headingId}-queryable-hint`} disabled={importing || previewing || tableImporting} onChange={(event) => { setQueryable(event.target.checked); setPreview(null); setImportJob(null); setError(null); }} className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
                     {copy.queryableTablesOption}
                   </label>
                   <div id={`${headingId}-queryable-hint`} className="mt-1 pl-6 text-xs text-gray-500">{copy.queryableTablesHint}</div>
@@ -691,8 +713,8 @@ export default function CreateOKFBundleModal({
           <div className="sticky bottom-0 mt-6 flex flex-wrap items-center justify-end gap-3 bg-white dark:bg-gray-800 border-t border-gray-200 pt-4 dark:border-gray-700">
             <button
               type="button"
-              onClick={onClose}
-              disabled={importing || previewing}
+              onClick={close}
+              disabled={importing || previewing || tableImporting}
               className="rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
             >
               {copy.cancel}
@@ -710,7 +732,7 @@ export default function CreateOKFBundleModal({
                 )}
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={close}
                   className={[
                     "rounded-md px-4 py-2 text-sm font-medium",
                     teamSetupMode && onReturnToTeam
@@ -724,7 +746,7 @@ export default function CreateOKFBundleModal({
             ) : (
               <button
                 type="submit" data-admin-write="true"
-                disabled={importing || previewing || !displayName.trim() || !hasSource || selectedIssues.length > 0}
+                disabled={importing || previewing || tableImporting || !displayName.trim() || !hasSource || selectedIssues.length > 0}
                 className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {(importing || previewing) && <Loader2 className="h-4 w-4 animate-spin" />}

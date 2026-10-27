@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import math
@@ -198,7 +199,7 @@ def _type(values: list[str]) -> str:
     return "TEXT"
 
 
-def build_database(source_paths: list[Path], destination: Path) -> list[dict]:
+def build_database(source_paths: list[Path], destination: Path, *, allow_empty: bool = False) -> list[dict]:
     paths = [path for path in source_paths if path.suffix.lower() in {".csv", ".xlsx"}]
     if not paths:
         raise TableImportError("Queryable knowledge requires at least one CSV or XLSX file")
@@ -220,7 +221,7 @@ def build_database(source_paths: list[Path], destination: Path) -> list[dict]:
                     raise TableImportError("Spreadsheet contains no readable worksheets")
                 shutil.copyfile(path, originals / f"{source_index}{path.suffix.lower()}")
                 for sheet_name, rows in sheets:
-                    if not rows or len(rows) < 2:
+                    if not rows or (len(rows) < 2 and not allow_empty):
                         raise TableImportError("Spreadsheet requires a header row and at least one data row")
                     total_rows += len(rows) - 1
                     total_cells += len(rows) * len(rows[0])
@@ -291,6 +292,12 @@ def schema(source_dir: Path) -> list[dict]:
         return catalog
     except (ValueError, KeyError, TypeError, UnicodeError, sqlite3.Error, OSError) as exc:
         raise TableImportError("Queryable schema is invalid; reimport the original spreadsheet") from exc
+
+
+def schema_signature(catalog: list[dict]) -> str:
+    definitions = [{"table_name": table["table_name"], "columns": table["columns"]}
+                   for table in sorted(catalog, key=lambda item: item["table_name"])]
+    return hashlib.sha256(json.dumps(definitions, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def query(source_dir: Path, sql: str) -> dict:

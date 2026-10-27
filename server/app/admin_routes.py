@@ -2008,11 +2008,88 @@ def _image_policy_bundle(db, bundle_id: int, team_agent_id: int, *, lock: bool =
     return bundle
 
 
-def _can_edit_image_policy(current_user: str, team_agent_id: int, bundle: OKFBundle) -> bool:
+def _can_edit_bundle(current_user: str, team_agent_id: int, bundle: OKFBundle) -> bool:
     admin = database.get_admin_by_username(current_user)
     super_admin = bool(admin and admin.get("is_super_admin"))
     return database.has_team_access(current_user, team_agent_id, "admin") and (
         bundle.owner_team_agent_id is None or bundle.owner_team_agent_id == team_agent_id or super_admin)
+
+
+@router.post("/okf-bundles/table-drafts/import")
+async def import_table_drafts(
+    team_agent_id: Optional[int] = None,
+    files: List[UploadFile] = File(...),
+    current_user: str = Depends(get_current_user),
+):
+    _require_resolved_team_access(current_user, team_agent_id, "admin")
+    _validate_queryable_upload(True, "knowledge", None, files, None)
+    if any(Path(upload.filename or "").suffix.lower() not in {".csv", ".xlsx"} for upload in files):
+        raise HTTPException(status_code=400, detail="Choose only CSV or Excel (.xlsx) files")
+    from app.knowledge_table_editor import import_drafts
+    try:
+        with tempfile.TemporaryDirectory(prefix="table_drafts_") as temporary:
+            paths = await _save_okf_upload_sources(Path(temporary), "tables", files, None, None)
+            workbook = await run_in_threadpool(import_drafts, paths)
+            return workbook.model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unable to import tables. Check file structure and size limits.") from exc
+
+
+@router.get("/okf-bundles/{bundle_id}/tables")
+async def get_editable_tables(
+    bundle_id: int,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
+    with get_db() as db:
+        bundle = _image_policy_bundle(db, bundle_id, team_agent_id)
+        can_edit = _can_edit_bundle(current_user, team_agent_id, bundle)
+    try:
+        result = await run_in_threadpool(OKFService().editable_tables, bundle_id, team_agent_id)
+        return {**result, "can_edit": can_edit}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Knowledge not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Table data is unavailable. Check the knowledge sources.") from exc
+
+
+@router.put("/okf-bundles/{bundle_id}/tables")
+async def save_editable_tables(
+    bundle_id: int,
+    request: Request,
+    team_agent_id: Optional[int] = None,
+    current_user: str = Depends(get_current_user),
+):
+    team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
+    with get_db() as db:
+        bundle = _image_policy_bundle(db, bundle_id, team_agent_id)
+        if not _can_edit_bundle(current_user, team_agent_id, bundle):
+            raise HTTPException(status_code=403, detail="Only the owning team can edit tables")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_ARCHIVE_BYTES:
+            raise HTTPException(status_code=413, detail="Table data exceeds 50 MB")
+    from pydantic import ValidationError
+    from app.knowledge_table_editor import SaveEditableWorkbook, TableRevisionConflict
+    try:
+        payload = SaveEditableWorkbook.model_validate_json(bytes(body))
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail="Invalid table data. Check names, columns, rows and size limits.") from exc
+    admin = database.get_admin_by_username(current_user)
+    try:
+        result = await run_in_threadpool(OKFService().save_editable_tables, bundle_id, team_agent_id, payload,
+                                        super_admin=bool(admin and admin.get("is_super_admin")))
+        return {**result, "can_edit": True}
+    except TableRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Only the owning team can edit tables") from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Knowledge not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unable to save tables. Check the data and size limits.") from exc
 
 
 @router.get("/okf-bundles/{bundle_id}/image-search-settings", response_model=ImageSearchSettingsResponse)
@@ -2024,7 +2101,7 @@ async def get_image_search_settings(
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     with get_db() as db:
         bundle = _image_policy_bundle(db, bundle_id, team_agent_id)
-        return knowledge_image_policy.describe(db, bundle_id, _can_edit_image_policy(current_user, team_agent_id, bundle))
+        return knowledge_image_policy.describe(db, bundle_id, _can_edit_bundle(current_user, team_agent_id, bundle))
 
 
 @router.patch("/okf-bundles/{bundle_id}/image-search-settings", response_model=ImageSearchSettingsResponse)
@@ -2037,7 +2114,7 @@ async def update_image_search_settings(
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     with get_db() as db:
         bundle = _image_policy_bundle(db, bundle_id, team_agent_id, lock=True)
-        if not _can_edit_image_policy(current_user, team_agent_id, bundle):
+        if not _can_edit_bundle(current_user, team_agent_id, bundle):
             raise HTTPException(status_code=403, detail="Only the owning team can edit image search settings")
         if request.mode != knowledge_image_policy.active_mode():
             raise HTTPException(status_code=409, detail="Image search mode changed. Reload the settings before saving.")

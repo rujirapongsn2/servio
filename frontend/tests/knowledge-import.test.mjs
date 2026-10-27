@@ -22,7 +22,7 @@ function load(file, mocks = {}) {
 }
 const helpers = load('src/lib/knowledge-import.ts');
 const portalHosts = [];
-const { default: Modal } = load('src/components/CreateOKFBundleModal.tsx', { '@/lib/admin-locale': adminLocale, '@/lib/api': { getApiBaseUrl: () => '' }, '@/lib/knowledge-import': helpers, 'react-dom': { createPortal(children, host) { portalHosts.push(host); return children; } } });
+const { default: Modal } = load('src/components/CreateOKFBundleModal.tsx', { '@/lib/admin-locale': adminLocale, '@/lib/api': { getApiBaseUrl: () => '' }, '@/lib/knowledge-import': helpers, '@/lib/knowledge-tables': load('src/lib/knowledge-tables.ts'), '@/components/KnowledgeTableEditor': { KnowledgeTableEditor: () => null }, 'react-dom': { createPortal(children, host) { portalHosts.push(host); return children; } } });
 const ready = { documents: { status: 'ready' }, images: { status: 'ready' }, audio: { status: 'ready' }, image_ocr: { status: 'not_configured' } };
 const response = (body, ok = true) => ({ ok, json: async () => body });
 const props = { teamAgentId: 1, onClose() {}, onSuccess() {} };
