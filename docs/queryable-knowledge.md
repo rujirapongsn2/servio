@@ -12,6 +12,8 @@ Example tool arguments (column names depend on the uploaded file):
 
 Use `sql: "SCHEMA"` to retrieve the table inventory again. An empty SQL string retains normal Knowledge search. The existing tool assignment and team sharing rules apply. Access is checked on every invocation, including after a share is revoked.
 
+For totals, Agent tool guidance distinguishes **ยอดเฉพาะสินค้า** (product subtotal) from **ยอดรวมทั้งตาราง / ยอดรวมสินค้าทั้งหมด** (all-product table total). Asking for a product's quantity alongside a table total requires independent scopes, with separate result labels. Product names must be resolved from stored values before filtering; a missing product is not a confirmed zero subtotal. Explicit date, branch and other report-wide conditions still apply to both totals. Ambiguous totals should trigger a clarification. This is model guidance, not a deterministic guarantee of natural-language interpretation.
+
 ## Create and edit a table
 
 In **Add Knowledge → ตาราง** (Table), create a worksheet and enter headings and values directly. Add or remove rows and columns, paste a range copied from Excel, or import `.xlsx`/CSV into the grid. The grid displays a page of rows at a time; switching pages or worksheets retains the draft. Review and import using the same Knowledge workflow. Tables created here are queryable automatically.
@@ -50,7 +52,7 @@ Editing extracted text does not change table values. Use the Table tab for struc
 
 ```sh
 cd server
-.venv/bin/python -m pytest tests/test_knowledge_tables.py tests/test_queryable_knowledge.py tests/test_knowledge_table_editor.py tests/test_table_tool_schema.py -q
+.venv/bin/python -m pytest tests/test_knowledge_tables.py tests/test_queryable_knowledge.py tests/test_knowledge_table_editor.py tests/test_table_tool_schema.py tests/test_table_total_scope.py -q
 ```
 
 Tests execute real CSV/XLSX imports and SQLite queries, Agent tool calls, both HTTP import paths, editable table snapshots, stale-save and stale-schema rejection, rollback, preview, sharing revocation, reindex and deletion. They use disposable local data and do not call an external LLM or alter live Knowledge.
