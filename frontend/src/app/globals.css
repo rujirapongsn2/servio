@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
 /*
+ * Token architecture adapted from the Kargul Workspace design system
+ * (kargulstudio/calender-app-design), re-valued to the Softnix CI.
+ * CI authority: DESIGN-softnix.md — Softnix Blue #2786C2 single accent,
+ * Ink Navy #0D1B2A text, cool-gray hairlines #E2E8F0, tier accents untouched.
+ *
  * `dark:` follows the OS setting, except inside surfaces that pin a light
  * palette (the customer Web Chat sets data-color-scheme="light").
  */
@@ -12,44 +17,269 @@
   }
 }
 
+/* Hover only where a real pointer exists (touch taps shouldn't stick) */
+@custom-variant hover-fine {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Design tokens — Softnix CI values in the Kargul token structure     */
+/* ------------------------------------------------------------------ */
 :root {
-  --background: #ffffff;
-  --foreground: #0D1B2A;
-  --card-background: #ffffff;
-  --primary: #2786C2;
-  --primary-hover: #1A5A8A;
-  --border-color: #E2E8F0;
-  --softnix-off-white: #F8F9FA;
-  --softnix-ink: #0D1B2A;
-  --softnix-charcoal: #2D3F55;
-  --softnix-slate: #778DA9;
-  --softnix-stone: #CBD5E1;
+  /* Surfaces: app vs card, separated by hairlines instead of shadows */
+  --bg-app: #f8f9fa;
+  --bg-surface: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-selected: #e8eef5;
+
+  /* Borders */
+  --border-hairline: #e2e8f0;
+  --border-control: #e2e8f0;
+  --border-subtle: #eef2f6;
+  --border-segment: #dbe3ec;
+
+  /* Text — Ink Navy hierarchy from the Softnix palette */
+  --text-primary: #0d1b2a;
+  --text-secondary: #778da9;
+  --text-placeholder: #94a3b8;
+  --text-section: #778da9;
+  --text-heading: #0d1b2a;
+  --text-on-accent: #ffffff;
+  --icon: #778da9;
+
+  /* Brand — the single accent, used sparingly */
+  --brand: #2786c2;
+  --brand-strong: #1a5a8a;
+  --brand-tint: rgba(39, 134, 194, 0.1);
+  --brand-tint-strong: rgba(39, 134, 194, 0.16);
+
+  /* Product-tier accents (unchanged CI) */
+  --tier-data: #2786c2;
+  --tier-data-tint: rgba(39, 134, 194, 0.12);
+  --tier-genai: #f3903f;
+  --tier-genai-tint: rgba(243, 144, 63, 0.12);
+  --tier-agents: #a9cb2e;
+  --tier-agents-tint: rgba(169, 203, 46, 0.14);
+  --tier-genai-fg: #774317;
+  --tier-genai-bg: #fde3c8;
+  --tier-agents-fg: #43520b;
+  --tier-agents-bg: #e6f2bb;
+  --tier-data-fg: #0e5289;
+  --tier-data-bg: #c9e1f4;
+
+  /* Status triads: color + tint bg + tint border */
+  --status-success: #00a475;
+  --status-success-tint: rgba(0, 164, 117, 0.08);
+  --status-success-border: rgba(0, 164, 117, 0.12);
+  --status-danger: #ef4747;
+  --status-danger-tint: rgba(239, 71, 71, 0.08);
+  --status-danger-border: rgba(239, 71, 71, 0.12);
+  --status-warning: #e07a1f;
+  --status-warning-tint: rgba(224, 122, 31, 0.1);
+  --status-warning-border: rgba(224, 122, 31, 0.16);
+  --status-neutral: #778da9;
+  --status-neutral-tint: rgba(119, 141, 169, 0.08);
+  --status-neutral-border: rgba(119, 141, 169, 0.14);
+  --status-info: #2786c2;
+  --status-info-tint: rgba(39, 134, 194, 0.08);
+  --status-info-border: rgba(39, 134, 194, 0.14);
+
+  /* Info Blue Light — legal/informational links */
+  --link-legal: #5eadd6;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --radius: 0.5rem;
+
+  /* ---------------------------------------------------------------- */
+  /* Legacy aliases — every pre-existing variable keeps resolving.     */
+  /* ---------------------------------------------------------------- */
+  --background: var(--bg-surface);
+  --foreground: var(--text-primary);
+  --card-background: var(--bg-surface);
+  --primary: var(--brand);
+  --primary-hover: var(--brand-strong);
+  --border-color: var(--border-hairline);
+  --softnix-off-white: var(--bg-app);
+  --softnix-ink: var(--text-primary);
+  --softnix-charcoal: #2d3f55;
+  --softnix-slate: var(--text-secondary);
+  --softnix-stone: #cbd5e1;
   --shadow: rgba(0, 0, 0, 0.04) 0 2px 6px 0;
   --shadow-lg: rgba(0, 0, 0, 0.02) 0 0 0 1px, rgba(0, 0, 0, 0.04) 0 2px 6px 0, rgba(0, 0, 0, 0.1) 0 4px 8px 0;
   --font-serif: "New York", serif;
   --font-sans: "Softnix Cereal VF", Circular, -apple-system, system-ui, Roboto, "Helvetica Neue", sans-serif;
 
-  /* Softnix tier accents */
-  --brand-gradient-start: #F3903F;
-  --brand-gradient-end: #FDC70C;
-  --brand-text-dark: #0D1B2A;
+  /* Softnix tier accents (legacy names) */
+  --brand-gradient-start: #f3903f;
+  --brand-gradient-end: #fdc70c;
+  --brand-text-dark: #0d1b2a;
+
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #111827;
-    --foreground: #f9fafb;
-    --card-background: #1f2937;
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
-    --border-color: #374151;
+  :root:not([data-color-scheme="light"]) {
+    --bg-app: #0d1b2a;
+    --bg-surface: #16263a;
+    --bg-hover: #1d3049;
+    --bg-selected: #243954;
+
+    --border-hairline: #24354b;
+    --border-control: #2c405a;
+    --border-subtle: #1e2f45;
+    --border-segment: #33485f;
+
+    --text-primary: #e8eef5;
+    --text-secondary: #94a8c0;
+    --text-placeholder: #64748b;
+    --text-section: #7d92ab;
+    --text-heading: #f2f6fa;
+    --icon: #94a8c0;
+
+    --brand: #3d9bd4;
+    --brand-strong: #5eadd6;
+    --brand-tint: rgba(61, 155, 212, 0.16);
+    --brand-tint-strong: rgba(61, 155, 212, 0.24);
+
+    --tier-data-bg: #17324a;
+    --tier-data-fg: #a9d3f6;
+    --tier-genai-bg: #43301f;
+    --tier-genai-fg: #f9c497;
+    --tier-agents-bg: #2f3a12;
+    --tier-agents-fg: #d3e88f;
+
+    --status-success-tint: rgba(0, 164, 117, 0.14);
+    --status-danger-tint: rgba(239, 71, 71, 0.14);
+    --status-warning-tint: rgba(224, 122, 31, 0.14);
+    --status-neutral-tint: rgba(148, 168, 192, 0.12);
+
+    /* Legacy aliases */
+    --background: var(--bg-surface);
+    --foreground: var(--text-primary);
+    --card-background: var(--bg-surface);
+    --primary: var(--brand);
+    --primary-hover: var(--brand-strong);
+    --border-color: var(--border-hairline);
+    --softnix-off-white: var(--bg-app);
+    --softnix-ink: var(--text-primary);
+    --softnix-slate: var(--text-secondary);
+    --softnix-stone: #33485f;
+
+    color-scheme: dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+/* ------------------------------------------------------------------ */
+/* Tailwind theme bridge — utilities like bg-app, text-fg, border-hairline */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  --color-app: var(--bg-app);
+  --color-surface: var(--bg-surface);
+  --color-selected: var(--bg-selected);
+  --color-hover: var(--bg-hover);
+
+  --color-hairline: var(--border-hairline);
+  --color-control: var(--border-control);
+  --color-subtle: var(--border-subtle);
+  --color-segment: var(--border-segment);
+
+  --color-fg: var(--text-primary);
+  --color-fg-2: var(--text-secondary);
+  --color-placeholder: var(--text-placeholder);
+  --color-section: var(--text-section);
+  --color-heading: var(--text-heading);
+  --color-icon: var(--icon);
+
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-tint: var(--brand-tint);
+  --color-charcoal: var(--softnix-charcoal);
+  --color-stone: var(--softnix-stone);
+
+  --color-success: var(--status-success);
+  --color-danger: var(--status-danger);
+  --color-warning: var(--status-warning);
+
+  /* shadcn/ui semantic tokens, mapped onto the design tokens */
+  --color-background: var(--bg-surface);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-surface);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--text-on-accent);
+  --color-secondary: var(--bg-app);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-app);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--status-danger);
+  --color-border: var(--border-hairline);
+  --color-input: var(--border-control);
+  --color-ring: var(--brand);
+
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --ease-drawer: var(--ease-drawer);
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                 */
+/* ------------------------------------------------------------------ */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: var(--brand-tint-strong);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-placeholder);
+    opacity: 1;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    opacity: 0.45;
+    cursor: pointer;
+  }
+
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
 }
 
 p {
@@ -69,6 +299,62 @@ ol {
 li {
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Typography utilities — Softnix Cereal VF, leading 1, tracked -2%     */
+/* (12px captions tracked -1%)                                          */
+/* ------------------------------------------------------------------ */
+@utility t-16 {
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: -0.32px;
+}
+@utility t-14 {
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -0.28px;
+}
+@utility t-12 {
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: -0.12px;
+}
+@utility t-12-tight {
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: -0.24px;
+}
+
+/* Pressable elements: smooth colour/opacity changes only — no scale bounce */
+@utility press {
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-out);
+}
+
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+/* iOS zooms into any field under 16px on focus — keep touch inputs at 16px */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .markdown-content p {

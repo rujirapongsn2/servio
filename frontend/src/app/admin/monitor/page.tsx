@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getApiBaseUrl, getWebsocketBaseUrl } from "@/lib/api";
 import { useTeam } from "@/lib/team-context";
 import ReactMarkdown from "react-markdown";
@@ -205,9 +207,7 @@ export default function MonitorPage() {
                             Active Sessions ({sessions.length})
                         </h2>
                         {selectedTeam && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                                {selectedTeam.name}
-                            </span>
+                            <Badge variant="brand">{selectedTeam.name}</Badge>
                         )}
                     </div>
                 </div>
@@ -245,12 +245,7 @@ export default function MonitorPage() {
                                                     {session.intent_group}
                                                 </span>
                                             )}
-                                            <span className={`text-xs px-2 py-0.5 rounded-full ${session.mode === "MANUAL"
-                                                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                                                : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                                                }`}>
-                                                {session.mode}
-                                            </span>
+                                            <StatusBadge status={session.mode} variant={session.mode === "MANUAL" ? "warning" : "success"}/>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 mb-2">

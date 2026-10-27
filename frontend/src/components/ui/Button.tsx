@@ -4,19 +4,25 @@ import * as React from "react";
 
 import { cn } from "@/components/ui/utils";
 
+/*
+ * Themed on the design tokens (see app/globals.css). No raw hex values:
+ * light/dark both resolve through the token layer. Motion follows the
+ * reference: colour/opacity transitions only — no scale bounce.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D1B2A] focus-visible:ring-offset-2 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium press cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         ghost:
-          "text-[#2D3F55] disabled:text-[#CBD5E1] hover:bg-[#F8F9FA] hover:text-[#0D1B2A] dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white dark:disabled:text-gray-600",
-        primary: "bg-[#2786C2] text-white hover:bg-[#1A5A8A] disabled:opacity-50 disabled:cursor-not-allowed",
+          "text-charcoal hover:bg-hover hover:text-fg disabled:text-stone dark:text-fg-2 dark:hover:bg-hover dark:hover:text-fg dark:disabled:text-stone",
+        primary: "bg-brand text-primary-foreground hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed",
         outline:
-          "border border-[#E2E8F0] text-[#0D1B2A] bg-white hover:bg-[#F8F9FA] hover:border-[#CBD5E1] dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:border-gray-500",
-        stop: "bg-red-500 text-white shadow-sm hover:bg-red-600 hover:shadow-md disabled:bg-red-300 dark:bg-red-600 dark:hover:bg-red-700 dark:disabled:bg-red-900",
+          "border border-hairline text-fg bg-surface hover:bg-hover hover:border-stone dark:border-hairline dark:text-fg dark:bg-surface dark:hover:bg-hover dark:hover:border-stone",
+        stop: "bg-danger text-white hover:bg-danger/90 disabled:opacity-50",
       },
       size: {
+        xs: "h-7 px-2.5 text-xs",
         default: "h-9 px-4 py-2",
         sm: "h-8 px-3 text-xs",
         lg: "h-11 px-8 text-base",
@@ -34,7 +40,7 @@ const buttonVariants = cva(
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-  VariantProps<typeof buttonVariants> {
+    VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 

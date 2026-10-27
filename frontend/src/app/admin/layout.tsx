@@ -198,16 +198,16 @@ function AdminLayoutInner({
   }
 
   return (
-    <div lang={locale} className="min-h-screen bg-white text-[#0D1B2A]" data-viewer-only={isViewerOnly ? "1" : "0"}>
+    <div lang={locale} className="min-h-screen bg-surface text-fg" data-viewer-only={isViewerOnly ? "1" : "0"}>
       {responsiveNavigation && mobileSidebarOpen && <button type="button" aria-label={copy.closeNavigation} onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-20 bg-slate-950/30 lg:hidden" />}
       {/* Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-[#E2E8F0] bg-white text-[#0D1B2A] transition-all duration-200 z-20 ${responsiveNavigation && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
+        className={`fixed inset-y-0 left-0 ${collapsed ? "w-16" : "w-64"} border-r border-hairline bg-app text-fg transition-all duration-200 z-20 ${responsiveNavigation && !mobileSidebarOpen ? "max-lg:-translate-x-full max-lg:invisible" : ""}`}
         onClick={(event) => { if (event.target instanceof Element && event.target.closest("a")) setMobileSidebarOpen(false); }}
       >
         <div className="flex flex-col h-full">
           {/* Header with logo */}
-          <div className="flex items-center justify-between h-20 px-4 border-b border-[#E2E8F0]">
+          <div className="flex items-center justify-between h-20 px-4 border-b border-hairline">
             <img
               src="/servio_logo.png"
               alt="Servio"
@@ -219,7 +219,7 @@ function AdminLayoutInner({
               aria-label={collapsed ? copy.expandSidebar : copy.collapseSidebar}
               title={collapsed ? copy.expandSidebar : copy.collapseSidebar}
               onClick={toggleSidebar}
-              className="border-[#E2E8F0] bg-[#F8F9FA] text-[#0D1B2A] hover:bg-white"
+              className="border-hairline bg-hover text-fg hover:bg-surface"
             >
               <span className={`transform transition-transform ${collapsed ? "rotate-180" : ""}`}>
                 ›
@@ -286,7 +286,7 @@ function AdminLayoutInner({
                   collapsed={collapsed}
                   icon={Phone}
                   badge={
-                    <span className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[#F3903F] text-white">
+                    <span className="ml-auto rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-[var(--tier-genai-tint)] text-[var(--tier-genai)] border border-[var(--tier-genai-tint)]">
                       Beta
                     </span>
                   }
@@ -318,22 +318,22 @@ function AdminLayoutInner({
           </nav>
 
           {/* User info and logout */}
-          <div className="p-4 border-t border-[#E2E8F0]">
+          <div className="p-4 border-t border-hairline">
             <Link
               href="/admin/account"
-              className="flex items-center space-x-2 rounded-md p-1.5 -mx-1.5 hover:bg-[#F8F9FA] transition-colors"
+              className="flex items-center space-x-2 rounded-md p-1.5 -mx-1.5 hover:bg-hover transition-colors"
               title={copy.accountSettings}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F8F9FA] text-sm font-semibold text-[#0D1B2A] ring-1 ring-[#E2E8F0]">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-hover text-sm font-semibold text-fg ring-1 ring-hairline">
                 {username.charAt(0).toUpperCase()}
               </div>
-              <div className={`text-sm font-medium text-[#2D3F55] ${collapsed ? "hidden" : "block"}`}>
+              <div className={`text-sm font-medium text-charcoal ${collapsed ? "hidden" : "block"}`}>
                 {username}
               </div>
             </Link>
             <button
               onClick={handleLogout}
-              className="mt-2 w-full text-sm font-medium text-[#778DA9] hover:text-[#0D1B2A] flex items-center gap-1.5"
+              className="mt-2 w-full text-sm font-medium text-fg-2 hover:text-fg flex items-center gap-1.5"
             >
               <span>{copy.logout}</span>
             </button>
@@ -347,11 +347,11 @@ function AdminLayoutInner({
         style={responsiveNavigation ? undefined : { "--admin-sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
       >
         {/* Top bar */}
-        <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-[#E2E8F0] bg-white px-4 sm:px-8">
+        <div className="sticky top-0 z-10 flex h-16 items-center justify-end border-b border-hairline bg-surface px-4 sm:px-8">
           {responsiveNavigation && <button type="button" aria-label={copy.openNavigation} aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)} className="mr-auto inline-flex items-center gap-2 rounded-lg p-2 text-sm lg:hidden"><Menu className="h-5 w-5" />{copy.navigation}</button>}
-          <label className="mr-3 flex items-center gap-2 text-xs font-medium text-slate-600">
+          <label className="mr-3 flex items-center gap-2 text-xs font-medium text-fg-2">
             <span className="sr-only sm:not-sr-only">{copy.language}</span>
-            <select aria-label={copy.language} value={locale} onChange={(event) => setLocale(event.target.value === "en" ? "en" : "th")} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900">
+            <select aria-label={copy.language} value={locale} onChange={(event) => setLocale(event.target.value === "en" ? "en" : "th")} className="rounded-md border border-control bg-surface px-2 py-1.5 text-sm text-fg">
               <option value="th">ไทย</option><option value="en">EN</option>
             </select>
           </label>
@@ -398,9 +398,9 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`block rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${active
-        ? "bg-[#F8F9FA] text-[#0D1B2A] shadow-[inset_3px_0_0_#2786C2]"
-        : "text-[#2D3F55] hover:bg-[#F8F9FA] hover:text-[#0D1B2A]"
+      className={`block rounded-lg px-3 py-2 text-sm font-medium press ${active
+        ? "bg-selected text-fg shadow-[inset_3px_0_0_var(--brand)]"
+        : "text-charcoal hover:bg-hover hover:text-fg"
         }`}
       title={label || undefined}
     >
@@ -408,7 +408,7 @@ function NavLink({
         <span className="inline-flex w-full justify-center font-semibold relative">
           {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : label ? label.charAt(0) : "·"}
           {badge && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#F3903F]" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[var(--tier-genai)]" />
           )}
         </span>
       ) : (

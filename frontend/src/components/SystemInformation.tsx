@@ -2,13 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 
+/*
+ * Status triads from the design tokens (globals.css) — same look as
+ * ui/StatusBadge, kept inline so this component stays import-free
+ * (the regression test harness transpiles this file standalone).
+ */
 const statuses = {
-  healthy: { label: "Healthy", color: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" },
-  unavailable: { label: "Unavailable", color: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
-  configured: { label: "Configured", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300" },
-  not_configured: { label: "Not configured", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
-  disabled: { label: "Disabled", color: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300" },
-  unknown: { label: "Unknown", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
+  healthy: { label: "Healthy", color: "border-[var(--status-success-border)] bg-[var(--status-success-tint)] text-[var(--status-success)]" },
+  unavailable: { label: "Unavailable", color: "border-[var(--status-danger-border)] bg-[var(--status-danger-tint)] text-[var(--status-danger)]" },
+  configured: { label: "Configured", color: "border-[var(--status-info-border)] bg-[var(--status-info-tint)] text-[var(--status-info)]" },
+  not_configured: { label: "Not configured", color: "border-[var(--status-warning-border)] bg-[var(--status-warning-tint)] text-[var(--status-warning)]" },
+  disabled: { label: "Disabled", color: "border-[var(--status-neutral-border)] bg-[var(--status-neutral-tint)] text-[var(--status-neutral)]" },
+  unknown: { label: "Unknown", color: "border-[var(--status-warning-border)] bg-[var(--status-warning-tint)] text-[var(--status-warning)]" },
 };
 
 type ServiceStatus = keyof typeof statuses;
@@ -154,7 +159,7 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
               {(service.endpoint || service.model) && <div className="mt-0.5 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{[service.endpoint, service.model].filter(Boolean).join(" · ")}</div>}
               {(service.status === "unavailable" || service.status === "not_configured" || service.status === "unknown") && <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{service.detail}</div>}
             </div>
-            <span title={service.detail} aria-label={`${statuses[service.status].label}. ${service.detail}`} className={`rounded-full px-2 py-0.5 text-xs font-medium ${statuses[service.status].color}`}>{statuses[service.status].label}</span>
+            <span title={service.detail} aria-label={`${statuses[service.status].label}. ${service.detail}`} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium leading-4 ${statuses[service.status].color}`}><span aria-hidden className="w-1.5 h-1.5 rounded-full bg-current" />{statuses[service.status].label}</span>
           </li>)}
         </ul>
         <details className="mt-4 border-t border-gray-200 pt-3 text-sm dark:border-gray-700">
