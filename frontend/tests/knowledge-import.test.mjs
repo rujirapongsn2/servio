@@ -396,6 +396,6 @@ test('Thai table query label remains concise and associated with its checkbox', 
     await pick(renderer, 'เพิ่ม เอกสาร', [new File(['item,value'], 'sales.csv')]);
     assert.equal(checkbox(renderer).parent.type, 'label');
     assert.ok(checkbox(renderer).parent.children.includes('ให้ AI ค้นหาและคำนวณจากตาราง'));
-    assert.match(text(renderer), /สำหรับไฟล์ Excel \(\.xlsx\) และ CSV ที่เลือก/);
+    assert.match(text(renderer), /Excel \(\.xlsx\) \/ CSV · สูงสุด 19,999 แถวข้อมูลรวมทุกตารางต่อแหล่งความรู้/);
   } finally { await TestRenderer.act(async () => renderer.unmount()); }
 });

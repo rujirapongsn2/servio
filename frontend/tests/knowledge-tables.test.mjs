@@ -39,6 +39,19 @@ async function mount(component) { let tree; await act(async () => { tree = creat
 const table = (rows = [['001', '2']]) => ({ table_name: 'data_1', name: 'Products', columns: ['code', 'qty'], rows });
 function Grid({ initial }) { const [tables, setTables] = React.useState(initial); return React.createElement(Editor, { tables, onChange: setTables, teamAgentId: 21 }); }
 
+test('table limits expose the combined row cap with secondary details collapsed', async () => {
+  const tree = await mount(React.createElement(Grid, { initial: [table()] }));
+  const details = tree.root.findByType('details');
+  assert.equal(Boolean(details.props.open), false);
+  assert.match(text(details.findByType('summary')), /19,999 data rows across all tables/);
+  const content = text(details);
+  assert.match(content, /50 tables, 200 columns per table/);
+  assert.match(content, /2,000,000 cells including headers/);
+  assert.match(content, /AI response time is additional/);
+  assert.match(content, /SQL totals still include every matching row/);
+  await act(async () => tree.unmount());
+});
+
 test('draft parser rejects malformed cells and CSV serialization preserves identifiers and quoted data', async () => {
   assert.throws(() => lib.parseTableDrafts([{ ...table(), rows: [[1, 2]] }]));
   const files = lib.tablesToFiles([table([['001', '2'], ['A,"B', '3']])]);

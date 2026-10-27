@@ -101,6 +101,15 @@ export function KnowledgeTableEditor({ tables, onChange, disabled = false, readO
       {!readOnly ? <div className="flex gap-2"><button type="button" className={buttonClass} disabled={locked || active.rows.length >= TABLE_LIMITS.rows} onClick={() => { update({ ...active, rows: [...active.rows, active.columns.map(() => '')] }); setPage(Math.floor(active.rows.length / PAGE_SIZE)); }}><Plus className="h-4 w-4" />{copy.addRow}</button><button type="button" className={buttonClass} disabled={locked || active.columns.length >= TABLE_LIMITS.columns} onClick={() => update({ ...active, columns: [...active.columns, nextColumnName(active.columns)], rows: active.rows.map(row => [...row, '']) })}><Plus className="h-4 w-4" />{copy.addColumn}</button></div> : <span className="text-xs text-gray-500">{copy.tableReadOnly}</span>}
       <div className="flex items-center gap-2 text-xs text-gray-500"><span>{copy.tableDimensions(active.rows.length, active.columns.length)}</span><button type="button" className={buttonClass} aria-label={copy.tablePrevious} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeft className="h-4 w-4" /></button><span>{copy.tablePage(currentPage + 1, pages)}</span><button type="button" className={buttonClass} aria-label={copy.tableNext} disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}><ChevronRight className="h-4 w-4" /></button></div>
     </div>
+    <details className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+      <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500">{copy.tableLimitsSummary(TABLE_LIMITS.rows)}</summary>
+      <ul className="mt-2 list-disc space-y-1 pl-5">
+        <li>{copy.tableLimitsStructure(TABLE_LIMITS.columns, TABLE_LIMITS.tables, TABLE_LIMITS.cells, TABLE_LIMITS.bytes / 1024 / 1024)}</li>
+        <li>{copy.tableLimitsSpeed}</li>
+        <li>{copy.tableLimitsResults}</li>
+        <li>{copy.tableLimitsAccuracy}</li>
+      </ul>
+    </details>
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
   </section>;
 }
