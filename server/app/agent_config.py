@@ -382,7 +382,50 @@ def create_okf_knowledge_graph_tool(
 
     dynamic_okf_tool.__name__ = tool_name
     dynamic_okf_tool.__doc__ = description
-    tool = function_tool(dynamic_okf_tool)
+    selected_function = dynamic_okf_tool
+    if config.get("queryable") and bundle_id and runtime_team_agent_id is not None:
+        try:
+            tables = OKFService().table_inventory(bundle_id, runtime_team_agent_id)
+        except (KeyError, ValueError):
+            tables = []
+        if tables:
+            visible_tables = []
+            for table in tables:
+                if len(json.dumps([*visible_tables, table], ensure_ascii=False)) > 16000:
+                    break
+                visible_tables.append(table)
+            description += (
+                " This knowledge supports SQLite read-only SQL over the uploaded tables. "
+                "Use sql for counts, totals, averages, calculations, filtering, grouping and joins. "
+                "Use query for ordinary text search, with sql empty. Quote column names with double quotes. "
+                "To refresh the full table schema, use sql='SCHEMA'. Compute over all rows, never infer "
+                "totals from text search excerpts. Cite source file and sheet; disclose truncated results. "
+                "Excel formula values are cached at upload time, not recalculated. Tables: "
+                + json.dumps(visible_tables, ensure_ascii=False)
+                + (" (partial inventory; call SCHEMA for all tables)" if len(visible_tables) < len(tables) else "")
+            )
+
+            async def queryable_okf_tool(query: str, sql: str = ""):
+                if not sql.strip():
+                    return await dynamic_okf_tool(query)
+                try:
+                    log_tool_call(tool_name, {"query": query, "sql": sql})
+                    service = OKFService()
+                    if sql.strip().upper() == "SCHEMA":
+                        result = {"tables": await asyncio.to_thread(service.table_inventory, bundle_id, runtime_team_agent_id)}
+                    else:
+                        result = await asyncio.to_thread(service.query_tables, bundle_id, sql, runtime_team_agent_id)
+                    return json.dumps(result, ensure_ascii=False)
+                except KeyError:
+                    return "Knowledge not found or unavailable to this team."
+                except ValueError as exc:
+                    return f"Table query failed: {exc}"
+
+            queryable_okf_tool.__name__ = tool_name
+            queryable_okf_tool.__doc__ = description
+            selected_function = queryable_okf_tool
+
+    tool = function_tool(selected_function)
     tool._servio_knowledge_bundle_id = bundle_id
     tool._servio_image_filenames = image_filenames
     return tool

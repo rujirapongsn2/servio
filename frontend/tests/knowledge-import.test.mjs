@@ -1,4 +1,4 @@
-import { adminLocale, EnglishAdminLocale, SwitchableAdminLocale } from './admin-locale-context.mjs';
+import { adminLocale, EnglishAdminLocale, ThaiAdminLocale, SwitchableAdminLocale } from './admin-locale-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -296,5 +296,106 @@ test('Add Knowledge keeps pasted text and selected files across a locale switch'
     assert.equal(renderer.root.findByProps({ id: 'knowledge-text' }).props.value, 'Do not translate this source');
     await TestRenderer.act(async () => button(renderer, 'ไฟล์').props.onClick());
     assert.match(text(renderer), /policy.txt/);
+  } finally { await TestRenderer.act(async () => renderer.unmount()); }
+});
+
+const tableOption = 'Let AI query and calculate table data';
+const checkbox = renderer => renderer.root.findByProps({ type: 'checkbox' });
+const submit = renderer => TestRenderer.act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+const toggleTables = (renderer, checked) => TestRenderer.act(async () => checkbox(renderer).props.onChange({ target: { checked } }));
+const tablePreview = { source_count: 1, concept_count: 1, warnings: [], documents: [], tables: [{ table_name: 'sales', source_file: 'sales.csv', sheet_name: '', columns: [{ name: 'สินค้า', type: 'TEXT' }, { name: 'ราคา', type: 'REAL' }], row_count: 3 }] };
+
+test('table query option appears only for selected CSV or XLSX and defaults to ordinary knowledge', async () => {
+  const requests = [];
+  const renderer = await create(async (url, options) => { requests.push({ url, options }); return response(url.includes('preview') ? tablePreview : ready); });
+  try {
+    assert.doesNotMatch(text(renderer), new RegExp(tableOption));
+    await pick(renderer, 'Add documents', [new File(['policy'], 'policy.txt')]);
+    assert.doesNotMatch(text(renderer), new RegExp(tableOption));
+    await pick(renderer, 'Add documents', [new File(['สินค้า,ราคา\nโต๊ะ,250'], 'sales.CSV')]);
+    assert.match(text(renderer), new RegExp(tableOption));
+    assert.equal(checkbox(renderer).props.checked, false);
+    const label = checkbox(renderer).parent;
+    assert.equal(label.type, 'label');
+    assert.ok(label.children.includes(tableOption));
+    assert.ok(checkbox(renderer).props['aria-describedby']);
+    await submit(renderer);
+    assert.equal(requests.find(item => item.url.includes('preview')).options.body.has('queryable'), false);
+    await TestRenderer.act(async () => renderer.root.findByProps({ 'aria-label': 'Remove sales.CSV' }).props.onClick());
+    await pick(renderer, 'Add documents', [new File(['xlsx'], 'sales.xlsx')]);
+    assert.equal(checkbox(renderer).props.checked, false);
+    await pick(renderer, 'Add documents', [new File(['xls'], 'legacy.xls')]);
+    assert.match(text(renderer), /Unsupported file type/);
+  } finally { await TestRenderer.act(async () => renderer.unmount()); }
+});
+
+test('queryable choice reaches both review and import, and changing it requires a fresh review', async () => {
+  const requests = [];
+  const completed = { job_id: 'queryable-job', status: 'succeeded', message: 'Ready', warnings: [], bundle: { id: 12, tool_id: 34, display_name: 'sales' } };
+  const renderer = await create(async (url, options) => {
+    requests.push({ url, options });
+    return response(url.includes('import-jobs') ? completed : url.includes('preview') ? tablePreview : ready);
+  });
+  try {
+    await pick(renderer, 'Add documents', [new File(['สินค้า,ราคา\nโต๊ะ,250'], 'sales.csv')]);
+    await toggleTables(renderer, true);
+    await submit(renderer);
+    assert.equal(requests.filter(item => item.url.includes('preview'))[0].options.body.get('queryable'), 'true');
+    assert.match(text(renderer), /Queryable tables \(1\)/);
+    assert.match(text(renderer), /3 rows · 2 columns/);
+    const summary = renderer.root.findAllByType('summary').find(item => item.children.includes('Queryable tables (1)'));
+    assert.equal(summary.parent.type, 'details');
+    assert.notEqual(summary.parent.props.open, true);
+    await toggleTables(renderer, false);
+    assert.doesNotMatch(text(renderer), /Knowledge source is ready|Queryable tables/);
+    await submit(renderer);
+    assert.equal(requests.filter(item => item.url.includes('preview'))[1].options.body.has('queryable'), false);
+    assert.equal(requests.filter(item => item.url.includes('import-jobs')).length, 0);
+    await toggleTables(renderer, true);
+    await submit(renderer);
+    await submit(renderer);
+    assert.equal(requests.find(item => item.url.includes('import-jobs') && item.options.method === 'POST').options.body.get('queryable'), 'true');
+  } finally { await TestRenderer.act(async () => renderer.unmount()); }
+});
+
+test('removing table files and switching source modes clears queryable choice', async () => {
+  const requests = [];
+  const renderer = await create(async (url, options) => { requests.push({ url, options }); return response(url.includes('preview') ? { ...tablePreview, tables: [] } : ready); });
+  try {
+    const file = new File(['item,value\na,1'], 'sales.csv');
+    await pick(renderer, 'Add documents', [file]);
+    await toggleTables(renderer, true);
+    await TestRenderer.act(async () => renderer.root.findByProps({ 'aria-label': 'Remove sales.csv' }).props.onClick());
+    assert.equal(renderer.root.findAllByProps({ type: 'checkbox' }).length, 0);
+    await pick(renderer, 'Add documents', [file]);
+    assert.equal(checkbox(renderer).props.checked, false);
+    for (const mode of ['Paste Text', 'URLs', 'Prepared OKF archive']) {
+      await toggleTables(renderer, true);
+      await TestRenderer.act(async () => button(renderer, mode).props.onClick());
+      assert.equal(renderer.root.findAllByProps({ type: 'checkbox' }).length, 0);
+      if (mode !== 'Prepared OKF archive') {
+        await TestRenderer.act(async () => renderer.root.findByType('textarea').props.onChange({ target: { value: mode === 'URLs' ? 'https://example.com' : 'Policy text' } }));
+        await submit(renderer);
+        assert.equal(requests.filter(item => item.url.includes('preview')).at(-1).options.body.has('queryable'), false);
+      }
+      await TestRenderer.act(async () => button(renderer, 'Files').props.onClick());
+      assert.equal(checkbox(renderer).props.checked, false);
+    }
+    await toggleTables(renderer, true);
+    await TestRenderer.act(async () => button(renderer, 'Clear all').props.onClick());
+    await pick(renderer, 'Add documents', [file]);
+    assert.equal(checkbox(renderer).props.checked, false);
+  } finally { await TestRenderer.act(async () => renderer.unmount()); }
+});
+
+test('Thai table query label remains concise and associated with its checkbox', async () => {
+  globalThis.fetch = async () => response(ready);
+  let renderer;
+  await TestRenderer.act(async () => { renderer = TestRenderer.create(React.createElement(ThaiAdminLocale, null, React.createElement(Modal, props))); });
+  try {
+    await pick(renderer, 'เพิ่ม เอกสาร', [new File(['item,value'], 'sales.csv')]);
+    assert.equal(checkbox(renderer).parent.type, 'label');
+    assert.ok(checkbox(renderer).parent.children.includes('ให้ AI ค้นหาและคำนวณจากตาราง'));
+    assert.match(text(renderer), /สำหรับไฟล์ Excel \(\.xlsx\) และ CSV ที่เลือก/);
   } finally { await TestRenderer.act(async () => renderer.unmount()); }
 });

@@ -65,6 +65,13 @@ interface KnowledgePreview {
   source_count: number;
   concept_count: number;
   warnings: string[];
+  tables?: Array<{
+    table_name: string;
+    source_file: string;
+    sheet_name: string | null;
+    columns: Array<{ name: string; type: string }>;
+    row_count: number;
+  }>;
   documents: Array<{
     title: string;
     source_file: string;
@@ -157,6 +164,9 @@ export default function CreateOKFBundleModal({
   const [mode, setMode] = useState<ImportMode>("files");
   const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
   const [archiveFiles, setArchiveFiles] = useState<File[]>([]);
+  const [queryable, setQueryable] = useState(false);
+  const hasTableFiles = mode === "files" && knowledgeFiles.some((file) => /\.(csv|xlsx)$/i.test(file.name));
+  useEffect(() => { if (!hasTableFiles) setQueryable(false); }, [hasTableFiles]);
   const files = mode === "archive" ? archiveFiles : knowledgeFiles;
   const setFiles = mode === "archive" ? setArchiveFiles : setKnowledgeFiles;
   const [capabilities, setCapabilities] = useState<CapabilitiesState>({ status: "loading" });
@@ -200,6 +210,7 @@ export default function CreateOKFBundleModal({
 
   const resetSource = (nextMode: ImportMode) => {
     setMode(nextMode);
+    setQueryable(false);
     setPreview(null);
     setImportJob(null);
     setError(null);
@@ -253,6 +264,7 @@ export default function CreateOKFBundleModal({
     formData.append("visibility", visibility);
     formData.append("import_mode", mode === "archive" ? "archive" : mode === "urls" ? "urls" : "knowledge");
     formData.append("create_tool", "true");
+    if (hasTableFiles && queryable) formData.append("queryable", "true");
     if (assignAgentId) formData.append("assign_agent_id", String(assignAgentId));
     if (mode === "urls") {
       urls.forEach((url) => formData.append("urls", url));
@@ -552,6 +564,13 @@ export default function CreateOKFBundleModal({
                   {uploadIssue && <p role="alert" className="mb-2 text-sm text-red-700 dark:text-red-300">{uploadIssue}</p>}
                   <div className="max-h-72 space-y-2 overflow-y-auto">{files.map((file) => <FilePreview key={fileKey(file)} file={file} issue={fileIssue(file, capabilities, mode === "archive")} disabled={importing || previewing} onRemove={() => removeFile(file)} />)}</div>
                 </div>}
+                {hasTableFiles && <div className="mt-3 rounded-md border border-gray-200 p-3 dark:border-gray-700">
+                  <label className="flex items-start gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+                    <input type="checkbox" checked={queryable} data-admin-write="true" aria-describedby={`${headingId}-queryable-hint`} disabled={importing || previewing} onChange={(event) => { setQueryable(event.target.checked); setPreview(null); setImportJob(null); setError(null); }} className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                    {copy.queryableTablesOption}
+                  </label>
+                  <div id={`${headingId}-queryable-hint`} className="mt-1 pl-6 text-xs text-gray-500">{copy.queryableTablesHint}</div>
+                </div>}
               </div>
             )}
 
@@ -578,6 +597,15 @@ export default function CreateOKFBundleModal({
                     </ul>
                   </details>
                 )}
+                {preview.tables && preview.tables.length > 0 && <details className="mt-4 rounded-md border border-gray-200 p-3 text-sm dark:border-gray-700">
+                  <summary className="cursor-pointer font-medium text-gray-800 dark:text-gray-100">{copy.queryableTablesCount(preview.tables.length)}</summary>
+                  <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto text-xs text-gray-600 dark:text-gray-300">
+                    {preview.tables.map((table) => <li key={table.table_name} className="break-words">
+                      <span className="font-medium">{table.source_file}{table.sheet_name ? ` · ${table.sheet_name}` : ""}</span>
+                      <span className="mt-0.5 block">{copy.tableDimensions(table.row_count, table.columns.length)}</span>
+                    </li>)}
+                  </ul>
+                </details>}
                 <div className="mt-4 space-y-2">
                   {preview.documents.map((document) => (
                     <div key={`${document.source_file}-${document.character_count}`} className="rounded-md border border-gray-200 p-3 dark:border-gray-700">

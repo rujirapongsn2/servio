@@ -814,10 +814,12 @@ class OKFService:
         created_by_username: Optional[str],
         urls: Optional[List[str]] = None,
         on_progress: Optional[Callable[[str, str], None]] = None,
+        queryable: bool = False,
     ) -> Dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="okf_generate_") as tmp_name:
             tmp_dir = Path(tmp_name)
             generated_dir = tmp_dir / "generated_okf"
+            tables = self._prepare_tables(source_paths, generated_dir, queryable, urls)
             sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths, **({"on_progress": on_progress} if on_progress else {}))
             duplicate_warnings = self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
@@ -849,6 +851,7 @@ class OKFService:
                         "warnings": metadata_warnings,
                         "generated": True,
                         "source_count": len(sources),
+                        **({"queryable": True, "tables": tables} if queryable else {}),
                     },
                     owner_team_agent_id=team_agent_id,
                     visibility=visibility,
@@ -883,7 +886,10 @@ class OKFService:
         source_paths: List[Path],
         team_agent_id: Optional[int],
         urls: Optional[List[str]] = None,
+        queryable: bool = False,
     ) -> Dict[str, Any]:
+        with tempfile.TemporaryDirectory(prefix="okf_tables_preview_") as tmp_name:
+            tables = self._prepare_tables(source_paths, Path(tmp_name), queryable, urls)
         sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths, preview=True)
         warnings.extend(
             self._existing_duplicate_warnings(
@@ -922,7 +928,39 @@ class OKFService:
             "concept_count": len(sources),
             "warnings": warnings,
             "documents": documents,
+            "tables": tables,
         }
+
+    @staticmethod
+    def _prepare_tables(source_paths, destination, queryable, urls):
+        if not queryable:
+            return []
+        if urls is not None:
+            raise OKFValidationError("Queryable data requires uploaded CSV or Excel (.xlsx) files")
+        from app.knowledge_tables import TableImportError, build_database
+        try:
+            return build_database(source_paths, destination)
+        except TableImportError as exc:
+            raise OKFValidationError(str(exc)) from exc
+
+    def table_inventory(self, bundle_id: int, team_agent_id: int) -> List[Dict[str, Any]]:
+        from app.knowledge_tables import schema
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if team_agent_id is None or not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                raise KeyError("Knowledge not found or unavailable to this team")
+            self._require_source_available(db, bundle)
+            return schema(Path(bundle.storage_path))
+
+    def query_tables(self, bundle_id: int, sql: str, team_agent_id: int) -> Dict[str, Any]:
+        from app.knowledge_tables import query
+        with get_db() as db:
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if team_agent_id is None or not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                raise KeyError("Knowledge not found or unavailable to this team")
+            self._require_source_available(db, bundle)
+            result = query(Path(bundle.storage_path), sql)
+            return {**result, "bundle_id": bundle.id, "source": bundle.display_name}
 
     def _source_snapshot(self, bundle_id: int, team_agent_id: Optional[int]):
         with get_db() as db:
@@ -959,7 +997,7 @@ class OKFService:
                     path.write_text(markdown, encoding="utf-8")
                 concepts, metadata = parse_okf_directory(source)
                 bundle.okf_version = metadata.get("okf_version")
-                bundle.validation_summary = {"warnings": metadata.get("warnings", []), "reindexed_at": datetime.utcnow().isoformat() + "Z"}
+                bundle.validation_summary = {**(bundle.validation_summary or {}), "warnings": metadata.get("warnings", []), "reindexed_at": datetime.utcnow().isoformat() + "Z"}
                 self._replace_index(db, bundle, concepts)
                 bundle.status = "ready"
                 bundle.updated_at = datetime.utcnow()

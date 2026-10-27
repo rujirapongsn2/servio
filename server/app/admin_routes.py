@@ -1521,6 +1521,7 @@ def _create_okf_tool_for_bundle(
         "type": "okf_knowledge_graph",
         "description": f"Search local knowledge in {display_name.strip()}",
         "okf_bundle_id": bundle["id"],
+        "queryable": bool(bundle.get("validation_summary", {}).get("queryable")),
         "display_name": display_name.strip(),
         "team_agent_id": team_agent_id,
         "retrieval": {
@@ -1564,6 +1565,19 @@ def _validate_okf_url_mode(import_mode, urls, file, files, pasted_text):
     return None
 
 
+def _validate_queryable_upload(queryable, import_mode, file, files, pasted_text):
+    if not queryable:
+        return
+    uploads = list(files or []) + ([file] if file is not None else [])
+    names = [Path(upload.filename or "").name for upload in uploads]
+    if len(names) != len(set(names)):
+        raise HTTPException(status_code=400, detail="Use unique filenames for queryable uploads")
+    if import_mode != "knowledge" or pasted_text or not any(
+        Path(upload.filename or "").suffix.lower() in {".csv", ".xlsx"} for upload in uploads
+    ):
+        raise HTTPException(status_code=400, detail="Queryable data requires uploaded CSV or Excel (.xlsx) files")
+
+
 def _run_okf_import_job(
     job_id: str,
     source_paths: List[str],
@@ -1576,6 +1590,7 @@ def _run_okf_import_job(
     assign_agent_id: Optional[int],
     cleanup_dir: str,
     urls: Optional[List[str]] = None,
+    queryable: bool = False,
 ) -> None:
     try:
         _update_okf_job(job_id, status="processing", message="Preparing local knowledge")
@@ -1594,6 +1609,7 @@ def _run_okf_import_job(
         else:
             bundle = service.import_knowledge_files(
                 source_paths=paths,
+                **({"queryable": True} if queryable else {}),
                 urls=urls,
                 display_name=display_name.strip(),
                 team_agent_id=team_agent_id,
@@ -1698,6 +1714,7 @@ async def preview_okf_knowledge(
     team_agent_id: Optional[int] = None,
     display_name: str = Form("Knowledge Preview"),
     import_mode: str = Form("knowledge"),
+    queryable: bool = Form(False),
     pasted_text: Optional[str] = Form(None),
     urls: Optional[List[str]] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -1707,6 +1724,7 @@ async def preview_okf_knowledge(
     """Preview friendly knowledge uploads before creating a local OKF bundle."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     urls = _validate_okf_url_mode(import_mode, urls, file, files, pasted_text)
+    _validate_queryable_upload(queryable, import_mode, file, files, pasted_text)
     temp_dir = None
     try:
         temp_dir = tempfile.TemporaryDirectory(prefix="okf_preview_")
@@ -1722,6 +1740,7 @@ async def preview_okf_knowledge(
             source_paths=source_paths,
             urls=urls,
             team_agent_id=team_agent_id,
+            **({"queryable": True} if queryable else {}),
         )
     except OKFValidationError as e:
         raise HTTPException(
@@ -1742,6 +1761,7 @@ async def start_okf_import_job(
     display_name: str = Form(...),
     visibility: str = Form("team"),
     import_mode: str = Form("knowledge"),
+    queryable: bool = Form(False),
     pasted_text: Optional[str] = Form(None),
     urls: Optional[List[str]] = Form(None),
     create_tool: bool = Form(True),
@@ -1753,6 +1773,7 @@ async def start_okf_import_job(
     """Start a background import job for local OKF knowledge."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     urls = _validate_okf_url_mode(import_mode, urls, file, files, pasted_text)
+    _validate_queryable_upload(queryable, import_mode, file, files, pasted_text)
     if visibility not in ("team", "global"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1832,6 +1853,7 @@ async def start_okf_import_job(
         assign_agent_id,
         str(upload_dir),
         urls,
+        queryable,
     )
     return _okf_job_response(OKF_IMPORT_JOBS[job_id])
 
@@ -1863,6 +1885,7 @@ async def import_okf_bundle(
     display_name: str = Form(...),
     visibility: str = Form("team"),
     import_mode: str = Form("knowledge"),
+    queryable: bool = Form(False),
     pasted_text: Optional[str] = Form(None),
     urls: Optional[List[str]] = Form(None),
     create_tool: bool = Form(True),
@@ -1874,6 +1897,7 @@ async def import_okf_bundle(
     """Import OKF knowledge from friendly uploads, pasted text, or advanced OKF archives."""
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "admin")
     urls = _validate_okf_url_mode(import_mode, urls, file, files, pasted_text)
+    _validate_queryable_upload(queryable, import_mode, file, files, pasted_text)
     if visibility not in ("team", "global"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1920,6 +1944,7 @@ async def import_okf_bundle(
             bundle = await run_in_threadpool(
                 service.import_knowledge_files,
                 source_paths=source_paths,
+                **({"queryable": True} if queryable else {}),
                 urls=urls,
                 display_name=display_name.strip(),
                 team_agent_id=team_agent_id,
