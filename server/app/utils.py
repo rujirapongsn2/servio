@@ -23,6 +23,22 @@ from app.knowledge_audio_presentations import hydrate_knowledge_media
 from app.carousel_marker import strip_marker, build_carousel_message, MARKER
 
 
+def _sanitize_payload(value):
+    """Strip the carousel marker from every string in an outgoing payload.
+
+    The marker must reach the model (tool output) but never the client or
+    channel relays; presentations and echoed history may still carry it
+    inside raw tool response text.
+    """
+    if isinstance(value, str):
+        return value.replace(MARKER, "")
+    if isinstance(value, list):
+        return [_sanitize_payload(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_payload(item) for key, item in value.items()}
+    return value
+
+
 _IMAGE_SEARCH_WORKERS = threading.BoundedSemaphore(2)
 
 
@@ -191,8 +207,8 @@ class WebsocketHelper:
             await session_manager.update_session(self.session_id, {"content": summary}, is_user=False)
             if generation != self.image_search_session.generation:
                 return
-            await self.websocket.send_json({"type": "history.updated", "reason": "knowledge.image.result", "request_id": request.request_id, "inputs": self.history,
-                "presentations": self.presentations, "agent_name": self.latest_agent.name})
+            await self.websocket.send_json(_sanitize_payload({"type": "history.updated", "reason": "knowledge.image.result", "request_id": request.request_id, "inputs": self.history,
+                "presentations": self.presentations, "agent_name": self.latest_agent.name}))
             await self.websocket.send_json({"type": "knowledge.image.result", "request_id": request.request_id,
                 "status": result.status, "message_id": message_id})
         except InvalidSearchImage as exc:
@@ -234,7 +250,7 @@ class WebsocketHelper:
         )
 
         await self.websocket.send_text(
-            json.dumps(
+            json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
                     "presentations": self.presentations,
@@ -242,7 +258,7 @@ class WebsocketHelper:
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
                 }
-            )
+            ))
         )
         return (self.history, self.latest_agent)
 
@@ -253,7 +269,7 @@ class WebsocketHelper:
         self.partial_response += new_tokens
         visible = self.partial_response.replace(MARKER, "")
         await self.websocket.send_text(
-            json.dumps(
+            json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
                     "presentations": self.presentations,
@@ -268,7 +284,7 @@ class WebsocketHelper:
                     ],
                     "agent_name": self.latest_agent.name,
                 }
-            )
+            ))
         )
 
     def _knowledge_image_card_refs(self, output, bundle_id):
@@ -293,29 +309,39 @@ class WebsocketHelper:
             return None
 
     def _convert_images_to_carousel(self, item):
-        """Swap the latest knowledge image presentation for a product carousel."""
-        for call_id, presentation in reversed(list(self.presentations.items())):
-            if presentation.get("type") not in ("knowledge_images", "knowledge_media"):
-                continue
-            images = presentation.get("images") or []
-            if not images or call_id not in self._knowledge_image_refs:
-                continue
-            refs = self._knowledge_image_refs[call_id]
-            built = build_carousel_message(images, refs, self._marker_summary(item))
-            if built is None:
-                return
-            message_id, carousel, card_refs = built
-            self.image_search_session.register(message_id, card_refs)
+        """Combine this turn's knowledge image presentations into one carousel."""
+        candidates = [
+            (call_id, presentation) for call_id, presentation in self.presentations.items()
+            if presentation.get("type") in ("knowledge_images", "knowledge_media")
+            and (presentation.get("images") or [])
+            and call_id in self._knowledge_image_refs
+        ]
+        if not candidates:
+            return
+        images, refs = [], []
+        for call_id, presentation in candidates:
+            call_images = presentation.get("images") or []
+            call_refs = self._knowledge_image_refs[call_id]
+            take = min(len(call_images), len(call_refs), 5 - len(images))
+            images.extend(call_images[:take])
+            refs.extend(call_refs[:take])
+            if len(images) >= 5:
+                break
+        built = build_carousel_message(images, refs, self._marker_summary(item))
+        if built is None:
+            return
+        message_id, carousel, card_refs = built
+        self.image_search_session.register(message_id, card_refs)
+        for call_id, presentation in candidates:
             if presentation.get("type") == "knowledge_media":
                 # Keep audio players; the image list renders as the carousel.
                 presentation["images"] = []
             else:
                 del self.presentations[call_id]
-            if len(self.presentations) < 50:
-                self.presentations[message_id] = carousel
-            self._last_carousel_message_id = message_id
-            item["id"] = message_id
-            return
+        if len(self.presentations) < 50:
+            self.presentations[message_id] = carousel
+        self._last_carousel_message_id = message_id
+        item["id"] = message_id
 
     @staticmethod
     def _marker_summary(item):
@@ -335,7 +361,7 @@ class WebsocketHelper:
             self.latest_agent = event.new_agent
             self.analytics.track_handoff(previous_agent_name, getattr(self.latest_agent, "name", None))
             await self.websocket.send_text(
-                json.dumps(
+            json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
                         "presentations": self.presentations,
@@ -343,7 +369,7 @@ class WebsocketHelper:
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
                     }
-                )
+                ))
             )
         elif is_new_output_item(event):
             item = event.item.to_input_item()  # type: ignore
@@ -384,7 +410,7 @@ class WebsocketHelper:
                 self.analytics.track_tool_call(tool_name, arguments, agent_name=self.latest_agent.name)
 
             await self.websocket.send_text(
-                json.dumps(
+            json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
                         "presentations": self.presentations,
@@ -392,7 +418,7 @@ class WebsocketHelper:
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
                     }
-                )
+                ))
             )
         elif is_text_output(event):
             await self.stream_response(event.data.delta)  # type: ignore
@@ -400,7 +426,7 @@ class WebsocketHelper:
     async def text_output_complete(self, output, is_done=False, knowledge_context=None):
         if not is_done:
             await self.websocket.send_text(
-                json.dumps(
+            json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
                         "presentations": self.presentations,
@@ -408,7 +434,7 @@ class WebsocketHelper:
                         "sync": True,
                         "agent_name": self.latest_agent.name,
                     }
-                )
+                ))
             )
         else:
             # Track agent response in analytics before clearing partial_response
@@ -433,7 +459,7 @@ class WebsocketHelper:
                             item["id"] = self._last_carousel_message_id
                     break
             await self.websocket.send_text(
-                json.dumps(
+            json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
                         "presentations": self.presentations,
@@ -441,7 +467,7 @@ class WebsocketHelper:
                         "reason": "response.done",
                         "agent_name": self.latest_agent.name,
                     }
-                )
+                ))
             )
 
     async def send_assistant_message(self, content: str, agent_name: Optional[str] = None):
@@ -460,7 +486,7 @@ class WebsocketHelper:
         )
 
         await self.websocket.send_text(
-            json.dumps(
+            json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
                     "presentations": self.presentations,
@@ -468,7 +494,7 @@ class WebsocketHelper:
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
                 }
-            )
+            ))
         )
 
     async def send_admin_message(self, content: str):
@@ -488,7 +514,7 @@ class WebsocketHelper:
         )
 
         await self.websocket.send_text(
-            json.dumps(
+            json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
                     "presentations": self.presentations,
@@ -496,7 +522,7 @@ class WebsocketHelper:
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
                 }
-            )
+            ))
         )
 
     async def send_audio_chunk(self, event: VoiceStreamEvent):
@@ -506,11 +532,12 @@ class WebsocketHelper:
 
         if isinstance(event, VoiceStreamEventAudio):
             await self.websocket.send_text(
-                json.dumps(transform_data_to_events(event.data))  # type: ignore
+            json.dumps(_sanitize_payload(transform_data_to_events(event.data)))  # type: ignore
             )
 
     async def send_audio_done(self):
-        await self.websocket.send_text(json.dumps({"type": "audio.done"}))
+        await self.websocket.send_text(
+            json.dumps(_sanitize_payload({"type": "audio.done"})))
 
     async def end_conversation(self, outcome: str = "completed"):
         """End conversation tracking and save to database"""
