@@ -20,9 +20,11 @@ interface ChatDialogProps {
   onKnowledgeInquiry?: (messageId: string, cardId: string) => void;
   productActionsDisabled?: boolean;
   productActionError?: string | null;
+  /** Hide internal system events (tool calls, agent transfers) — customer surfaces. */
+  showSystemEvents?: boolean;
 }
 
-export function ChatHistory({ messages, isLoading, collapsed = false, presentations = {}, onProductInquiry, onKnowledgeInquiry, productActionsDisabled = false, productActionError }: ChatDialogProps) {
+export function ChatHistory({ messages, isLoading, collapsed = false, presentations = {}, onProductInquiry, onKnowledgeInquiry, productActionsDisabled = false, productActionError, showSystemEvents = true }: ChatDialogProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
             productResponse = true;
             return <ProductCarousel key={`products-${message.call_id}`} presentation={presentation} disabled={productActionsDisabled || isLoading || !onProductInquiry} onInquire={(productId) => onProductInquiry?.(message.call_id, productId)} />;
           }
+          if (message.type === "function_call" && !showSystemEvents) return null;
           if (message.type === "function_call" && presentations[message.call_id]) return null;
           // Check if there is any subsequent message after this one,
           // which means this handoff/function call has completed and the

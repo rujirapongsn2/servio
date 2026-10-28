@@ -208,7 +208,7 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
                         <h1>{greeting.title}</h1>
                         <p>{greeting.subtitle}</p>
                     </div> : <div className={styles.history}>
-                        <ChatHistory messages={messages} isLoading={isLoading} collapsed={currentMode === "voice" && collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} onKnowledgeInquiry={sendKnowledgeInquiry} productActionsDisabled={!chatReady} productActionError={productActionError} />
+                        <ChatHistory messages={messages} isLoading={isLoading} collapsed={currentMode === "voice" && collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} onKnowledgeInquiry={sendKnowledgeInquiry} productActionsDisabled={!chatReady} productActionError={productActionError} showSystemEvents={false} />
                     </div>}
                     <div className={styles.composer}>
                         {connectionError ? (
