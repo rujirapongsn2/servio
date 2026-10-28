@@ -66,10 +66,12 @@ export function normalizeMarkdownForChat(raw: string): string {
   const unescaped = raw.replace(/\r\n/g, "\n").replace(/\\([#|])/g, "$1");
   let text = normalizeInlineMarkdownTables(unescaped).trim();
 
-  // Space-padded emphasis (`** text **`) renders literal asterisks in
-  // CommonMark; tighten it so bold/italic actually applies. The delimiters
-  // must sit on word boundaries so real bold spans are never re-paired.
-  text = text.replace(/(^|\s)\*\*\s+([\s\S]*?)\s+\*\*(?=\s|$)/g, "$1**$2**");
+  // Space-padded emphasis (`** text **`, `**text **`, `** text**`) renders
+  // literal asterisks in CommonMark; tighten it so bold actually applies.
+  // Delimiters must sit on word boundaries so real bold spans are never
+  // re-paired across sentences.
+  text = text.replace(/(^|\s)\*\*([^*\n]*?)\s+\*\*(?=\s|$)/g, "$1**$2**");
+  text = text.replace(/(^|\s)\*\*\s+([^*\n]*?)\*\*(?=\s|$)/g, "$1**$2**");
   text = text.replace(/(^|\s)\*\s+([^*\n]+?)\s+\*(?=\s|$)/g, "$1*$2*");
 
   // Headings sometimes arrive inline after a sentence or list item.

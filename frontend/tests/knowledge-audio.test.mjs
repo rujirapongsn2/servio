@@ -117,6 +117,7 @@ for (const { body, isAudio } of [{ body: '[00:00] Cats purr.', isAudio: true }, 
 }
 
 const { ChatHistory } = load('src/components/ChatDialog.tsx', {
+  '@/lib/chat-flow': load('src/lib/chat-flow.ts', {}),
   clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
   '@/components/ChatLoadingDots': { default: () => null },
   '@/components/MessageBubble': { MessageBubble: ({ message }) => {

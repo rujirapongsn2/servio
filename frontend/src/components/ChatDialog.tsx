@@ -9,6 +9,7 @@ import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
 import { ProductPresentations } from "@/lib/product-presentations";
+import { answerLandedAfter } from "@/lib/chat-flow";
 import { Message, ToolCall } from "@/lib/types";
 
 interface ChatDialogProps {
@@ -112,7 +113,11 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
             productResponse = true;
             return <ProductCarousel key={`products-${message.call_id}`} presentation={presentation} disabled={productActionsDisabled || isLoading || !onProductInquiry} onInquire={(productId) => onProductInquiry?.(message.call_id, productId)} />;
           }
-          if (message.type === "function_call" && !showSystemEvents) return null;
+          if (message.type === "function_call" && !showSystemEvents) {
+            // Show tool/transfer lines only while the turn is still working;
+            // once the assistant's answer for this turn arrives, hide them.
+            if (answerLandedAfter(displayMessages, index)) return null;
+          }
           if (message.type === "function_call" && presentations[message.call_id]) return null;
           // Check if there is any subsequent message after this one,
           // which means this handoff/function call has completed and the

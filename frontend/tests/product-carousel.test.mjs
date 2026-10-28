@@ -136,6 +136,7 @@ test('WebSocket sidecars persist across snapshots, actions send IDs only and res
 
 test('product search keeps extra model text collapsed and selected-product reply readable', async () => {
   const { ChatHistory } = load('src/components/ChatDialog.tsx', {
+  '@/lib/chat-flow': load('src/lib/chat-flow.ts', {}),
     '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
     '@/components/KnowledgeImages': { KnowledgeImages: () => null },
     clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
@@ -173,6 +174,7 @@ test('accepts signed local image references and rejects foreign or ambiguous ima
 });
 test('image results retain a visible assistant answer and have no product inquiry action', async () => {
   const { ChatHistory } = load('src/components/ChatDialog.tsx', {
+  '@/lib/chat-flow': load('src/lib/chat-flow.ts', {}),
     clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
     '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
     '@/components/KnowledgeImages': { KnowledgeImages: ({ images }) => React.createElement('section', { 'aria-label': 'image-results' }, images[0].title) },

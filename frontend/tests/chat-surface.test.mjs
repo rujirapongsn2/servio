@@ -248,3 +248,4 @@ test('theme parser rejects malformed colours and foreign logo URLs', () => {
   assert.equal(chatTheme.parseChatTheme({ ...THEME, logo_url: '/api/public/widget-logo/../x.png' }).logo_url, null);
   assert.equal(chatTheme.resolveGreeting(null, 'en').title, 'Hi there, how can we help?');
 });
+
