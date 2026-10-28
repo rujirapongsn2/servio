@@ -1,6 +1,8 @@
 from app.environment import load_environment
+from app.log_setup import configure_logging
 
 load_environment()
+configure_logging()
 
 import time
 from collections.abc import AsyncIterator
