@@ -272,11 +272,16 @@ class WebsocketHelper:
         )
 
     def _knowledge_image_card_refs(self, output, bundle_id):
-        """Card refs for a knowledge_image_refs tool output, in image order."""
+        """Card refs for a knowledge_image_refs / knowledge_media_refs tool output."""
         try:
             import json as _json
             value = _json.loads(output) if isinstance(output, str) else output
-            references = KnowledgeImageReferences.model_validate(value)
+            if not isinstance(value, dict) or value.get("type") not in ("knowledge_image_refs", "knowledge_media_refs"):
+                return None
+            references = KnowledgeImageReferences.model_validate(
+                {"type": "knowledge_image_refs", "version": 1,
+                 "response": value.get("response", ""), "images": value.get("images", [])}
+            )
             if any(reference.bundle_id != bundle_id for reference in references.images):
                 return None
             return [
@@ -288,16 +293,24 @@ class WebsocketHelper:
             return None
 
     def _convert_images_to_carousel(self, item):
-        """Swap the latest knowledge_images presentation for a product carousel."""
+        """Swap the latest knowledge image presentation for a product carousel."""
         for call_id, presentation in reversed(list(self.presentations.items())):
-            if presentation.get("type") != "knowledge_images" or call_id not in self._knowledge_image_refs:
+            if presentation.get("type") not in ("knowledge_images", "knowledge_media"):
                 continue
-            built = build_carousel_message(presentation.get("images", []), self._knowledge_image_refs[call_id], self._marker_summary(item))
+            images = presentation.get("images") or []
+            if not images or call_id not in self._knowledge_image_refs:
+                continue
+            refs = self._knowledge_image_refs[call_id]
+            built = build_carousel_message(images, refs, self._marker_summary(item))
             if built is None:
                 return
             message_id, carousel, card_refs = built
             self.image_search_session.register(message_id, card_refs)
-            del self.presentations[call_id]
+            if presentation.get("type") == "knowledge_media":
+                # Keep audio players; the image list renders as the carousel.
+                presentation["images"] = []
+            else:
+                del self.presentations[call_id]
             if len(self.presentations) < 50:
                 self.presentations[message_id] = carousel
             self._last_carousel_message_id = message_id
@@ -355,7 +368,7 @@ class WebsocketHelper:
                 if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
                     if len(self.presentations) < 50:
                         self.presentations[call_id] = carousel.model_dump(exclude_none=True)
-                        if carousel.model_dump().get("type") == "knowledge_images" and bundle_id is not None:
+                        if carousel.model_dump().get("type") in ("knowledge_images", "knowledge_media") and bundle_id is not None:
                             refs = self._knowledge_image_card_refs(item.get("output"), bundle_id)
                             if refs is not None:
                                 self._knowledge_image_refs[call_id] = refs

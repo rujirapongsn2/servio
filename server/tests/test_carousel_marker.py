@@ -99,3 +99,36 @@ def test_convert_without_images_presentation_is_noop(helper):
     instance._convert_images_to_carousel(item)
     assert "id" not in item
     assert instance.presentations == {}
+
+
+def test_convert_knowledge_media_keeps_audio(helper):
+    module, instance = helper
+    call_id = "call_9"
+    images = [_fake_image("c" * 64)]
+    instance.presentations[call_id] = {
+        "type": "knowledge_media", "version": 1, "response": "r",
+        "images": images, "audio": [{"source_label": "clip"}],
+    }
+    instance._knowledge_image_refs[call_id] = [_fake_ref("c" * 64)]
+    item = {"type": "message", "role": "assistant", "content": f"เลือกได้เลย {MARKER}"}
+    instance._convert_images_to_carousel(item)
+
+    # audio stays at the tool call, images move to the carousel
+    assert instance.presentations[call_id]["type"] == "knowledge_media"
+    assert instance.presentations[call_id]["images"] == []
+    assert instance.presentations[call_id]["audio"] == [{"source_label": "clip"}]
+    message_id = item["id"]
+    assert instance.presentations[message_id]["type"] == "knowledge_product_carousel"
+
+
+def test_knowledge_media_refs_output_parses(helper):
+    module, instance = helper
+    import json
+    output = json.dumps({
+        "type": "knowledge_media_refs", "version": 1, "response": "r",
+        "images": [{"asset_id": "d" * 64, "title": "t", "source_label": "s",
+                    "bundle_id": 15, "concept_id": "c1", "source_hash": "0" * 64}],
+        "audio": [],
+    })
+    refs = instance._knowledge_image_card_refs(output, 15)
+    assert refs is not None and refs[0].asset == "d" * 64 and refs[0].bundle == 15
