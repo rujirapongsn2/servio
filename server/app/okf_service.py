@@ -1558,6 +1558,7 @@ class OKFService:
                     if vision_answer:
                         result["response"] += "\n\n" + vision_answer
                     result["response"] += "\n\nThe client displays original-image cards. Do not generate image tags or URLs. Answer from OCR excerpts and Vision evidence when available; do not infer visual details from filenames or similarity alone. Cite source labels and say when evidence is missing."
+                    result["response"] += "\n\nDisplay contract: if, and only if, the user is browsing, comparing, choosing, or shopping for these items as products, end your final visible reply with the exact marker [[carousel]] as the very last characters with nothing after it — the client then renders these images as a selectable product carousel instead of reference cards. For reference or evidence questions, omit the marker entirely."
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Image retrieval unavailable; preserving text results")

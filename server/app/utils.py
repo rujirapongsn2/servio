@@ -17,9 +17,10 @@ from openai.types.responses import ResponseTextDeltaEvent
 
 from app.analytics_service import AnalyticsService
 from app.product_presentations import parse_product_carousel, product_inquiry
-from app.knowledge_image_presentations import hydrate_knowledge_images
-from app.knowledge_image_search import ImageSearchSession, ImageSearchRequest, InvalidSearchImage, search_image
+from app.knowledge_image_presentations import hydrate_knowledge_images, KnowledgeImageReferences
+from app.knowledge_image_search import ImageSearchSession, ImageSearchRequest, InvalidSearchImage, search_image, KnowledgeCardRef
 from app.knowledge_audio_presentations import hydrate_knowledge_media
+from app.carousel_marker import strip_marker, build_carousel_message, MARKER
 
 
 _IMAGE_SEARCH_WORKERS = threading.BoundedSemaphore(2)
@@ -106,6 +107,8 @@ class WebsocketHelper:
         self.partial_response = ""
         self.presentations = {}
         self._knowledge_calls = {}
+        self._knowledge_image_refs = {}
+        self._last_carousel_message_id = None
         self.image_search_session = ImageSearchSession()
         self.team_agent_id = team_agent_id
         self.session_id = session_id
@@ -124,6 +127,7 @@ class WebsocketHelper:
     def reset_presentations(self):
         self.presentations.clear()
         self._knowledge_calls.clear()
+        self._knowledge_image_refs.clear()
         self.image_search_session.reset()
 
     async def _image_search_manual(self, request: ImageSearchRequest) -> bool:
@@ -247,6 +251,7 @@ class WebsocketHelper:
             return
 
         self.partial_response += new_tokens
+        visible = self.partial_response.replace(MARKER, "")
         await self.websocket.send_text(
             json.dumps(
                 {
@@ -258,13 +263,55 @@ class WebsocketHelper:
                         {
                             "type": "message",
                             "role": "assistant",
-                            "content": self.partial_response,
+                            "content": visible,
                         }
                     ],
                     "agent_name": self.latest_agent.name,
                 }
             )
         )
+
+    def _knowledge_image_card_refs(self, output, bundle_id):
+        """Card refs for a knowledge_image_refs tool output, in image order."""
+        try:
+            import json as _json
+            value = _json.loads(output) if isinstance(output, str) else output
+            references = KnowledgeImageReferences.model_validate(value)
+            if any(reference.bundle_id != bundle_id for reference in references.images):
+                return None
+            return [
+                KnowledgeCardRef(bundle=reference.bundle_id, concept=reference.concept_id,
+                                 source=reference.source_hash, asset=reference.asset_id)
+                for reference in references.images
+            ]
+        except Exception:
+            return None
+
+    def _convert_images_to_carousel(self, item):
+        """Swap the latest knowledge_images presentation for a product carousel."""
+        for call_id, presentation in reversed(list(self.presentations.items())):
+            if presentation.get("type") != "knowledge_images" or call_id not in self._knowledge_image_refs:
+                continue
+            built = build_carousel_message(presentation.get("images", []), self._knowledge_image_refs[call_id], self._marker_summary(item))
+            if built is None:
+                return
+            message_id, carousel, card_refs = built
+            self.image_search_session.register(message_id, card_refs)
+            del self.presentations[call_id]
+            if len(self.presentations) < 50:
+                self.presentations[message_id] = carousel
+            self._last_carousel_message_id = message_id
+            item["id"] = message_id
+            return
+
+    @staticmethod
+    def _marker_summary(item):
+        content = item.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return ""
 
     async def handle_new_item(
         self,
@@ -287,6 +334,11 @@ class WebsocketHelper:
             )
         elif is_new_output_item(event):
             item = event.item.to_input_item()  # type: ignore
+            if item.get("type") == "message" and item.get("role") == "assistant":
+                content, had_marker = strip_marker(item.get("content"))
+                if had_marker:
+                    item["content"] = content
+                    self._convert_images_to_carousel(item)
             self.history.append(item)
             if item.get("type") == "function_call":
                 for tool in event.item.agent.tools:
@@ -303,6 +355,10 @@ class WebsocketHelper:
                 if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
                     if len(self.presentations) < 50:
                         self.presentations[call_id] = carousel.model_dump(exclude_none=True)
+                        if carousel.model_dump().get("type") == "knowledge_images" and bundle_id is not None:
+                            refs = self._knowledge_image_card_refs(item.get("output"), bundle_id)
+                            if refs is not None:
+                                self._knowledge_image_refs[call_id] = refs
 
             # Track tool calls in analytics
             if item.get("type") == "function_call":
@@ -353,6 +409,16 @@ class WebsocketHelper:
             self.partial_response = ""
             self.latest_agent = output.last_agent
             self.history = [item for item in output.to_input_list() if knowledge_context is None or item != knowledge_context]
+            # The SDK rebuilds history from its own input list, so re-apply the
+            # carousel marker contract to the final assistant message.
+            for item in reversed(self.history):
+                if item.get("type") == "message" and item.get("role") == "assistant":
+                    content, had_marker = strip_marker(item.get("content"))
+                    if had_marker:
+                        item["content"] = content
+                        if self._last_carousel_message_id:
+                            item["id"] = self._last_carousel_message_id
+                    break
             await self.websocket.send_text(
                 json.dumps(
                     {

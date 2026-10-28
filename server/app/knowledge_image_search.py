@@ -327,6 +327,14 @@ class ImageSearchSession:
             self.refs.popitem(last=False)
         return message_id, KnowledgeCarousel(summary=f"พบสินค้าที่ใกล้เคียง {len(products)} รายการ", products=products)
 
+    def register(self, message_id: str, refs: dict):
+        """Register externally-built card refs (carousel marker path)."""
+        now = time.monotonic()
+        self.refs = OrderedDict((key, value) for key, value in self.refs.items() if now - value[0] < 900)
+        self.refs[message_id] = (now, refs)
+        while len(self.refs) > 20:
+            self.refs.popitem(last=False)
+
     def reference(self, request: KnowledgeInquiryRequest) -> KnowledgeCardRef:
         entry = self.refs.get(request.message_id)
         if entry is None or time.monotonic() - entry[0] >= 900 or request.card_id not in entry[1]:
