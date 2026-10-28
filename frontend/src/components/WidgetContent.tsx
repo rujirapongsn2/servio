@@ -6,7 +6,7 @@ import { Composer } from "@/components/Composer";
 import { useAudio } from "@/hooks/useAudio";
 import { useWebsocket } from "@/hooks/useWebsocket";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Headset, Loader2, MessageSquare, RotateCcw, WifiOff, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Headset, Loader2, MessageSquare, MessageSquarePlus, WifiOff, X } from "lucide-react";
 import styles from "./ChatSurface.module.css";
 import Image from "next/image";
 import { ImageSearchComposer } from "@/components/ImageSearchComposer";
@@ -195,7 +195,7 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
                         {currentMode === "voice" && <button onClick={toggleCollapsed} title={collapsed ? "แสดงบทสนทนา" : "ซ่อนบทสนทนา"} aria-label={collapsed ? "แสดงบทสนทนา" : "ซ่อนบทสนทนา"} aria-expanded={!collapsed}>
                             {collapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                         </button>}
-                        <button onClick={resetHistory} title="เริ่มบทสนทนาใหม่" aria-label="เริ่มบทสนทนาใหม่"><RotateCcw size={17} aria-hidden="true" /></button>
+                        <button onClick={resetHistory} title="เริ่มแชตใหม่" aria-label="เริ่มแชตใหม่"><MessageSquarePlus size={17} aria-hidden="true" /><span>แชตใหม่</span></button>
                         {variant === "widget" && framed && !preview && <button onClick={() => window.parent.postMessage({ type: "servio.widget.close" }, "*")} title="ปิดแชต" aria-label="ปิดแชต"><X size={19} /></button>}
                     </div>
                 </header>

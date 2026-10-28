@@ -92,7 +92,7 @@ test('widget forwards inquiries, loading, readiness, errors, credentials and res
     history.onProductInquiry('call-1', 'product-1'); history.onKnowledgeInquiry('message-1', 'card-1');
     assert.deepEqual(h.inquiries, [['product', 'call-1', 'product-1'], ['knowledge', 'message-1', 'card-1']]);
     assert.equal(h.field().props.disabled, true);
-    await act(async () => h.button('เริ่มบทสนทนาใหม่').props.onClick());
+    await act(async () => h.button('เริ่มแชตใหม่').props.onClick());
     assert.equal(h.resetCount, 1); assert.equal(h.socketOptions.apiKey, 'override-key');
   } finally { await h.close(); }
 });
@@ -185,7 +185,7 @@ test('server rejections show an inline banner instead of a silent disabled compo
 test('header and welcome use distinct icons for chat, restart and the assistant', async () => {
   const h = await harness({ overrideType: 'voice', theme: null });
   try {
-    const toggle = h.button('เปลี่ยนเป็นแชต'), restart = h.button('เริ่มบทสนทนาใหม่');
+    const toggle = h.button('เปลี่ยนเป็นแชต'), restart = h.button('เริ่มแชตใหม่');
     const iconOf = (node) => node.findAll((child) => typeof child.type === 'object' || typeof child.type === 'function')[0]?.type;
     assert.notEqual(iconOf(toggle), iconOf(restart));
   } finally { await h.close(); }
