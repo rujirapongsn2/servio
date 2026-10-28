@@ -157,7 +157,7 @@ export function SystemInformation({ apiBaseUrl }: { apiBaseUrl: string }) {
             <div className="min-w-0 flex-1 basis-44">
               <div className="text-sm font-medium text-gray-900 dark:text-white">{service.label}</div>
               {(service.endpoint || service.model) && <div className="mt-0.5 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{[service.endpoint, service.model].filter(Boolean).join(" · ")}</div>}
-              {(service.status === "unavailable" || service.status === "not_configured" || service.status === "unknown") && <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{service.detail}</div>}
+              {(service.id.startsWith("video_") || service.status === "unavailable" || service.status === "not_configured" || service.status === "unknown") && <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{service.detail}</div>}
             </div>
             <span title={service.detail} aria-label={`${statuses[service.status].label}. ${service.detail}`} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium leading-4 ${statuses[service.status].color}`}><span aria-hidden className="w-1.5 h-1.5 rounded-full bg-current" />{statuses[service.status].label}</span>
           </li>)}

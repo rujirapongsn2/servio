@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useRef } from "react";
 
 import ChatLoadingDots from "@/components/ChatLoadingDots";
 import { MessageBubble } from "@/components/MessageBubble";
+import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
@@ -14,6 +15,7 @@ import { Message, ToolCall } from "@/lib/types";
 
 interface ChatDialogProps {
   messages: Message[];
+  locale?: "th" | "en";
   isLoading: boolean;
   collapsed?: boolean;
   presentations?: ProductPresentations;
@@ -25,7 +27,7 @@ interface ChatDialogProps {
   showSystemEvents?: boolean;
 }
 
-export function ChatHistory({ messages, isLoading, collapsed = false, presentations = {}, onProductInquiry, onKnowledgeInquiry, productActionsDisabled = false, productActionError, showSystemEvents = true }: ChatDialogProps) {
+export function ChatHistory({ locale = "th", messages, isLoading, collapsed = false, presentations = {}, onProductInquiry, onKnowledgeInquiry, productActionsDisabled = false, productActionError, showSystemEvents = true }: ChatDialogProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,6 +102,7 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
           if (message.type === "message" && message.role === "user") productResponse = false;
           if (message.type === "message" && message.role === "assistant" && "id" in message && typeof message.id === "string") {
             const presentation = presentations[message.id];
+            if (presentation?.type === "knowledge_video") return <Fragment key={message.id}><MessageBubble message={message} collapsed={collapsed} /><KnowledgeVideos videos={presentation.videos} locale={locale} /></Fragment>;
             if (presentation?.type === "knowledge_product_carousel") {
               const messageId = message.id;
               return <ProductCarousel key={messageId} presentation={presentation} disabled={productActionsDisabled || isLoading || !onKnowledgeInquiry} onInquire={(cardId) => onKnowledgeInquiry?.(messageId, cardId)} />;
@@ -107,6 +110,7 @@ export function ChatHistory({ messages, isLoading, collapsed = false, presentati
           }
           if (message.type === "function_call_output" && presentations[message.call_id]) {
             const presentation = presentations[message.call_id];
+            if (presentation.type === "knowledge_video") return <KnowledgeVideos key={`video-${message.call_id}`} videos={presentation.videos} locale={locale} />;
             if (presentation.type === "knowledge_media") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             if (presentation.type === "knowledge_images") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             if (presentation.type === "knowledge_product_carousel") return null;

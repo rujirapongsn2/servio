@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
+import subprocess
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -66,7 +69,7 @@ def configuration(service_id, label, config):
                base=base, model=config.get('model_id'))
 
 
-def database_observations(team_agent_id, image_flags):
+def database_observations(team_agent_id, image_flags, *, video_worker_running=False):
     from app.db_config import DATABASE_URL
     from app.provider_models import get_task_model
 
@@ -74,6 +77,8 @@ def database_observations(team_agent_id, image_flags):
                 row('pgvector', 'pgvector', 'unknown')]
     services += [row(purpose, label, 'unknown' if active else 'disabled')
                  for purpose, label, active in image_flags]
+    if enabled('LOCAL_KNOWLEDGE_VIDEO_ENABLED'):
+        services.append(row('video_worker', 'ประมวลผลคลิปสนทนา', 'unknown', detail='ตรวจสอบคิวงานไม่ได้'))
     agents_count = tools_count = None
     engine = None
     try:
@@ -96,16 +101,49 @@ def database_observations(team_agent_id, image_flags):
             for index, (purpose, label, active) in enumerate(image_flags, 2):
                 if active:
                     try:
-                        services[index] = configuration(purpose, label, get_task_model(purpose, session=db))
+                        services[index] = configuration(purpose, label, get_task_model('image_qa' if purpose == 'video_analysis' else purpose, session=db))
                     except Exception:
                         services[index] = row(purpose, label, 'unknown')
                         db.rollback()
+            if enabled('LOCAL_KNOWLEDGE_VIDEO_ENABLED'):
+                services[-1] = video_worker_observation(db, team_agent_id, video_worker_running)
     except Exception:
         pass
     finally:
         if engine is not None:
             engine.dispose()
     return services, agents_count, tools_count
+
+
+def video_worker_observation(db, team_agent_id, running):
+    counts = db.execute(text("""SELECT
+        COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END), 0) AS queued,
+        COALESCE(SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END), 0) AS processing
+        FROM video_attachment_jobs WHERE expires_at > :now
+        AND team_id = COALESCE(:team_id, (SELECT id FROM team_agents WHERE slug='default' LIMIT 1))"""),
+        {'now': time.time(), 'team_id': team_agent_id}).mappings().one()
+    scope = 'ทีมเริ่มต้น' if team_agent_id is None else 'ทีมนี้'
+    detail = f"{scope} · รอ {counts['queued']} · กำลังทำ {counts['processing']}"
+    if not running:
+        detail = 'Worker ไม่ทำงาน · ' + detail
+    return row('video_worker', 'ประมวลผลคลิปสนทนา', 'healthy' if running else 'unavailable', detail=detail)
+
+
+def video_decoder_observation():
+    if not enabled('LOCAL_KNOWLEDGE_VIDEO_ENABLED'):
+        return row('video_decoder', 'ตัวอ่านวิดีโอ', 'disabled', detail='ปิดใช้งาน')
+    for binary in ('ffmpeg', 'ffprobe'):
+        executable = shutil.which(binary)
+        if not executable:
+            return row('video_decoder', 'ตัวอ่านวิดีโอ', 'unavailable', detail=f'ไม่พบ {binary}')
+        try:
+            check = subprocess.run([executable, '-version'], stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, timeout=1, check=False)
+            if check.returncode:
+                raise ValueError('Decoder unavailable')
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return row('video_decoder', 'ตัวอ่านวิดีโอ', 'unavailable', detail=f'{binary} ไม่พร้อมใช้งาน')
+    return row('video_decoder', 'ตัวอ่านวิดีโอ', 'healthy', detail='FFmpeg / FFprobe พร้อมใช้งาน')
 
 
 async def embedding(service_id, label, active, base, model=None, *, modality=None, key=None, processor=False, revision=True):
@@ -120,19 +158,21 @@ async def embedding(service_id, label, active, base, model=None, *, modality=Non
     return row(service_id, label, 'healthy' if healthy else 'unavailable', base=base, model=model)
 
 
-async def monitor(team_agent_id=None):
+async def monitor(team_agent_id=None, *, video_worker_running=False):
     images = enabled('LOCAL_KNOWLEDGE_IMAGES_ENABLED')
     audio = enabled('LOCAL_KNOWLEDGE_AUDIO_ENABLED')
     image_flags = [(purpose, label, images and enabled(flag)) for purpose, label, flag in (
         ('image_ocr', 'Image OCR', 'LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED'),
         ('image_qa', 'Image Q&A', 'LOCAL_KNOWLEDGE_IMAGE_QA_ENABLED'))]
+    image_flags.append(('video_analysis', 'วิเคราะห์วิดีโอ', enabled('LOCAL_KNOWLEDGE_VIDEO_ENABLED')))
 
     environment_images = {}
     from app.provider_models import get_task_model
     for purpose, label, active in image_flags:
-        if active and setting(f'{purpose.upper()}_MODEL_SOURCE', 'database') == 'environment':
+        model_purpose = 'image_qa' if purpose == 'video_analysis' else purpose
+        if active and setting(f'{model_purpose.upper()}_MODEL_SOURCE', 'database') == 'environment':
             try:
-                environment_images[purpose] = configuration(purpose, label, get_task_model(purpose))
+                environment_images[purpose] = configuration(purpose, label, get_task_model(model_purpose))
             except Exception:
                 environment_images[purpose] = row(purpose, label, 'not_configured')
     database_flags = [(purpose, label, active and purpose not in environment_images)
@@ -141,14 +181,21 @@ async def monitor(team_agent_id=None):
     async def database():
         try:
             async with asyncio.timeout(3.2):
-                return await asyncio.to_thread(database_observations, team_agent_id, database_flags)
+                return await asyncio.to_thread(database_observations, team_agent_id, database_flags, video_worker_running=video_worker_running)
         except TimeoutError:
             return ([row('postgresql', 'PostgreSQL', 'unknown'), row('pgvector', 'pgvector', 'unknown')]
                     + [row(purpose, label, 'unknown' if active else 'disabled')
                        for purpose, label, active in image_flags], None, None)
 
-    db_result, *probes = await asyncio.gather(
-        database(),
+    async def decoder():
+        try:
+            async with asyncio.timeout(2.5):
+                return await asyncio.to_thread(video_decoder_observation)
+        except TimeoutError:
+            return row('video_decoder', 'ตัวอ่านวิดีโอ', 'unknown', detail='ตรวจสอบตัวอ่านวิดีโอไม่สำเร็จ')
+
+    db_result, decoder_result, *probes = await asyncio.gather(
+        database(), decoder(),
         embedding('text_embedding', 'Text embeddings', enabled('LOCAL_KNOWLEDGE_HYBRID_ENABLED'),
                   os.getenv('EMBEDDING_BASE_URL', 'http://host.docker.internal:8090/v1'),
                   os.getenv('EMBEDDING_MODEL', 'google/embeddinggemma-2'), key='EMBEDDING_API_KEY'),
@@ -167,11 +214,22 @@ async def monitor(team_agent_id=None):
     )
     db_services, agents_count, tools_count = db_result
     db_services = [environment_images.get(service.id, service) for service in db_services]
+    if not any(service.id == 'video_worker' for service in db_services):
+        db_services.append(row('video_worker', 'ประมวลผลคลิปสนทนา',
+            'unknown' if enabled('LOCAL_KNOWLEDGE_VIDEO_ENABLED') else 'disabled',
+            detail='ตรวจสอบคิวงานไม่ได้' if enabled('LOCAL_KNOWLEDGE_VIDEO_ENABLED') else 'ปิดใช้งาน'))
+    for service in db_services:
+        if service.id == 'video_analysis':
+            service.detail = {
+                'configured': 'เฟรมตัวอย่าง · ตั้งค่าโมเดลแล้ว ยังไม่ทดสอบการเรียกใช้งาน',
+                'not_configured': 'ยังไม่ได้ตั้งค่าโมเดลภาพ',
+                'disabled': 'ปิดใช้งาน',
+            }.get(service.status, 'ตรวจสอบการตั้งค่าโมเดลไม่ได้')
     llm = configuration('default_llm', 'Default LLM', {
         'base_url': setting('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
         'model_id': default_agent_model(), 'api_key': setting('OPENAI_API_KEY')})
     mcp_disabled = enabled('DISABLE_MCP') or enabled('AGENTS_SAFE_MODE_DISABLE_EXTERNAL')
-    services = [*db_services[:2], *probes, llm, *db_services[2:],
+    services = [*db_services[:2], *probes, llm, *db_services[2:], decoder_result,
                 row('mcp', 'MCP', 'disabled' if mcp_disabled else 'configured')]
     if enabled('INTENT_DECISION_ENABLED'):
         from app.intent_decision import decision_configured

@@ -26,7 +26,7 @@ export interface KnowledgeImagesPresentation {
   response: string;
   images: KnowledgeImage[];
 }
-export type ProductPresentations = Record<string, ProductCarouselPresentation | KnowledgeImagesPresentation | KnowledgeMediaPresentation | KnowledgeProductCarouselPresentation>;
+export type ProductPresentations = Record<string, ProductCarouselPresentation | KnowledgeImagesPresentation | KnowledgeMediaPresentation | KnowledgeProductCarouselPresentation | KnowledgeVideoPresentation>;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -75,7 +75,7 @@ export function parseProductPresentations(value: unknown): ProductPresentations 
   const result: ProductPresentations = Object.create(null);
   if (!isObject(value)) return result;
   for (const [callId, raw] of Object.entries(value).slice(0, 50)) {
-    const carousel = parseProductCarousel(raw) || parseKnowledgeProductCarousel(raw) || parseKnowledgeImages(raw) || parseKnowledgeMedia(raw);
+    const carousel = parseProductCarousel(raw) || parseKnowledgeProductCarousel(raw) || parseKnowledgeImages(raw) || parseKnowledgeMedia(raw) || parseKnowledgeVideo(raw);
     if (carousel) result[callId] = carousel;
   }
   return result;
@@ -167,4 +167,66 @@ export function parseKnowledgeProductCarousel(value: unknown): KnowledgeProductC
     assets.add(image.asset_id);
   }
   return { type: "knowledge_product_carousel", version: 1, summary: value.summary, products };
+}
+
+
+export interface KnowledgeVideoEvent {
+  event_id: string;
+  description: string;
+  start_frame: number;
+  end_frame: number;
+  start_ms: number | null;
+  end_ms: number | null;
+  frames: { frame_index: number; offset_ms: number | null; image_url: string }[];
+}
+export interface KnowledgeVideo {
+  asset_id: string;
+  title: string;
+  source_label: string;
+  video_url: string;
+  poster_url: string | null;
+  time_basis: "frame_order" | "media";
+  duration_ms: number | null;
+  complete: boolean;
+  warnings: string[];
+  events: KnowledgeVideoEvent[];
+}
+export interface KnowledgeVideoPresentation {
+  type: "knowledge_video";
+  version: 1;
+  response: string;
+  videos: KnowledgeVideo[];
+}
+function frameNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function optionalMediaTime(value: unknown): value is number | null {
+  return value === null || frameNumber(value);
+}
+export function signedVideoUrl(value: unknown): value is string {
+  return text(value, 4096) && /^\/api\/(?:knowledge-video\/[a-f0-9]{64}|video-attachments\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/media)\?token=[A-Za-z0-9_.-]+(?:&frame=[a-f0-9]{64})?$/.test(value);
+}
+export function parseKnowledgeVideo(value: unknown): KnowledgeVideoPresentation | null {
+  if (!isObject(value) || value.type !== "knowledge_video" || value.version !== 1 || typeof value.response !== "string" || value.response.length > 64000 || !Array.isArray(value.videos) || value.videos.length < 1 || value.videos.length > 3 || JSON.stringify(value).length > 512000) return null;
+  const videos: KnowledgeVideo[] = [];
+  for (const raw of value.videos) {
+    if (!isObject(raw) || !text(raw.asset_id, 64) || !/^[a-f0-9]{64}$/.test(raw.asset_id) || !text(raw.title, 1000) || !text(raw.source_label, 2000) || !signedVideoUrl(raw.video_url) || !(raw.poster_url === null || signedVideoUrl(raw.poster_url)) || (raw.time_basis !== "frame_order" && raw.time_basis !== "media") || !optionalMediaTime(raw.duration_ms) || raw.duration_ms === 0 || typeof raw.complete !== "boolean" || !Array.isArray(raw.warnings) || raw.warnings.length > 50 || !Array.isArray(raw.events) || raw.events.length > 200) return null;
+    const warnings: string[] = [];
+    for (const warning of raw.warnings) { if (!text(warning, 4000)) return null; warnings.push(warning); }
+    const events: KnowledgeVideoEvent[] = [];
+    const ids = new Set<string>();
+    for (const event of raw.events) {
+      if (!isObject(event) || !text(event.event_id, 128) || ids.has(event.event_id) || !text(event.description, 8000) || !frameNumber(event.start_frame) || !frameNumber(event.end_frame) || event.end_frame < event.start_frame || !optionalMediaTime(event.start_ms) || !optionalMediaTime(event.end_ms) || !Array.isArray(event.frames) || event.frames.length > 32) return null;
+      if ((event.start_ms === null) !== (event.end_ms === null) || (event.start_ms !== null && event.end_ms !== null && event.end_ms < event.start_ms) || (raw.time_basis === "frame_order" && event.start_ms !== null)) return null;
+      const frames: KnowledgeVideoEvent["frames"] = [];
+      for (const frame of event.frames) {
+        if (!isObject(frame) || !frameNumber(frame.frame_index) || !optionalMediaTime(frame.offset_ms) || !signedVideoUrl(frame.image_url) || (raw.time_basis === "frame_order" && frame.offset_ms !== null)) return null;
+        frames.push({ frame_index: frame.frame_index, offset_ms: frame.offset_ms, image_url: frame.image_url });
+      }
+      ids.add(event.event_id);
+      events.push({ event_id: event.event_id, description: event.description, start_frame: event.start_frame, end_frame: event.end_frame, start_ms: event.start_ms, end_ms: event.end_ms, frames });
+    }
+    videos.push({ asset_id: raw.asset_id, title: raw.title, source_label: raw.source_label, video_url: raw.video_url, poster_url: raw.poster_url, time_basis: raw.time_basis, duration_ms: raw.duration_ms, complete: raw.complete, warnings, events });
+  }
+  return { type: "knowledge_video", version: 1, response: value.response, videos };
 }

@@ -999,6 +999,7 @@ async def test_agent(
     from app.utils import is_text_output, is_new_output_item
     from app.knowledge_image_presentations import hydrate_knowledge_images
     from app.knowledge_audio_presentations import hydrate_knowledge_media
+    from app.local_video_rag import hydrate_knowledge_videos
 
     team_agent_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     if not database.user_can_access_agent(current_user, agent_id, "viewer", team_agent_id=team_agent_id):
@@ -1106,6 +1107,7 @@ async def test_agent(
                         presentation = (
                             hydrate_knowledge_images(value, team_agent_id, bundle_id)
                             or hydrate_knowledge_media(value, team_agent_id, bundle_id)
+                            or hydrate_knowledge_videos(value, team_agent_id, bundle_id)
                         )
                         if presentation is not None:
                             presentations[call_id] = presentation
@@ -1283,7 +1285,8 @@ async def system_info(
     openai_api_key_set = bool(os.getenv("OPENAI_API_KEY"))
 
     from app.system_monitor import monitor
-    observations = await monitor(team_agent_id)
+    video_worker = getattr(request.app.state, "video_worker", None)
+    observations = await monitor(team_agent_id, video_worker_running=video_worker is not None and not video_worker.done())
 
     return SystemInfoResponse(
         backend_url=backend_url,

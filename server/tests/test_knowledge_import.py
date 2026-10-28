@@ -25,11 +25,12 @@ def test_capabilities_require_team_admin(client, monkeypatch, user, status):
 def test_disabled_media_skips_all_network_and_catalog(monkeypatch):
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'false')
     monkeypatch.setenv('LOCAL_KNOWLEDGE_AUDIO_ENABLED', 'false')
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_VIDEO_ENABLED', 'false')
     monkeypatch.setattr(capabilities, '_healthy', lambda *a, **k: pytest.fail('disabled media probed'))
     from app import provider_models
     monkeypatch.setattr(provider_models, 'get_task_model', lambda *a: pytest.fail('disabled OCR queried'))
     result = asyncio.run(capabilities.import_capabilities())
-    assert result == {'documents': {'status': 'ready'}, 'images': {'status': 'disabled'}, 'audio': {'status': 'disabled'}, 'image_ocr': {'status': 'disabled'}}
+    assert result == {'documents': {'status': 'ready'}, 'images': {'status': 'disabled'}, 'audio': {'status': 'disabled'}, 'videos': {'status': 'disabled'}, 'image_ocr': {'status': 'disabled'}}
 
 
 @pytest.mark.parametrize('healthy,ocr_config,ocr_enabled', [(True, None, 'true'), (True, {'catalog_id': 1}, 'true'), (False, None, 'false')])

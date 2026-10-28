@@ -1,9 +1,10 @@
-export type FileMediaKind = "document" | "image" | "audio" | "archive";
+export type FileMediaKind = "document" | "image" | "audio" | "video" | "archive";
 export type MediaCapability = { status: "ready" } | { status: "disabled" } | { status: "unavailable"; reason: string; retryable: boolean };
 export interface ImportCapabilities {
   documents: { status: "ready" };
   images: MediaCapability;
   audio: MediaCapability;
+  videos: MediaCapability;
   image_ocr: { status: "configured" | "not_configured" | "disabled" };
 }
 export type CapabilitiesState = { status: "loading" } | { status: "unknown" } | { status: "loaded"; value: ImportCapabilities };
@@ -12,12 +13,13 @@ export const FILE_EXTENSIONS = {
   document: ".pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm",
   image: ".jpg,.jpeg,.png",
   audio: ".wav,.mp3",
+  video: ".mp4,.mov,.webm",
   archive: ".zip,.tar,.gz,.tgz",
 } satisfies Record<FileMediaKind, string>;
 
 export function fileMediaKind(name: string): FileMediaKind | null {
   const extension = "." + name.split(".").pop()?.toLowerCase();
-  for (const kind of ["document", "image", "audio", "archive"] satisfies FileMediaKind[]) {
+  for (const kind of ["document", "image", "audio", "video", "archive"] satisfies FileMediaKind[]) {
     if (FILE_EXTENSIONS[kind].split(",").includes(extension)) return kind;
   }
   return null;
@@ -36,17 +38,17 @@ export function parseCapabilities(value: unknown): ImportCapabilities {
   if (!value || typeof value !== "object" || !("images" in value) || !("audio" in value) || !("image_ocr" in value)) throw new Error("Invalid import readiness");
   const ocr = value.image_ocr;
   if (!ocr || typeof ocr !== "object" || !("status" in ocr) || (ocr.status !== "configured" && ocr.status !== "not_configured" && ocr.status !== "disabled")) throw new Error("Invalid OCR configuration");
-  return { documents: { status: "ready" }, images: mediaCapability(value.images), audio: mediaCapability(value.audio), image_ocr: { status: ocr.status } };
+  return { documents: { status: "ready" }, images: mediaCapability(value.images), audio: mediaCapability(value.audio), videos: "videos" in value ? mediaCapability(value.videos) : { status: "disabled" }, image_ocr: { status: ocr.status } };
 }
 
 export function fileIssue(file: File, capabilities: CapabilitiesState, archiveOnly = false): string | null {
   const kind = fileMediaKind(file.name);
   if (!kind || (archiveOnly && kind !== "archive")) return "Unsupported file type";
   if (file.size > (kind === "image" ? 10 : 50) * 1024 * 1024) return `Exceeds ${kind === "image" ? 10 : 50} MB limit`;
-  if (kind === "image" || kind === "audio") {
+  if (kind === "image" || kind === "audio" || kind === "video") {
     if (capabilities.status !== "loaded") return "Media readiness has not been confirmed";
-    const capability = kind === "image" ? capabilities.value.images : capabilities.value.audio;
-    if (capability.status === "disabled") return `${kind === "image" ? "Image" : "Audio"} import disabled`;
+    const capability = kind === "image" ? capabilities.value.images : kind === "video" ? capabilities.value.videos : capabilities.value.audio;
+    if (capability.status === "disabled") return `${kind === "image" ? "Image" : kind === "video" ? "Video" : "Audio"} import disabled`;
     if (capability.status === "unavailable") return capability.reason;
   }
   return null;

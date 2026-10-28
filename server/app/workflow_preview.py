@@ -259,6 +259,7 @@ async def _run(session, message):
     from app.agent_config import start_tool_logging, get_tool_log, get_tool_citations
     from app.knowledge_image_presentations import hydrate_knowledge_images
     from app.knowledge_audio_presentations import hydrate_knowledge_media
+    from app.local_video_rag import hydrate_knowledge_videos
     from app.product_presentations import parse_product_carousel
 
     history = deepcopy(session.history) + [{"role": "user", "content": message}]
@@ -277,7 +278,7 @@ async def _run(session, message):
             value = item.get("output")
             presentation = parse_product_carousel(value)
             if presentation is None and bundle_id is not None:
-                presentation = hydrate_knowledge_images(value, session.team_id, bundle_id) or hydrate_knowledge_media(value, session.team_id, bundle_id)
+                presentation = hydrate_knowledge_images(value, session.team_id, bundle_id) or hydrate_knowledge_media(value, session.team_id, bundle_id) or hydrate_knowledge_videos(value, session.team_id, bundle_id)
             if presentation is not None and len(presentations) < 50:
                 presentations[call_id] = presentation.model_dump(exclude_none=True)
     new_history = output.to_input_list()

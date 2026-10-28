@@ -42,7 +42,7 @@ async function harness(props = {}, { framed = false, query = {}, saved = null, t
     '@/components/icons/WriteIcon': { default: () => null }, '@/components/icons/MicIcon': { default: () => null },
     '@/lib/chat-theme': chatTheme,
     '@/components/AudioChat': { default: (props) => React.createElement('audio-probe', props) },
-    '@/components/Composer': { Composer }, '@/components/ImageSearchComposer': { ImageSearchComposer },
+    '@/components/Composer': { Composer }, '@/components/VideoAttachmentComposer': { VideoAttachmentComposer: () => null }, '@/components/ImageSearchComposer': { ImageSearchComposer },
     '@/components/ChatDialog': { ChatHistory: (props) => React.createElement('history-probe', props) },
     '@/hooks/useAudio': { useAudio: ({ enabled }) => { audioEnabled = enabled; React.useEffect(() => { audioMounts++; }, []); return { isReady: true, playAudio() {}, startRecording() {}, stopRecording() {}, frequencies: [] }; } },
     '@/hooks/useWebsocket': { useWebsocket: (options) => { socketOptions = options; React.useEffect(() => { socketMounts++; }, []); return state; } },

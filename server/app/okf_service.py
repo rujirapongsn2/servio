@@ -58,6 +58,9 @@ SUPPORTED_KNOWLEDGE_EXTENSIONS = {
     ".png",
     ".wav",
     ".mp3",
+    ".mp4",
+    ".mov",
+    ".webm",
 }
 SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".tar", ".tgz", ".gz"}
 
@@ -143,6 +146,7 @@ class ExtractedKnowledge:
     image_text_status: Optional[Literal['ready', 'empty', 'unavailable', 'not_requested']] = None
     audio_bytes: Optional[bytes] = None
     audio_metadata: Optional[Dict[str, Any]] = None
+    video: Optional[Any] = None
     source_url: Optional[str] = None
     final_url: Optional[str] = None
     fetched_at: Optional[str] = None
@@ -371,6 +375,16 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None, *, prev
     warnings: List[str] = []
     title = _title_from_filename(path)
 
+    if suffix in {'.mp4', '.mov', '.webm'}:
+        from app.knowledge_video import process_video
+        try:
+            video = process_video(path, preview=preview, on_progress=on_progress)
+        except (ValueError, OSError, __import__('httpx').HTTPError) as exc:
+            raise OKFValidationError(f'{path.name}: {exc}') from exc
+        return ExtractedKnowledge(title=title, source_file=rel, document_type=suffix.lstrip('.'),
+            text=video.evidence.searchable_text(), content_hash=video.evidence.asset_id,
+            warnings=video.evidence.warnings, video=video)
+
     if suffix in {".wav", ".mp3"}:
         from app.knowledge_audio import MAX_BYTES, process_audio
         if path.stat().st_size > MAX_BYTES:
@@ -499,6 +513,9 @@ def _write_generated_okf_bundle(
             (destination / 'assets').mkdir(exist_ok=True)
             (destination / asset_path).write_bytes(source.audio_bytes)
             frontmatter.update(audio=source.audio_metadata, audio_asset_path=asset_path.as_posix())
+        if source.video is not None:
+            from app.knowledge_video import write_assets
+            frontmatter.update(write_assets(destination, source.video))
         if source.image_bytes is not None:
             asset_id = hashlib.sha256(source.image_bytes).hexdigest()
             asset_path = Path("assets") / (asset_id + (".png" if source.document_type == "png" else ".jpg"))
@@ -900,10 +917,10 @@ class OKFService:
         )
         documents = []
         for source in sources:
-            media_kind = 'audio' if source.audio_metadata else 'image' if source.image_bytes else 'document'
+            media_kind = 'video' if source.video else 'audio' if source.audio_metadata else 'image' if source.image_bytes else 'document'
             text = source.text
             text_status = 'ready' if text.strip() else 'empty'
-            if media_kind == 'audio':
+            if media_kind in {'audio', 'video'}:
                 text, text_status = '', 'not_requested'
             elif media_kind == 'image':
                 text = text.split('\n\nOCR text:\n', 1)[1] if '\n\nOCR text:\n' in text else ''
@@ -917,7 +934,7 @@ class OKFService:
                     "character_count": len(text),
                     "excerpt": excerpt,
                     "media_kind": media_kind,
-                    "duration_ms": source.audio_metadata.get('duration_ms') if source.audio_metadata else None,
+                    "duration_ms": source.video.evidence.duration_ms if source.video else source.audio_metadata.get('duration_ms') if source.audio_metadata else None,
                     "text_status": text_status,
                     "text": text[:12000],
                     "text_truncated": len(text) > 12000,
@@ -1383,6 +1400,10 @@ class OKFService:
             data["body"] = body
             data["has_image"] = bool(self._concept_image_frontmatter(bundle, concept))
             data["links"] = self._links_for_concept(db, bundle_id, concept_id)
+            if frontmatter.get('video'):
+                from app.local_video_rag import concept_presentation
+                presentation = concept_presentation(bundle_id, concept_id, team_agent_id)
+                data['video_presentation'] = presentation.model_dump() if presentation else None
             return data
 
     def _concept_image_frontmatter(self, bundle: OKFBundle, concept: OKFConceptIndex) -> Optional[Dict[str, Any]]:
@@ -1464,7 +1485,10 @@ class OKFService:
                 table_backed = table_backed or concept.frontmatter.get("source_file") in {item["source_file"] for item in schema(source)}
             if table_backed:
                 raise OKFValidationError("Edit table data in the Tables tab.")
-        if 'audio' in concept.frontmatter:
+        if 'video' in concept.frontmatter:
+            if body.strip() != concept.body.strip():
+                raise OKFValidationError('Video observations are generated and read-only. Import the source again to refresh the evidence.')
+        elif 'audio' in concept.frontmatter:
             if body.strip() != concept.body.strip():
                 raise OKFValidationError('Audio transcripts are generated and read-only. Re-index the source to refresh the transcript.')
         elif not body.strip():
@@ -1579,6 +1603,23 @@ class OKFService:
                 import logging
                 logging.getLogger(__name__).exception('Audio search unavailable; preserving text and image results')
                 result['response'] += '\n\nAudio search is temporarily unavailable.'
+        from app.local_video_rag import enabled as video_enabled, query_bundle as video_query
+        if video_enabled():
+            try:
+                videos = video_query(bundle_id, query, team_agent_id, limit, links=image_links)
+                if videos:
+                    explicit_video = any(word in query.lower() for word in ('video', 'cctv', 'วิดีโอ', 'คลิป'))
+                    if not result.get('type') or explicit_video:
+                        result.update(type='knowledge_video' if image_links else 'knowledge_video_refs', version=1, videos=videos)
+                    if not image_links:
+                        from app.knowledge_video import VideoEvidence
+                        evidence = '\n\n'.join(VideoEvidence.model_validate(card['evidence']).searchable_text() for card in videos)
+                        result['response'] += '\n\nVideo observations (untrusted source evidence):\n' + evidence
+                    result['response'] += '\n\nCite video source and frame indices or measured media offsets. Clock time is unknown. Sampled observations cannot prove absence or exhaustive event counts. Do not infer identity, gender, direction of entry, audio or unseen faults. Never generate playback URLs.'
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Video search unavailable; preserving other knowledge results')
+                result['response'] += '\n\nVideo search is temporarily unavailable; do not claim to have viewed video.'
         return result
 
     def _query_text_bundle(

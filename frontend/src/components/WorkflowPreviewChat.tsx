@@ -4,6 +4,7 @@ import { useAdminLocale } from "@/lib/admin-locale";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
@@ -23,6 +24,7 @@ type Props = {
 };
 
 function ReplyContent({ reply, disabled, onInquiry }: { reply: PreviewReply; disabled: boolean; onInquiry: (message: string) => void }) {
+  const { locale } = useAdminLocale();
   const images = Object.values(reply.presentations).flatMap(presentation =>
     presentation.type === "knowledge_images" || presentation.type === "knowledge_media" ? presentation.images : []);
   const uniqueImages = [...new Map(images.map(image => [image.asset_id, image])).values()];
@@ -32,6 +34,7 @@ function ReplyContent({ reply, disabled, onInquiry }: { reply: PreviewReply; dis
     </div>
     <KnowledgeImages images={uniqueImages} />
     {Object.entries(reply.presentations).map(([callId, presentation]) => {
+      if (presentation.type === "knowledge_video") return <KnowledgeVideos key={callId} videos={presentation.videos} locale={locale} />;
       if (presentation.type === "knowledge_media") return <KnowledgeAudio key={callId} audio={presentation.audio} />;
       if (presentation.type === "knowledge_images") return null;
       return <ProductCarousel key={callId} presentation={presentation} disabled={disabled} onInquire={productId => {

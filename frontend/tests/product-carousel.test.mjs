@@ -137,7 +137,7 @@ test('WebSocket sidecars persist across snapshots, actions send IDs only and res
 test('product search keeps extra model text collapsed and selected-product reply readable', async () => {
   const { ChatHistory } = load('src/components/ChatDialog.tsx', {
   '@/lib/chat-flow': load('src/lib/chat-flow.ts', {}),
-    '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
+    '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
     '@/components/KnowledgeImages': { KnowledgeImages: () => null },
     clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
     '@/components/ChatLoadingDots': { default: () => null },
@@ -176,7 +176,7 @@ test('image results retain a visible assistant answer and have no product inquir
   const { ChatHistory } = load('src/components/ChatDialog.tsx', {
   '@/lib/chat-flow': load('src/lib/chat-flow.ts', {}),
     clsx: { default: (...values) => values.filter((value) => typeof value === 'string').join(' ') },
-    '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
+    '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
     '@/components/KnowledgeImages': { KnowledgeImages: ({ images }) => React.createElement('section', { 'aria-label': 'image-results' }, images[0].title) },
     '@/components/ProductCarousel': { ProductCarousel: () => null },
     '@/components/ChatLoadingDots': { default: () => null },
@@ -215,7 +215,7 @@ test('Knowledge test modal displays validated source images from query results',
   const { KnowledgeImages } = load('src/components/KnowledgeImages.tsx', { '@/lib/api': { buildApiUrl: (value) => value } });
   const { default: TestKnowledge } = load('src/components/TestOKFBundleModal.tsx', {
     '@/lib/api': { getApiBaseUrl: () => 'http://localhost' },
-    '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
+    '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': load('src/components/KnowledgeAudio.tsx', { '@/lib/api': { buildApiUrl: (value) => value } }),
     '@/components/KnowledgeImages': { KnowledgeImages },
     '@/lib/product-presentations': parsing,
   });

@@ -4,7 +4,7 @@ import type { AdminCopy } from "@/lib/admin-copy";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, Grid3X3, ImageIcon, Music2, Loader2, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, Archive, CheckCircle2, Clipboard, FileText, Globe, Grid3X3, ImageIcon, Music2, Video, Loader2, Trash2, Upload, X } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api";
 import { FILE_EXTENSIONS, fileIssue, fileMediaKind, formatDuration, formatFileSize, parseCapabilities, type CapabilitiesState, type FileMediaKind } from "@/lib/knowledge-import";
 
@@ -19,6 +19,7 @@ function presentFileIssue(issue: string | null, copy: AdminCopy) {
   if (issue === "Media readiness has not been confirmed") return copy.mediaNotConfirmed;
   if (issue === "Image import disabled") return copy.imageImportDisabled;
   if (issue === "Audio import disabled") return copy.audioImportDisabled;
+  if (issue === "Video import disabled") return copy.videoImportDisabled;
   return issue;
 }
 
@@ -28,7 +29,7 @@ function FilePreview({ file, disabled, issue, onRemove }: { file: File; disabled
   const [url, setUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   useEffect(() => {
-    if (kind !== "image" && kind !== "audio") return;
+    if (kind !== "image" && kind !== "audio" && kind !== "video") return;
     const objectUrl = URL.createObjectURL(file);
     setUrl(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
@@ -44,6 +45,7 @@ function FilePreview({ file, disabled, issue, onRemove }: { file: File; disabled
         </div>
         <button type="button" title={copy.removeNamed(file.name)} aria-label={copy.removeNamed(file.name)} onClick={onRemove} disabled={disabled} className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><X className="h-4 w-4" /></button>
       </div>
+      {kind === "video" && url && <video controls playsInline preload="metadata" src={url} className="mt-2 max-h-48 w-full rounded" aria-label={copy.previewNamed(file.name)} onLoadedMetadata={(event) => { const seconds = event.currentTarget.duration; if (Number.isFinite(seconds) && seconds > 0) setDuration(seconds * 1000); }} />}
       {kind === "audio" && url && <audio controls preload="metadata" src={url} className="mt-2 h-9 w-full min-w-0" aria-label={copy.previewNamed(file.name)} onLoadedMetadata={(event) => { const seconds = event.currentTarget.duration; if (Number.isFinite(seconds) && seconds > 0) setDuration(seconds * 1000); }} />}
     </div>
   );
@@ -81,7 +83,7 @@ interface KnowledgePreview {
     document_type: string;
     character_count: number;
     excerpt: string;
-    media_kind: "document" | "image" | "audio";
+    media_kind: "document" | "image" | "audio" | "video";
     duration_ms: number | null;
     text_status: "ready" | "not_requested" | "unavailable" | "empty";
     text: string;
@@ -190,7 +192,7 @@ export default function CreateOKFBundleModal({
       .catch(() => { if (!controller.signal.aborted) setCapabilities({ status: "unknown" }); });
     return () => controller.abort();
   }, [apiBaseUrl, teamAgentId, readinessRevision]);
-  useEffect(() => { if (knowledgeFiles.some((file) => ["image", "audio"].includes(fileMediaKind(file.name) || ""))) setPreview(null); }, [capabilities, knowledgeFiles]);
+  useEffect(() => { if (knowledgeFiles.some((file) => ["image", "audio", "video"].includes(fileMediaKind(file.name) || ""))) setPreview(null); }, [capabilities, knowledgeFiles]);
   const [pastedText, setPastedText] = useState("");
   const [urlText, setUrlText] = useState("");
   const urls = useMemo(() => urlText.split(/\r?\n/).map((url) => url.trim()).filter(Boolean), [urlText]);
@@ -218,7 +220,8 @@ export default function CreateOKFBundleModal({
 
   const accept = mode === "archive" ? FILE_EXTENSIONS.archive : [FILE_EXTENSIONS.document, FILE_EXTENSIONS.archive,
     capabilities.status === "loaded" && capabilities.value.images.status === "ready" ? FILE_EXTENSIONS.image : "",
-    capabilities.status === "loaded" && capabilities.value.audio.status === "ready" ? FILE_EXTENSIONS.audio : ""].filter(Boolean).join(",");
+    capabilities.status === "loaded" && capabilities.value.audio.status === "ready" ? FILE_EXTENSIONS.audio : "",
+    capabilities.status === "loaded" && capabilities.value.videos.status === "ready" ? FILE_EXTENSIONS.video : ""].filter(Boolean).join(",");
   const selectedBytes = files.reduce((total, file) => total + file.size, 0);
   const uploadIssue = mode === "files" && selectedBytes > MAX_UPLOAD_BYTES ? copy.uploadTooLarge : null;
   const selectedIssues = mode === "files" || mode === "archive" ? [...files.map((file) => fileIssue(file, capabilities, mode === "archive")).filter(Boolean), ...(uploadIssue ? [uploadIssue] : [])] : [];
@@ -555,24 +558,24 @@ export default function CreateOKFBundleModal({
               </div>
             ) : (
               <div>
-                {mode === "files" && <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {(["document", "image", "audio"] satisfies FileMediaKind[]).map((kind) => {
-                    const capability = kind === "document" ? { status: "ready" } : capabilities.status === "loaded" ? (kind === "image" ? capabilities.value.images : capabilities.value.audio) : null;
+                {mode === "files" && <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {(["document", "image", "audio", "video"] satisfies FileMediaKind[]).map((kind) => {
+                    const capability = kind === "document" ? { status: "ready" } : capabilities.status === "loaded" ? (kind === "image" ? capabilities.value.images : kind === "video" ? capabilities.value.videos : capabilities.value.audio) : null;
                     const ready = capability?.status === "ready";
-                    const Icon = kind === "image" ? ImageIcon : kind === "audio" ? Music2 : FileText;
-                    const label = kind === "image" ? copy.images : kind === "audio" ? copy.audio : copy.documents;
+                    const Icon = kind === "image" ? ImageIcon : kind === "audio" ? Music2 : kind === "video" ? Video : FileText;
+                    const label = kind === "image" ? copy.images : kind === "audio" ? copy.audio : kind === "video" ? copy.videos : copy.documents;
                     const status = ready ? copy.ready : capability?.status === "disabled" ? copy.disabled : capabilities.status === "loading" ? copy.checking : copy.unavailable;
                     return <label key={kind} className={`rounded-md border border-gray-200 p-3 dark:border-gray-600 ${ready && !importing && !previewing ? "cursor-pointer hover:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2" : "opacity-60"}`}>
                       <span className="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100"><Icon className="h-4 w-4" />{label}</span>
-                      <span className="mt-1 block text-xs text-gray-500">{kind === "image" ? "JPG, PNG · 10 MB" : kind === "audio" ? "WAV, MP3 · 50 MB · 10 min" : "PDF, Office, text, archives · 50 MB"}</span>
+                      <span className="mt-1 block text-xs text-gray-500">{kind === "image" ? "JPG, PNG · 10 MB" : kind === "audio" ? "WAV, MP3 · 50 MB · 10 min" : kind === "video" ? "MP4, MOV, WebM · 50 MB" : "PDF, Office, text, archives · 50 MB"}</span>
                       <span className={`mt-1 block text-xs ${ready ? "text-emerald-700 dark:text-emerald-300" : "text-gray-500"}`}>{status}</span>
                       <input type="file" data-admin-write="true" aria-label={copy.addNamed(label)} accept={kind === "document" ? `${FILE_EXTENSIONS.document},${FILE_EXTENSIONS.archive}` : FILE_EXTENSIONS[kind]} multiple disabled={!ready || importing || previewing} className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
                     </label>;
                   })}
                 </div>}
                 {mode === "files" && <div className="mb-3 text-xs text-gray-500" aria-live="polite">
-                  {capabilities.status === "unknown" ? copy.mediaReadinessUnknown : capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio].some((item) => item.status === "unavailable") ? <>{copy.mediaUnavailable}<details className="mt-1"><summary>{copy.errorDetails}</summary>{[capabilities.value.images, capabilities.value.audio].filter((item) => item.status === "unavailable").map((item) => item.status === "unavailable" ? item.reason : "").join(" · ")}</details></> : ""}
-                  {(capabilities.status === "unknown" || (capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio].some((item) => item.status === "unavailable" && item.retryable))) && <button type="button" className="ml-2 text-emerald-700 underline" onClick={() => { setError(null); setReadinessRevision((value) => value + 1); }} disabled={importing || previewing || tableImporting}>{copy.retry}</button>}
+                  {capabilities.status === "unknown" ? copy.mediaReadinessUnknown : capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio, capabilities.value.videos].some((item) => item.status === "unavailable") ? <>{copy.mediaUnavailable}<details className="mt-1"><summary>{copy.errorDetails}</summary>{[capabilities.value.images, capabilities.value.audio, capabilities.value.videos].filter((item) => item.status === "unavailable").map((item) => item.status === "unavailable" ? item.reason : "").join(" · ")}</details></> : ""}
+                  {(capabilities.status === "unknown" || (capabilities.status === "loaded" && [capabilities.value.images, capabilities.value.audio, capabilities.value.videos].some((item) => item.status === "unavailable" && item.retryable))) && <button type="button" className="ml-2 text-emerald-700 underline" onClick={() => { setError(null); setReadinessRevision((value) => value + 1); }} disabled={importing || previewing || tableImporting}>{copy.retry}</button>}
                   {capabilities.status === "loaded" && capabilities.value.images.status === "ready" && <span className="block mt-1">{capabilities.value.image_ocr.status === "configured" ? copy.ocrConfigured : copy.ocrUnavailable}</span>}
                 </div>}
                 <label className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 text-sm text-gray-600 dark:text-gray-300 ${importing || previewing ? "opacity-60" : "cursor-pointer focus-within:ring-2 focus-within:ring-emerald-500 focus-within:ring-offset-2"} ${draggingFiles ? "border-emerald-500 bg-emerald-50" : "border-gray-300 dark:border-gray-600"}`}
@@ -642,7 +645,7 @@ export default function CreateOKFBundleModal({
                       </div>
                       {document.duration_ms != null && <p className="mt-1 text-xs text-gray-500">{formatDuration(document.duration_ms)}</p>}
                       {document.text_status === "ready" && document.text && <details className="mt-2 text-xs text-gray-600 dark:text-gray-300"><summary className="cursor-pointer font-medium">{document.media_kind === "image" ? copy.extractedImageText : copy.extractedText} · {copy.characters(document.character_count)}</summary><pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 font-sans text-sm leading-6 dark:bg-gray-800">{document.text}</pre>{document.text_truncated && <p className="mt-1 text-gray-500">{copy.previewLimit}</p>}</details>}
-                      {document.text_status !== "ready" && <p className="mt-2 text-xs text-gray-500">{document.media_kind === "audio" && document.text_status === "not_requested" ? copy.transcriptDuringImport : document.text_status === "unavailable" ? copy.textUnavailable : document.text_status === "not_requested" ? copy.ocrNotRequested : copy.noReadableText}</p>}
+                      {document.text_status !== "ready" && <p className="mt-2 text-xs text-gray-500">{document.media_kind === "video" && document.text_status === "not_requested" ? copy.videoDuringImport : document.media_kind === "audio" && document.text_status === "not_requested" ? copy.transcriptDuringImport : document.text_status === "unavailable" ? copy.textUnavailable : document.text_status === "not_requested" ? copy.ocrNotRequested : copy.noReadableText}</p>}
 
                     </div>
                   ))}

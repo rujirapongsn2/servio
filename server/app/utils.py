@@ -20,6 +20,7 @@ from app.product_presentations import parse_product_carousel, product_inquiry
 from app.knowledge_image_presentations import hydrate_knowledge_images, KnowledgeImageReferences
 from app.knowledge_image_search import ImageSearchSession, ImageSearchRequest, InvalidSearchImage, search_image, KnowledgeCardRef
 from app.knowledge_audio_presentations import hydrate_knowledge_media
+from app.local_video_rag import hydrate_knowledge_videos
 from app.carousel_marker import strip_marker, build_carousel_message, MARKER
 
 
@@ -390,7 +391,7 @@ class WebsocketHelper:
                 bundle_id = self._knowledge_calls.pop(call_id, None)
                 carousel = parse_product_carousel(item.get("output"))
                 if carousel is None and bundle_id is not None:
-                    carousel = hydrate_knowledge_images(item.get("output"), self.team_agent_id, bundle_id) or hydrate_knowledge_media(item.get("output"), self.team_agent_id, bundle_id)
+                    carousel = hydrate_knowledge_images(item.get("output"), self.team_agent_id, bundle_id) or hydrate_knowledge_media(item.get("output"), self.team_agent_id, bundle_id) or hydrate_knowledge_videos(item.get("output"), self.team_agent_id, bundle_id)
                 if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
                     if len(self.presentations) < 50:
                         self.presentations[call_id] = carousel.model_dump(exclude_none=True)
@@ -423,7 +424,7 @@ class WebsocketHelper:
         elif is_text_output(event):
             await self.stream_response(event.data.delta)  # type: ignore
 
-    async def text_output_complete(self, output, is_done=False, knowledge_context=None):
+    async def text_output_complete(self, output, is_done=False, knowledge_context=None, video_presentation=None):
         if not is_done:
             await self.websocket.send_text(
             json.dumps(_sanitize_payload(
@@ -458,10 +459,20 @@ class WebsocketHelper:
                         if self._last_carousel_message_id:
                             item["id"] = self._last_carousel_message_id
                     break
+            if video_presentation is not None:
+                request_id, presentation = video_presentation
+                for item in reversed(self.history):
+                    if item.get("type") == "message" and item.get("role") == "assistant":
+                        message_id = item.setdefault("id", "msg_" + request_id.replace("-", ""))
+                        self.presentations[message_id] = presentation
+                        while len(self.presentations) > 50:
+                            del self.presentations[next(iter(self.presentations))]
+                        break
             await self.websocket.send_text(
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
+                        **({"request_id": video_presentation[0]} if video_presentation is not None else {}),
                         "presentations": self.presentations,
                         "inputs": self.history,
                         "reason": "response.done",

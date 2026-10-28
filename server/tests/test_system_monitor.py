@@ -10,12 +10,12 @@ ORIGINAL_DATABASE_OBSERVATIONS = monitor.database_observations
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     for name in ('LOCAL_KNOWLEDGE_HYBRID_ENABLED', 'LOCAL_KNOWLEDGE_IMAGES_ENABLED',
-                 'LOCAL_KNOWLEDGE_AUDIO_ENABLED', 'LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED',
+                 'LOCAL_KNOWLEDGE_AUDIO_ENABLED', 'LOCAL_KNOWLEDGE_VIDEO_ENABLED', 'LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED',
                  'LOCAL_KNOWLEDGE_IMAGE_QA_ENABLED', 'OPENAI_API_KEY', 'OPENAI_BASE_URL',
                  'DISABLE_MCP', 'AGENTS_SAFE_MODE_DISABLE_EXTERNAL', 'AUDIO_EMBEDDING_REVISION',
                  'INTENT_DECISION_ENABLED', 'INTENT_DECISION_BASE_URL', 'INTENT_DECISION_API_KEY'):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(monitor, 'database_observations', lambda team, flags: (
+    monkeypatch.setattr(monitor, 'database_observations', lambda team, flags, **kwargs: (
         [monitor.row('postgresql', 'PostgreSQL', 'unavailable'),
          monitor.row('pgvector', 'pgvector', 'unknown')]
         + [monitor.row(purpose, label, 'unknown' if active else 'disabled') for purpose, label, active in flags], None, None))
@@ -200,3 +200,71 @@ def test_database_failure_returns_safe_unknown_counts(monkeypatch):
     assert result[1:] == (None, None)
     assert [service.status for service in result[0]] == ['unavailable', 'unknown', 'unknown']
     assert 'secret' not in str(result)
+
+
+def test_video_status_is_independent_of_image_search_and_does_not_call_model(monkeypatch):
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_VIDEO_ENABLED', 'true')
+    monkeypatch.setenv('IMAGE_QA_MODEL_SOURCE', 'environment')
+    monkeypatch.setenv('IMAGE_QA_MODEL', 'org/vision')
+    monkeypatch.setenv('IMAGE_QA_BASE_URL', 'https://vision.test/private?token=secret')
+    monkeypatch.setenv('IMAGE_QA_API_KEY', 'private-video-key')
+    probe = AsyncMock()
+    monkeypatch.setattr(monitor, '_healthy', probe)
+    rows = {service.id: service for service in asyncio.run(monitor.monitor())['services']}
+    assert rows['video_analysis'].status == 'configured'
+    assert rows['video_analysis'].model == 'org/vision'
+    assert rows['video_analysis'].endpoint == 'vision.test'
+    assert rows['image_qa'].status == 'disabled'
+    assert rows['video_decoder'].status in {'healthy', 'unavailable'}
+    assert rows['video_worker'].status == 'unknown'  # no DB result in this fixture
+    assert 'secret' not in str(rows) and 'private-video-key' not in str(rows)
+    probe.assert_not_awaited()
+
+
+def test_disabled_video_services_are_visible_without_checks(monkeypatch):
+    probe=AsyncMock()
+    monkeypatch.setattr(monitor, '_healthy', probe)
+    rows={service.id: service for service in asyncio.run(monitor.monitor())['services']}
+    assert all(rows[key].status=='disabled' for key in ('video_analysis','video_decoder','video_worker'))
+    probe.assert_not_awaited()
+
+
+@pytest.mark.parametrize('running,status', [(True,'healthy'),(False,'unavailable')])
+def test_video_worker_counts_live_jobs_in_requested_team_only(running,status):
+    import time
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app.orm_models import TeamAgent
+    from app.video_attachments import VideoAttachmentJob
+    engine=create_engine('sqlite://')
+    TeamAgent.__table__.create(engine)
+    VideoAttachmentJob.__table__.create(engine)
+    with Session(engine) as db:
+        db.add_all([TeamAgent(id=1,name='Default',slug='default',status='active'), TeamAgent(id=2,name='Other',slug='other',status='active')])
+        for index,(team,state,expiry) in enumerate([(1,'queued',100),(1,'processing',100),(1,'ready',100),(1,'queued',-100),(2,'queued',100)]):
+            db.add(VideoAttachmentJob(id=str(index),session_id='test',team_id=team,api_key_id=1,grant_id='g',filename='test.mp4',source_hash='a'*64,status=state,phase=state,attempts=0,lease_until=0,created_at=time.time(),expires_at=time.time()+expiry))
+        db.commit()
+        result=monitor.video_worker_observation(db,1,running)
+        assert result.status==status
+        assert 'รอ 1 · กำลังทำ 1' in result.detail
+        default=monitor.video_worker_observation(db,None,running)
+        assert 'ทีมเริ่มต้น · รอ 1 · กำลังทำ 1' in default.detail
+    engine.dispose()
+
+
+def test_decoder_missing_and_failed_executable_are_not_healthy(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_VIDEO_ENABLED','true')
+    monkeypatch.setattr(monitor.shutil,'which',lambda name: None)
+    assert monitor.video_decoder_observation().detail=='ไม่พบ ffmpeg'
+    monkeypatch.setattr(monitor.shutil,'which',lambda name:'/local/'+name)
+    calls=[]
+    def execute(command,**kwargs):
+        calls.append((command,kwargs));return SimpleNamespace(returncode=1 if command[0].endswith('ffprobe') else 0)
+    monkeypatch.setattr(monitor.subprocess,'run',execute)
+    assert monitor.video_decoder_observation().detail=='ffprobe ไม่พร้อมใช้งาน'
+    assert all(options['timeout']==1 for _,options in calls)
+    monkeypatch.delenv('LOCAL_KNOWLEDGE_VIDEO_ENABLED')
+    calls.clear()
+    assert monitor.video_decoder_observation().status=='disabled'
+    assert not calls

@@ -399,3 +399,24 @@ test('Thai table query label remains concise and associated with its checkbox', 
     assert.match(text(renderer), /Excel \(\.xlsx\) \/ CSV · สูงสุด 19,999 แถวข้อมูลรวมทุกตารางต่อแหล่งความรู้/);
   } finally { await TestRenderer.act(async () => renderer.unmount()); }
 });
+
+test('video import card follows readiness and keeps unknown-duration clips eligible', async () => {
+  const previous = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  URL.createObjectURL = () => 'blob:video-preview'; URL.revokeObjectURL = () => {};
+  let renderer;
+  try {
+    renderer = await create(async () => response({ ...ready, videos: { status: 'ready' } }));
+    const field = renderer.root.findByProps({ 'aria-label': 'Add video' });
+    assert.equal(field.props.disabled, false);
+    assert.equal(field.props.accept, '.mp4,.mov,.webm');
+    await pick(renderer, 'Add video', [new File(['video'], 'unknown-time.mp4', { type: 'video/mp4' })]);
+    const player = renderer.root.findByType('video');
+    assert.equal(player.props.controls, true);
+    await TestRenderer.act(async () => player.props.onLoadedMetadata({ currentTarget: { duration: Infinity } }));
+    const name = renderer.root.findAllByType('input').find(node => node.props.type !== 'file' && !node.props['aria-label']);
+    await TestRenderer.act(async () => name.props.onChange({ target: { value: 'Video test' } }));
+    assert.equal(button(renderer, 'Review Knowledge').props.disabled, false);
+    assert.doesNotMatch(text(renderer), /Infinity|NaN/);
+    assert.match(text(renderer), /unknown-time.mp4/);
+  } finally { if (renderer) await TestRenderer.act(async () => renderer.unmount()); URL.createObjectURL = previous.create; URL.revokeObjectURL = previous.revoke; }
+});

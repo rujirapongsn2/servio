@@ -48,4 +48,14 @@ def test_system_info_requires_authentication_and_team_access(client):
     assert payload['services'][0]['status'] == 'unavailable'
     assert payload['python_version'] and payload['server_time']
     assert calls[-1] == ('viewer', 1, 'viewer')
-    check.assert_awaited_once_with(1)
+    check.assert_awaited_once_with(1, video_worker_running=False)
+
+
+def test_system_info_reports_actual_worker_task_liveness(client):
+    from types import SimpleNamespace
+    client,check,_=client
+    headers={'Authorization':'Bearer '+create_access_token({'sub':'viewer'})}
+    for done in (False,True):
+        client.app.state.video_worker=SimpleNamespace(done=lambda:done)
+        assert client.get('/api/admin/system-info?team_agent_id=1',headers=headers).status_code==200
+        check.assert_awaited_with(1,video_worker_running=not done)

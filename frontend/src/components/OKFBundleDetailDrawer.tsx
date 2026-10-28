@@ -20,10 +20,11 @@ import {
 import { AdminLocaleContext } from "@/lib/admin-locale";
 import { KnowledgeTablePanel } from "@/components/KnowledgeTablePanel";
 import { KnowledgeImageSearchSettings } from "@/components/KnowledgeImageSearchSettings";
+import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { KnowledgeDocumentImage } from "@/components/KnowledgeDocumentImage";
-import { parseKnowledgeAudio, parseKnowledgeImages, type KnowledgeAudioClip, type KnowledgeImage } from "@/lib/product-presentations";
+import { parseKnowledgeAudio, parseKnowledgeImages, parseKnowledgeVideo, type KnowledgeAudioClip, type KnowledgeImage } from "@/lib/product-presentations";
 import { getApiBaseUrl } from "@/lib/api";
 
 interface Tool {
@@ -75,6 +76,7 @@ interface OKFConcept {
   updated_at?: string | null;
   markdown?: string | null;
   frontmatter?: Record<string, unknown> | null;
+  video_presentation?: unknown;
   body?: string | null;
   has_image?: boolean;
   links: Array<{
@@ -88,6 +90,7 @@ interface OKFConcept {
 }
 
 interface TestResult {
+  videos?: unknown;
   images?: KnowledgeImage[];
   audio?: KnowledgeAudioClip[];
   response: string;
@@ -412,7 +415,7 @@ export default function OKFBundleDetailDrawer({
 
   const handleSaveConcept = async () => {
     if (!canEdit || sourceUnavailable) return;
-    if (!bundleId || !selectedConcept || (!selectedConcept.frontmatter?.audio && !editBody.trim())) return;
+    if (!bundleId || !selectedConcept || (!selectedConcept.frontmatter?.audio && !selectedConcept.frontmatter?.video && !editBody.trim())) return;
     setSavingConcept(true);
     setSaveMessage(null);
     setSaveError(null);
@@ -680,6 +683,7 @@ export default function OKFBundleDetailDrawer({
                           </div>
                         )}
 
+                        {selectedConcept.video_presentation != null && <KnowledgeVideos videos={parseKnowledgeVideo(selectedConcept.video_presentation)?.videos || []} locale={locale?.locale ?? "en"} />}
                         {selectedConcept.has_image && bundleId && <KnowledgeDocumentImage key={`${bundleId}:${selectedConcept.concept_id}`} bundleId={bundleId} conceptId={selectedConcept.concept_id} title={selectedConcept.title || selectedConcept.concept_id} teamAgentId={teamAgentId} />}
 
                         {selectedConcept.description && !selectedConcept.has_image && (
@@ -729,7 +733,7 @@ export default function OKFBundleDetailDrawer({
                                   <button
                                     type="button"
                                     onClick={handleSaveConcept}
-                                    disabled={!canEdit || sourceUnavailable || savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !editBody.trim()) || !editTitle.trim()}
+                                    disabled={!canEdit || sourceUnavailable || savingConcept || refreshingSource || reindexing || (!selectedConcept.frontmatter?.audio && !selectedConcept.frontmatter?.video && !editBody.trim()) || !editTitle.trim()}
                                     className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
                                   >
                                     {savingConcept ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -778,10 +782,10 @@ export default function OKFBundleDetailDrawer({
                                 />
                               </label>
                               <label className="block text-sm font-semibold text-gray-900 dark:text-white">
-                                {selectedConcept.frontmatter?.audio ? "Generated transcript (Re-index to refresh)" : "Content"}
+                                {selectedConcept.frontmatter?.video ? (locale?.locale === "th" ? "ผลวิเคราะห์วิดีโอ (จัดทำดัชนีใหม่เพื่ออัปเดต)" : "Video observations (Re-index to refresh)") : selectedConcept.frontmatter?.audio ? "Generated transcript (Re-index to refresh)" : "Content"}
                                 <textarea
-                                  aria-label={selectedConcept.frontmatter?.audio ? "Generated transcript" : "Content"}
-                                  readOnly={Boolean(selectedConcept.frontmatter?.audio)}
+                                  aria-label={selectedConcept.frontmatter?.video ? "Video observations" : selectedConcept.frontmatter?.audio ? "Generated transcript" : "Content"}
+                                  readOnly={Boolean(selectedConcept.frontmatter?.audio || selectedConcept.frontmatter?.video)}
                                   value={editBody}
                                   onChange={(event) => setEditBody(event.target.value)}
                                   rows={18}
@@ -868,6 +872,7 @@ export default function OKFBundleDetailDrawer({
                       </div>
                       {testResult.images && <KnowledgeImages images={parseKnowledgeImages({ type: "knowledge_images", version: 1, response: testResult.response, images: testResult.images })?.images || []} />}
                       <KnowledgeAudio audio={parseKnowledgeAudio(testResult.audio)} />
+                      <KnowledgeVideos videos={parseKnowledgeVideo({ type: "knowledge_video", version: 1, response: testResult.response, videos: testResult.videos })?.videos || []} locale={locale?.locale ?? "en"} />
                       <div className="space-y-2">
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           Sources Used ({testResult.concepts.length})

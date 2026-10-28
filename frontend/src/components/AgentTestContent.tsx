@@ -2,14 +2,16 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
 import { normalizeMarkdownForChat } from "@/lib/markdown";
 import type { ProductPresentations } from "@/lib/product-presentations";
 
-export default function AgentTestContent({ content, presentations = {} }: {
+export default function AgentTestContent({ content, presentations = {}, locale = "en" }: {
   content: string;
+  locale?: "th" | "en";
   presentations?: ProductPresentations;
 }) {
   const images = Array.from(new Map(Object.values(presentations).flatMap(presentation =>
@@ -28,6 +30,8 @@ export default function AgentTestContent({ content, presentations = {} }: {
       switch (presentation.type) {
         case "knowledge_images":
           return null;
+        case "knowledge_video":
+          return <KnowledgeVideos key={callId} videos={presentation.videos} locale={locale} />;
         case "knowledge_media":
           return <KnowledgeAudio key={callId} audio={presentation.audio} />;
         case "product_carousel":

@@ -40,7 +40,7 @@ async function setup(t, request, extra = {}, strict = false, switchable = false)
     'react-markdown': { default: ReactMarkdown }, 'remark-gfm': { default: remarkGfm },
     '@/lib/markdown': { normalizeMarkdownForChat: value => value },
     '@/components/KnowledgeImages': { KnowledgeImages: props => React.createElement('images-test', props) },
-    '@/components/KnowledgeAudio': { KnowledgeAudio: props => React.createElement('audio-test', props) },
+    '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': { KnowledgeAudio: props => React.createElement('audio-test', props) },
     '@/components/ProductCarousel': { ProductCarousel: props => React.createElement('carousel-test', props) },
   }).default;
   const props = { teamId: 1, workflow, drafts: {}, targetAgentId: null, visible: true, onTargetChange() {}, onEditAgent() {}, onOpenKnowledge() {}, ...extra };

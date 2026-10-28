@@ -17,7 +17,10 @@ vm.runInThisContext(`(function(require,exports){${source}\n})`)(require, exports
 const { act, create } = TestRenderer;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const snapshot = {
-  services: [{ id: 'db', label: 'PostgreSQL', status: 'healthy', detail: 'Health check passed' }],
+  services: [{ id: 'db', label: 'PostgreSQL', status: 'healthy', detail: 'Health check passed' },
+    { id: 'video_analysis', label: 'วิเคราะห์วิดีโอ', status: 'configured', model: 'org/vision', detail: 'เฟรมตัวอย่าง · ตั้งค่าโมเดลแล้ว' },
+    { id: 'video_decoder', label: 'ตัวอ่านวิดีโอ', status: 'healthy', detail: 'FFmpeg / FFprobe พร้อมใช้งาน' },
+    { id: 'video_worker', label: 'งานประมวลผลวิดีโอ', status: 'healthy', detail: 'ทีมเริ่มต้น · รอ 2 · กำลังทำ 1' }],
   checked_at: '2026-10-25T12:00:00Z', backend_url: 'https://test', frontend_origin: null,
   server_time: '2026-10-25T12:00:00Z', python_version: '3.11', mcp_enabled: true,
   openai_api_key_set: true, agents_count: 1, tools_count: 2,
@@ -49,6 +52,9 @@ test('refresh retains stale results on failure, skips overlap and cleans up hidd
     assert.equal(requests.length, 1);
     await act(async () => requests[0].resolve({ ok: true, json: async () => snapshot }));
     assert.match(renderText(), /Healthy/);
+    for (const service of snapshot.services.filter(value => value.id.startsWith('video_'))) {
+      assert.ok(tree.root.findAllByType('div').some(node => node.children.includes(service.detail)), `Visible video detail: ${service.id}`);
+    }
     const button = tree.root.findByType('button');
     await act(async () => button.props.onClick());
     await act(async () => requests[1].resolve({ ok: false }));

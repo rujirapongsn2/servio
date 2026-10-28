@@ -18,8 +18,8 @@ function drawer() {
     'react-dom': { createPortal: (children, host) => React.createElement('drawer-portal', { host }, children) },
     '@/components/KnowledgeDocumentImage': { KnowledgeDocumentImage: props => React.createElement('document-image', props) },
     '@/components/KnowledgeImages': { KnowledgeImages: () => null },
-    '@/components/KnowledgeAudio': { KnowledgeAudio: () => null },
-    '@/lib/product-presentations': { parseKnowledgeAudio: () => [], parseKnowledgeImages: () => [] },
+    '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': { KnowledgeAudio: () => null },
+    '@/lib/product-presentations': { parseKnowledgeVideo: () => null, parseKnowledgeAudio: () => [], parseKnowledgeImages: () => [] },
     '@/lib/api': { getApiBaseUrl: () => '' },
   };
   vm.runInThisContext(`(function(require,exports){${source}\n})`, { filename: filename.pathname })(name => mocks[name] ?? dependencies(name), exports);

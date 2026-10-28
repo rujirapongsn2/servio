@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Headset, Loader2, MessageSquare, MessageSquarePlus, WifiOff, X } from "lucide-react";
 import styles from "./ChatSurface.module.css";
 import Image from "next/image";
+import { VideoAttachmentComposer } from "@/components/VideoAttachmentComposer";
 import { ImageSearchComposer } from "@/components/ImageSearchComposer";
 import MicIcon from "@/components/icons/MicIcon";
 import { useSearchParams } from "next/navigation";
@@ -119,6 +120,8 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
         imageSearchState,
         imageComposerEpoch,
         sendImageSearch,
+        videoUploadToken,
+        sendVideoInquiry,
         productActionError,
         isLoading,
         agentName,
@@ -130,6 +133,7 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
         inlineErrors: true,
     });
 
+    const [videoBusy, setVideoBusy] = useState(false);
     const messages = preview && previewSample === "conversation" ? PREVIEW_SAMPLE : history;
     const chatReady = preview || websocketReady;
 
@@ -208,7 +212,7 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
                         <h1>{greeting.title}</h1>
                         <p>{greeting.subtitle}</p>
                     </div> : <div className={styles.history}>
-                        <ChatHistory messages={messages} isLoading={isLoading} collapsed={currentMode === "voice" && collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} onKnowledgeInquiry={sendKnowledgeInquiry} productActionsDisabled={!chatReady} productActionError={productActionError} showSystemEvents={false} />
+                        <ChatHistory locale={locale} messages={messages} isLoading={isLoading} collapsed={currentMode === "voice" && collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} onKnowledgeInquiry={sendKnowledgeInquiry} productActionsDisabled={!chatReady} productActionError={productActionError} showSystemEvents={false} />
                     </div>}
                     <div className={styles.composer}>
                         {connectionError ? (
@@ -227,7 +231,10 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
                             </div>
                         ) : null}
                         <Composer audioChat={currentMode === "chat" ? (
-                            <ImageSearchComposer key={imageComposerEpoch} available={imageSearchAvailable} disabled={!chatReady || isLoading} searchState={imageSearchState} onImageSearch={sendImageSearch} onTextMessage={sendTextMessage} />
+                            <>
+                              <VideoAttachmentComposer key={`video-${imageComposerEpoch}`} token={videoUploadToken} disabled={!chatReady || isLoading} locale={locale} onInquire={sendVideoInquiry} onBusyChange={setVideoBusy} />
+                              <ImageSearchComposer key={imageComposerEpoch} available={imageSearchAvailable} disabled={!chatReady || isLoading || videoBusy} searchState={imageSearchState} onImageSearch={sendImageSearch} onTextMessage={sendTextMessage} />
+                            </>
                         ) : (
                             <AudioChat frequencies={frequencies} isReady={chatReady && (preview || audioIsReady)} startRecording={startRecording} stopRecording={stopRecording} sendAudioMessage={sendAudioMessage} />
                         )} />

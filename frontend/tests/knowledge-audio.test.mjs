@@ -63,7 +63,7 @@ for (const { body, isAudio } of [{ body: '[00:00] Cats purr.', isAudio: true }, 
   test(`document editor handles metadata save with ${body ? 'ready' : 'empty'} ${isAudio ? 'audio' : 'ordinary'} body`, async () => {
     const { default: Drawer } = load('src/components/OKFBundleDetailDrawer.tsx', {
       '@/components/KnowledgeTablePanel': { KnowledgeTablePanel: () => null }, '@/lib/admin-locale': { AdminLocaleContext: React.createContext(null) },
-      '@/components/KnowledgeAudio': { KnowledgeAudio: () => null },
+      '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': { KnowledgeAudio: () => null },
       '@/components/KnowledgeImageSearchSettings': { KnowledgeImageSearchSettings: () => null }, '@/components/KnowledgeDocumentImage': { KnowledgeDocumentImage: () => null }, '@/components/KnowledgeImages': { KnowledgeImages: () => null },
       '@/lib/product-presentations': parser,
       '@/lib/api': { getApiBaseUrl: () => '' },
@@ -125,7 +125,7 @@ const { ChatHistory } = load('src/components/ChatDialog.tsx', {
     const text = typeof message.content === 'string' ? message.content : message.content.map((part) => part.text ?? '').join('');
     return text ? React.createElement('p', { 'data-item': text }, text) : null;
   } },
-  '@/components/KnowledgeAudio': { KnowledgeAudio: ({ audio }) => audio.map((item) => React.createElement('audio', { key: item.segment_id, 'data-item': item.title })) },
+  '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': { KnowledgeAudio: ({ audio }) => audio.map((item) => React.createElement('audio', { key: item.segment_id, 'data-item': item.title })) },
   '@/components/KnowledgeImages': { KnowledgeImages: ({ images }) => images.map((item) => React.createElement('img', { key: item.asset_id, 'data-item': item.title })) },
   '@/components/ProductCarousel': { ProductCarousel: () => React.createElement('section', { 'data-item': 'products' }) },
 });

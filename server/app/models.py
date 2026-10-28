@@ -352,6 +352,7 @@ class OKFImportJobResponse(BaseModel):
 
 
 class OKFConceptResponse(BaseModel):
+    video_presentation: Optional[dict] = None
     id: int
     bundle_id: int
     concept_id: str

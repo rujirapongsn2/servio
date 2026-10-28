@@ -74,4 +74,6 @@ async def import_capabilities() -> dict:
         except Exception:
             ocr = 'not_configured'
     image_status, audio_status = await asyncio.gather(images(), audio())
-    return {'documents': {'status': 'ready'}, 'images': image_status, 'audio': audio_status, 'image_ocr': {'status': ocr}}
+    from app.knowledge_video import readiness as video_readiness
+    video_status = await asyncio.to_thread(video_readiness)
+    return {'documents': {'status': 'ready'}, 'images': image_status, 'audio': audio_status, 'videos': video_status, 'image_ocr': {'status': ocr}}
