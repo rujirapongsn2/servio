@@ -1016,3 +1016,33 @@ test('saved manual Workflow model opens its editable Model ID field', async t =>
   assert.equal(renderer.root.findByProps({id:'workflow-custom-model'}).props.value, 'gpt-4.1-mini');
   assert.equal(renderer.root.findByProps({id:'workflow-model'}).props.value, '__custom_model__');
 });
+
+test('team views share newest-first sorting, search and workflow navigation', async t => {
+  const env = setup(t);
+  const oldTeam = { id: 90, name: 'Alpha', slug: 'alpha', status: 'active', member_count: 3, created_at: '2026-10-01T00:00:00Z' };
+  const newTeam = { id: 10, name: 'Zulu', slug: 'zulu', status: 'inactive', member_count: 1, created_at: '2026-10-29T00:00:00Z' };
+  env.context.teams = [oldTeam, newTeam];
+  const Teams = env.load('src/app/admin/teams/page.tsx').default;
+  let tree;
+  await act(async () => { tree = create(React.createElement(ThaiAdminLocale, null, React.createElement(Teams))); });
+  t.after(async () => { await act(async () => tree.unmount()); });
+  assert.deepEqual(tree.root.findAllByType('h3').map(node => text(node)), ['Zulu', 'Alpha']);
+  assert.equal(tree.root.findByProps({ id: 'team-sort' }).props.value, 'newest');
+  await act(async () => button(tree, 'ตาราง').props.onClick());
+  const rowNames = () => tree.root.findAllByProps({ scope: 'row' }).map(node => text(node.children[0]));
+  assert.deepEqual(rowNames(), ['Zulu', 'Alpha']);
+  assert.equal(button(tree, 'ตาราง').props['aria-pressed'], true);
+  await act(async () => tree.root.findByProps({ id: 'team-sort' }).props.onChange({ target: { value: 'oldest' } }));
+  assert.deepEqual(rowNames(), ['Alpha', 'Zulu']);
+  await act(async () => tree.root.findByProps({ id: 'team-sort' }).props.onChange({ target: { value: 'name' } }));
+  assert.deepEqual(rowNames(), ['Alpha', 'Zulu']);
+  await act(async () => tree.root.findByProps({ id: 'team-sort' }).props.onChange({ target: { value: 'agents' } }));
+  assert.deepEqual(rowNames(), ['Alpha', 'Zulu']);
+  await act(async () => tree.root.findByProps({ id: 'team-search' }).props.onChange({ target: { value: 'zulu' } }));
+  assert.deepEqual(rowNames(), ['Zulu']);
+  await act(async () => button(tree, 'ออกแบบการทำงาน').props.onClick());
+  assert.equal(env.routes.at(-1), '/admin/teams/10/workflow');
+  await act(async () => button(tree, 'การ์ด').props.onClick());
+  assert.deepEqual(tree.root.findAllByType('h3').map(node => text(node)), ['Zulu']);
+  assert.deepEqual(env.context.teams, [oldTeam, newTeam]);
+});

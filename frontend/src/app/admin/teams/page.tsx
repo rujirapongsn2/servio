@@ -9,6 +9,8 @@ import { getApiBaseUrl } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import WorkflowNavigator from "@/components/WorkflowNavigator";
 import {
+  LayoutGrid,
+  Table2,
   Plus,
   Trash2,
   Pencil,
@@ -58,7 +60,7 @@ interface ToolOption {
 }
 
 export default function TeamsPage() {
-  const { copy } = useAdminLocale();
+  const { copy, locale } = useAdminLocale();
   const router = useRouter();
   const { teams, loading: teamsLoading, refreshTeams, setSelectedTeamId } = useTeam();
   const [showCreate, setShowCreate] = useState(false);
@@ -73,15 +75,27 @@ export default function TeamsPage() {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
 
+  const [view, setView] = useState<"cards" | "table">("cards");
+  const [sort, setSort] = useState<"newest" | "oldest" | "name" | "agents">("newest");
+
   const normalizedQuery = query.trim().toLowerCase();
   const visibleTeams = useMemo(() => {
-    if (!normalizedQuery) return teams;
-    return teams.filter((team) =>
-      [team.name, team.slug, team.description, team.owner_username, team.starting_agent_name]
+    const filtered = teams.filter((team) =>
+      !normalizedQuery || [team.name, team.slug, team.description, team.owner_username, team.starting_agent_name]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedQuery))
     );
-  }, [teams, normalizedQuery]);
+    const addedTime = (value: string) => {
+      const time = Date.parse(value);
+      return Number.isFinite(time) ? time : 0;
+    };
+    return filtered.sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name, locale) || b.id - a.id;
+      if (sort === "agents") return b.member_count - a.member_count || b.id - a.id;
+      const difference = addedTime(b.created_at) - addedTime(a.created_at) || b.id - a.id;
+      return sort === "oldest" ? -difference : difference;
+    });
+  }, [teams, normalizedQuery, sort, locale]);
 
   const apiBase = getApiBaseUrl();
   const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") : "";
@@ -322,15 +336,35 @@ export default function TeamsPage() {
                 className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-3 text-sm font-medium text-[#0D1B2A] outline-none placeholder:text-[#778DA9] focus:border-[#0D1B2A] focus:ring-2 focus:ring-[#0D1B2A]/15"
               />
             </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <label htmlFor="team-sort" className="text-sm text-[#2D3F55]">{copy.teamSort}</label>
+              <select id="team-sort" value={sort} onChange={(event) => {
+                const value = event.target.value;
+                if (value === "newest" || value === "oldest" || value === "name" || value === "agents") setSort(value);
+              }} className="h-9 max-w-full rounded-lg border border-[#E2E8F0] bg-white px-2 text-sm text-[#0D1B2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2786C2]">
+                <option value="newest">{copy.newestTeams}</option>
+                <option value="oldest">{copy.oldestTeams}</option>
+                <option value="name">{copy.teamNameAscending}</option>
+                <option value="agents">{copy.mostAgents}</option>
+              </select>
+              <div role="group" aria-label={copy.teamView} className="flex rounded-lg border border-[#E2E8F0] bg-white p-0.5">
+                <button type="button" aria-pressed={view === "cards"} onClick={() => setView("cards")} className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-sm focus-visible:ring-2 focus-visible:ring-[#2786C2] ${view === "cards" ? "bg-sky-50 text-[#1A5A8A]" : "text-[#778DA9]"}`}>
+                  <LayoutGrid aria-hidden="true" className="h-4 w-4" />{copy.cardView}
+                </button>
+                <button type="button" aria-pressed={view === "table"} onClick={() => setView("table")} className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-sm focus-visible:ring-2 focus-visible:ring-[#2786C2] ${view === "table" ? "bg-sky-50 text-[#1A5A8A]" : "text-[#778DA9]"}`}>
+                  <Table2 aria-hidden="true" className="h-4 w-4" />{copy.tableView}
+                </button>
+              </div>
             <p className="text-sm font-medium tabular-nums text-[#778DA9]" aria-live="polite">
               {normalizedQuery
                 ? copy.teamsFiltered(visibleTeams.length, teams.length)
                 : copy.teamsCount(teams.length)}
             </p>
+            </div>
           </div>
         )}
 
-        <div
+        {view === "cards" ? <div
           role="list"
           className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16.5rem),1fr))] gap-3"
         >
@@ -417,7 +451,36 @@ export default function TeamsPage() {
               </div>
             );
           })}
-        </div>
+        </div> : visibleTeams.length > 0 && (
+          <div role="region" aria-label={copy.teams} tabIndex={0} className="overflow-x-auto rounded-xl border border-[#E2E8F0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2786C2]">
+            <table className="w-full min-w-[850px] border-collapse text-left text-sm">
+              <caption className="sr-only">{copy.teamAgents}</caption>
+              <thead className="bg-[#F8F9FA] text-xs text-[#778DA9]">
+                <tr>{[copy.teamName, copy.teamOwner, copy.teamStatus, copy.agents, copy.fallback, copy.teamAddedDate, copy.actions].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0] bg-white text-[#0D1B2A]">
+                {visibleTeams.map(team => {
+                  const created = new Date(team.created_at);
+                  return <tr key={team.id} className="hover:bg-[#F8F9FA]">
+                    <th scope="row" className="max-w-[260px] px-4 py-3 font-medium">
+                      <div className="break-words">{team.name}</div>
+                      <div className="truncate text-xs font-normal text-[#778DA9]" title={team.slug}>{team.slug}</div>
+                    </th>
+                    <td className="px-4 py-3">{team.owner_username || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs ${team.status === "active" ? "bg-sky-50 text-[#1A5A8A]" : "bg-gray-100 text-gray-600"}`}>{team.status === "active" ? copy.active : team.status === "inactive" ? copy.inactive : team.status}</span></td>
+                    <td className="px-4 py-3 tabular-nums">{team.member_count}</td>
+                    <td className="max-w-[220px] break-words px-4 py-3">{team.starting_agent_name || copy.notSet}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-[#778DA9]">{Number.isFinite(created.getTime()) ? <time dateTime={team.created_at}>{created.toLocaleDateString(locale === "th" ? "th-TH" : "en-GB")}</time> : "—"}</td>
+                    <td className="px-4 py-3"><div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => router.push(`/admin/teams/${team.id}/workflow`)}><WorkflowIcon aria-hidden="true" />{copy.workflow}</Button>
+                      <Button variant="ghost" size="iconSmall" data-admin-write="true" onClick={() => handleDelete(team.id, team.name)} aria-label={copy.deleteTeam(team.name)} title={copy.deleteTeam(team.name)} className="text-[#778DA9] hover:bg-red-50 hover:text-[#B91C1C]"><Trash2 /></Button>
+                    </div></td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {teamsLoading && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16.5rem),1fr))] gap-3" aria-busy="true">
