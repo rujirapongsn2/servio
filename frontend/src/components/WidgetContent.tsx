@@ -231,10 +231,8 @@ export default function WidgetContent({ variant = "widget", overrideApiKey, over
                             </div>
                         ) : null}
                         <Composer audioChat={currentMode === "chat" ? (
-                            <>
-                              <VideoAttachmentComposer key={`video-${imageComposerEpoch}`} token={videoUploadToken} disabled={!chatReady || isLoading} locale={locale} onInquire={sendVideoInquiry} onBusyChange={setVideoBusy} />
-                              <ImageSearchComposer key={imageComposerEpoch} available={imageSearchAvailable} disabled={!chatReady || isLoading || videoBusy} searchState={imageSearchState} onImageSearch={sendImageSearch} onTextMessage={sendTextMessage} />
-                            </>
+                            <VideoAttachmentComposer key={`video-${imageComposerEpoch}`} token={videoUploadToken} disabled={!chatReady || isLoading || imageSearchState.kind === "pending"} locale={locale} onInquire={sendVideoInquiry} onBusyChange={setVideoBusy}
+                              renderComposer={(attachmentActions) => <ImageSearchComposer key={imageComposerEpoch} available={imageSearchAvailable} disabled={!chatReady || isLoading || videoBusy} searchState={imageSearchState} onImageSearch={sendImageSearch} onTextMessage={sendTextMessage} attachmentActions={attachmentActions} />} />
                         ) : (
                             <AudioChat frequencies={frequencies} isReady={chatReady && (preview || audioIsReady)} startRecording={startRecording} stopRecording={stopRecording} sendAudioMessage={sendAudioMessage} />
                         )} />

@@ -22,11 +22,12 @@ function load(file, mocks = {}) {
   return exports;
 }
 const parsing = load('src/lib/product-presentations.ts');
-const card = { id: 'a'.repeat(32), asset_id: 'b'.repeat(64), title: 'Red mug', source_label: 'mug.png', description: 'Verified product description', image_url: `/api/knowledge-images/${'b'.repeat(64)}?token=signed.token` };
+const card = { id: 'a'.repeat(32), asset_id: 'b'.repeat(64), title: 'Red mug', part_number: 'RM1', brand: 'Acme', source_label: 'mug.png', description: 'Verified product description', image_url: `/api/knowledge-images/${'b'.repeat(64)}?token=signed.token` };
 const carousel = { type: 'knowledge_product_carousel', version: 1, summary: 'Found one product', products: [card] };
 
 test('knowledge carousel validates signed sources without relaxing external product URLs', () => {
   assert.equal(parsing.parseKnowledgeProductCarousel(carousel).products[0].description, card.description);
+  assert.equal(parsing.parseKnowledgeProductCarousel(carousel).products[0].part_number, 'RM1');
   assert.equal(parsing.parseProductPresentations({ message: carousel }).message.type, carousel.type);
   for (const changed of [{ ...card, id: 'sku' }, { ...card, price_text: 'FREE' }, { ...card, image_url: 'https://example.com/image' }, { ...card, asset_id: 'c'.repeat(64) }]) {
     assert.equal(parsing.parseKnowledgeProductCarousel({ ...carousel, products: [changed] }), null);
@@ -41,10 +42,12 @@ test('knowledge cards show source and details, resolve signed images and send on
   let renderer;
   await act(async () => { renderer = create(React.createElement(ProductCarousel, { presentation: carousel, disabled: false, onInquire: (id) => selected.push(id) }), { createNodeMock: (element) => element.type === 'dialog' ? { showModal() {}, close() {} } : null }); });
   assert.equal(renderer.root.findByType('img').props.src, 'http://backend.test' + card.image_url);
-  assert.match(JSON.stringify(renderer.toJSON()), /mug.png/);
+  assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /mug.png/);
+  assert.match(JSON.stringify(renderer.toJSON()), /RM1/);
   assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /รหัสสินค้า/);
   await act(async () => renderer.root.findAllByType('button').find((button) => button.props['aria-label']?.startsWith('ดูรายละเอียด')).props.onClick({ currentTarget: { focus() {} } }));
   assert.match(JSON.stringify(renderer.toJSON()), /Verified product description/);
+  assert.match(JSON.stringify(renderer.toJSON()), /mug.png/);
   await act(async () => renderer.root.findAllByType('button').find((button) => button.props['aria-label']?.startsWith('สอบถามสินค้านี้')).props.onClick());
   assert.deepEqual(selected, [card.id]);
   await act(async () => renderer.unmount());

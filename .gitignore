@@ -15,6 +15,7 @@ node_modules/
 
 # next.js
 .next/
+.next-*/
 .next-video-validation/
 .next-workflow-*/
 .next-design-system-release-*/

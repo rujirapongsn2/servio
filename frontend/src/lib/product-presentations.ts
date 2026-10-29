@@ -159,10 +159,11 @@ export function parseKnowledgeProductCarousel(value: unknown): KnowledgeProductC
     if (!isObject(raw) || !text(raw.id, 32) || !/^[a-f0-9]{32}$/.test(raw.id) || ids.has(raw.id)) return null;
     const parsed = parseKnowledgeImages({ type: "knowledge_images", version: 1, response: "", images: [{ asset_id: raw.asset_id, title: raw.title, source_label: raw.source_label, image_url: raw.image_url }] });
     if (!parsed || typeof raw.description !== "string" || raw.description.length > 8000) return null;
-    if (Object.keys(raw).some((key) => !["id", "asset_id", "title", "source_label", "description", "image_url"].includes(key))) return null;
+    if (Object.keys(raw).some((key) => !["id", "asset_id", "title", "source_label", "description", "image_url", "part_number", "brand"].includes(key))) return null;
     const image = parsed.images[0];
     if (assets.has(image.asset_id)) return null;
-    products.push({ ...image, id: raw.id, description: raw.description });
+    if ((raw.part_number != null && !text(raw.part_number, 200)) || (raw.brand != null && !text(raw.brand, 200))) return null;
+    products.push({ ...image, id: raw.id, description: raw.description, ...(typeof raw.part_number === "string" ? {part_number: raw.part_number} : {}), ...(typeof raw.brand === "string" ? {brand: raw.brand} : {}) });
     ids.add(raw.id);
     assets.add(image.asset_id);
   }

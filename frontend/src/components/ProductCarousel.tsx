@@ -60,8 +60,7 @@ export function ProductCarousel({ presentation, onInquire, disabled }: {
         <ProductImage product={product} />
         <div className="p-3 flex flex-col gap-2 flex-1 min-w-0">
           <h3 className="text-sm font-semibold break-words line-clamp-2">{product.title}</h3>
-          {"source_label" in product && <div className="text-xs text-gray-500 break-words line-clamp-2">{product.source_label}</div>}
-          {product.part_number && <div className="font-mono text-sm break-all">{product.part_number}</div>}
+          {product.part_number && <div className="font-mono text-sm break-all">{"asset_id" in product ? `รหัส ${product.part_number}` : product.part_number}</div>}
           {product.brand && <div className="text-xs text-gray-500 break-words">{product.brand}</div>}
           {product.price_text && <div className="text-sm font-semibold break-words">{product.price_text}</div>}
           <div className="mt-auto pt-2 flex flex-col gap-2">
@@ -75,8 +74,8 @@ export function ProductCarousel({ presentation, onInquire, disabled }: {
       {selected && <div className="p-5">
         <div className="flex items-start gap-4 justify-between mb-4"><h2 id={titleId} className="font-semibold break-words min-w-0">{selected.title}</h2><button type="button" autoFocus aria-label="ปิดรายละเอียดสินค้า" className="shrink-0 rounded-lg border px-3 py-1" onClick={closeDetails}>ปิด</button></div>
         <ProductImage key={selected.id} product={selected} />
-        {"source_label" in selected && <p className="mt-4 text-xs text-gray-500 break-words">{selected.source_label}</p>}
-        <dl className="mt-4 text-sm space-y-2">{selected.part_number && <div><dt className="text-gray-500">รหัสสินค้า</dt><dd className="break-all">{selected.part_number}</dd></div>}{selected.brand && <div><dt className="text-gray-500">ยี่ห้อ</dt><dd>{selected.brand}</dd></div>}{selected.price_text && <div><dt className="text-gray-500">ราคา</dt><dd>{selected.price_text}</dd></div>}</dl>
+        {"source_label" in selected && <p className="mt-4 text-xs text-gray-500 break-words">ไฟล์ต้นฉบับ: {selected.source_label}</p>}
+        <dl className="mt-4 text-sm space-y-2">{selected.part_number && <div><dt className="text-gray-500">{"asset_id" in selected ? "รหัสสินค้า / สี" : "รหัสสินค้า"}</dt><dd className="break-all">{selected.part_number}</dd></div>}{selected.brand && <div><dt className="text-gray-500">ยี่ห้อ</dt><dd>{selected.brand}</dd></div>}{selected.price_text && <div><dt className="text-gray-500">ราคา</dt><dd>{selected.price_text}</dd></div>}</dl>
         {selected.description && <p className="mt-4 text-sm whitespace-pre-wrap break-words">{selected.description}</p>}
         {selected.detail_url && <a href={selected.detail_url} target="_blank" rel="noopener noreferrer" className="block mt-4 text-blue-600 underline text-sm">เปิดหน้าสินค้า</a>}
         <button type="button" disabled={disabled} className="mt-4 w-full rounded-lg bg-blue-600 text-white px-3 py-2 text-sm disabled:opacity-50" onClick={() => { onInquire(selected.id); closeDetails(); }}>สอบถามสินค้านี้</button>

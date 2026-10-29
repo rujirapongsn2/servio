@@ -183,7 +183,7 @@ test('queued upload polls status with the same private grant and cancel stops po
     assert.equal(requests[1].url, `/api/video-attachments/${attachmentId}`);
     assert.equal(requests[1].options.headers.Authorization, 'Bearer session-grant');
     assert.equal(tree.root.findAllByType('form').length, 0);
-    await act(async () => tree.root.findByType('button').props.onClick());
+    await act(async () => tree.root.findByProps({ 'aria-label': 'นำวิดีโอออก' }).props.onClick());
     assert.equal(requests.at(-1).options.method, 'DELETE');
     assert.equal(scheduled.size, 0);
   } finally { if (tree) await act(async () => tree.unmount()); Object.assign(globalThis, before); }

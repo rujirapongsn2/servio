@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Video, X, Loader2, Send } from "lucide-react";
 import { buildApiUrl } from "@/lib/api";
 import { parseVideoAttachmentJob, videoUploadIssue, type VideoAttachmentJob } from "@/lib/video-attachments";
 import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 
 type State = { kind: "idle" } | { kind: "uploading"; name: string } | { kind: "job"; name: string; job: VideoAttachmentJob } | { kind: "error"; message: string };
-type Props = { token: string | null; disabled: boolean; locale?: "th" | "en"; onInquire: (attachmentId: string, query: string) => boolean; onBusyChange?: (busy: boolean) => void };
+type Props = { token: string | null; disabled: boolean; locale?: "th" | "en"; onInquire: (attachmentId: string, query: string) => boolean; onBusyChange?: (busy: boolean) => void; renderComposer?: (attachment: ReactNode) => ReactNode };
 
-export function VideoAttachmentComposer({ token, disabled, locale = "th", onInquire, onBusyChange }: Props) {
+export function VideoAttachmentComposer({ token, disabled, locale = "th", onInquire, onBusyChange, renderComposer }: Props) {
   const [state, setState] = useState<State>({ kind: "idle" });
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("troubleshooting");
@@ -21,6 +21,7 @@ export function VideoAttachmentComposer({ token, disabled, locale = "th", onInqu
   const busyCallback = useRef(onBusyChange);
   busyCallback.current = onBusyChange;
   const id = useId();
+  const picker = useRef<HTMLInputElement>(null);
   const english = locale === "en";
   const hasToken = token !== null;
   const busy = state.kind === "uploading" || (state.kind === "job" && (state.job.status === "queued" || state.job.status === "processing"));
@@ -63,10 +64,14 @@ export function VideoAttachmentComposer({ token, disabled, locale = "th", onInqu
     try { const body = new FormData(); body.append("file", file); await receive(await fetch(buildApiUrl("/api/video-attachments"), { method: "POST", headers, body, signal: abort.signal })); }
     catch (error) { if (revision === generation.current && !abort.signal.aborted) setState({ kind: "error", message: error instanceof Error ? error.message : (english ? "Video upload failed." : "อัปโหลดวิดีโอไม่สำเร็จ") }); }
   }
-  if (!token) return null;
   const readyJob = state.kind === "job" && state.job.status === "ready" ? state.job : null;
-  return <section className="max-h-[55dvh] min-h-0 min-w-0 shrink-0 space-y-2 overflow-y-auto px-3 pt-2" aria-label={english ? "Ask about a video" : "ถามเกี่ยวกับวิดีโอ"}>
-    {state.kind === "idle" || state.kind === "error" ? <label className={`inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white/70 px-3 py-1.5 text-sm text-blue-700 ${disabled ? "opacity-50" : "cursor-pointer hover:bg-blue-50"}`}><Video size={16} aria-hidden="true" />{english ? "Attach video" : "แนบวิดีโอ"}<input type="file" aria-label={english ? "Attach video, up to 50 MB" : "แนบวิดีโอ ไม่เกิน 50 MB"} accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm" className="sr-only" disabled={disabled} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void upload(file); }} /></label> : <div className="flex min-w-0 items-center gap-2 text-sm"><Video size={16} className="shrink-0" /><span className="min-w-0 flex-1 truncate">{state.name}</span><button type="button" onClick={() => void cancel()} aria-label={english ? "Remove video" : "นำวิดีโอออก"} title={english ? "Remove video" : "นำวิดีโอออก"} className="rounded p-1 hover:bg-gray-100"><X size={16} /></button></div>}
+  const attachment = token ? <>
+    <input ref={picker} type="file" aria-label={english ? "Attach video, up to 50 MB" : "แนบวิดีโอ ไม่เกิน 50 MB"} accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm" className="sr-only" disabled={disabled || busy} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void upload(file); }} />
+    <button type="button" disabled={disabled || busy} aria-label={english ? "Attach video" : "แนบวิดีโอ"} title={english ? "Attach video (up to 50 MB)" : "แนบวิดีโอ (ไม่เกิน 50 MB)"} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:text-gray-200" onClick={() => picker.current?.click()}><Video size={20} aria-hidden="true" /></button>
+  </> : null;
+  return <>
+    {token && state.kind !== "idle" && <section className="mb-2 w-full max-h-[55dvh] min-h-0 min-w-0 shrink-0 space-y-2 overflow-y-auto rounded-2xl border border-gray-200 bg-white/70 p-3" aria-label={english ? "Ask about a video" : "ถามเกี่ยวกับวิดีโอ"}>
+    {state.kind !== "error" && <div className="flex min-w-0 items-center gap-2 text-sm"><Video size={16} className="shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{state.name}</span><button type="button" onClick={() => void cancel()} aria-label={english ? "Remove video" : "นำวิดีโอออก"} title={english ? "Remove video" : "นำวิดีโอออก"} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-gray-100"><X size={18} /></button></div>}
     {busy && <div role="status" className="flex items-center gap-2 text-xs text-gray-500"><Loader2 size={14} className="animate-spin motion-reduce:animate-none" />{state.kind === "uploading" ? (english ? "Uploading video…" : "กำลังอัปโหลดวิดีโอ…") : (english ? "Analyzing video frames…" : "กำลังวิเคราะห์ภาพในวิดีโอ…")}</div>}
     {state.kind === "error" && <p role="alert" className="text-sm text-red-600">{state.message}</p>}
     {state.kind === "job" && ["failed", "cancelled", "expired"].includes(state.job.status) && <p role="alert" className="text-sm text-red-600">{state.job.message || (english ? "Video unavailable. Remove it and upload again." : "วิดีโอไม่พร้อมใช้งาน กรุณานำออกและอัปโหลดใหม่")}</p>}
@@ -76,5 +81,7 @@ export function VideoAttachmentComposer({ token, disabled, locale = "th", onInqu
       {sendError && <p role="alert" className="text-sm text-red-600">{english ? "Unable to send. Reconnect and try again." : "ส่งคำถามไม่สำเร็จ กรุณาเชื่อมต่อแล้วลองใหม่"}</p>}
       {readyJob.presentation && <details className="text-xs"><summary className="cursor-pointer text-blue-700">{english ? "Video evidence" : "ดูวิดีโอและภาพอ้างอิง"}</summary><div className="mt-2"><KnowledgeVideos videos={readyJob.presentation.videos} locale={locale} /></div></details>}
     </form>}
-  </section>;
+  </section>}
+    {renderComposer ? renderComposer(attachment) : attachment}
+  </>;
 }

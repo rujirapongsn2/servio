@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ImagePlus, Send, X } from "lucide-react";
 import type { ImageSearchState } from "@/hooks/useWebsocket";
 
@@ -30,7 +30,8 @@ async function checkImage(file: File, preview: string) {
   });
 }
 
-export function ImageSearchComposer({ available, disabled, searchState, onImageSearch, onTextMessage }: {
+export function ImageSearchComposer({ available, disabled, searchState, onImageSearch, onTextMessage, attachmentActions }: {
+  attachmentActions?: ReactNode;
   available: boolean;
   disabled: boolean;
   searchState: ImageSearchState;
@@ -119,7 +120,8 @@ export function ImageSearchComposer({ available, disabled, searchState, onImageS
       <button type="button" title="นำรูปภาพออก" aria-label="นำรูปภาพออก" disabled={busy} className="rounded-full p-2 disabled:opacity-50" onClick={() => { version.current += 1; setDraft({ kind: "empty" }); setError(null); }}><X size={18} /></button>
     </div>}
     <div className="flex min-w-0 items-center gap-2">
-      {available && <><input ref={picker} type="file" accept="image/jpeg,image/png" aria-label="แนบรูปภาพ JPG หรือ PNG เพื่อค้นหาสินค้า" className="sr-only" disabled={busy} onChange={(event) => { void selectImage(event.target.files?.[0]); event.target.value = ""; }} /><button type="button" disabled={busy} aria-label={preview ? "เปลี่ยนรูปภาพค้นหา" : "แนบรูปภาพค้นหาสินค้า"} title={preview ? "เปลี่ยนรูปภาพ" : "ค้นหาด้วยรูปภาพ"} className="shrink-0 rounded-full border p-2.5 text-gray-600 disabled:opacity-50 dark:text-gray-200" onClick={() => picker.current?.click()}><ImagePlus size={20} /></button></>}
+      {available && <><input ref={picker} type="file" accept="image/jpeg,image/png" aria-label="แนบรูปภาพ JPG หรือ PNG เพื่อค้นหาสินค้า" className="sr-only" disabled={busy} onChange={(event) => { void selectImage(event.target.files?.[0]); event.target.value = ""; }} /><button type="button" disabled={busy} aria-label={preview ? "เปลี่ยนรูปภาพค้นหา" : "แนบรูปภาพค้นหาสินค้า"} title={preview ? "เปลี่ยนรูปภาพ" : "ค้นหาด้วยรูปภาพ"} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 dark:text-gray-200" onClick={() => picker.current?.click()}><ImagePlus size={20} /></button></>}
+      {attachmentActions}
       <label className="sr-only" htmlFor="widget-chat-message">ข้อความ</label>
       <input id="widget-chat-message" name="message" type="text" value={text} disabled={busy} maxLength={draft.kind === "empty" ? undefined : 2000} onChange={(event) => setText(event.target.value)} placeholder={draft.kind !== "empty" ? "ระบุความต้องการเพิ่มเติม (ไม่บังคับ)" : "พิมพ์ข้อความ…"} className="min-w-0 flex-1 rounded-full border border-gray-200 bg-gray-50 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900" autoComplete="off" />
       <button type="submit" disabled={busy || (draft.kind === "empty" && !text.trim())} aria-label={preview ? "ค้นหาสินค้าจากรูปภาพ" : "ส่งข้อความ"} title={preview ? "ค้นหาจากรูปภาพ" : "ส่งข้อความ"} className="h-10 w-10 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 disabled:opacity-50"><Send size={18} /></button>
