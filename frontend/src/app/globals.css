@@ -1,5 +1,78 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+ * Softnix PMS DESIGN.md alignment — default palette scales remapped so
+ * raw utilities across pages resolve to the PMS tokens. Values follow
+ * DESIGN.md: border #dddee1, canvas #f8f8f8, ink #292a2e, muted #6b6e76,
+ * primary #1868db, and the PMS status pill palette.
+ * ------------------------------------------------------------------ */
+@theme inline {
+  /* Neutrals */
+  --color-slate-50:  #f8f8f8;
+  --color-slate-100: #f0f1f2;
+  --color-slate-200: #dddee1;
+  --color-slate-300: #c8c9cd;
+  --color-slate-400: #8f9199;
+  --color-slate-500: #6b6e76;
+  --color-slate-600: #505258;
+  --color-slate-700: #3d3f44;
+  --color-slate-800: #35373b;
+  --color-slate-900: #292a2e;
+  --color-slate-950: #1f2023;
+
+  /* Primary / link / selection */
+  --color-blue-50:  #e9f2fe;
+  --color-blue-100: #d5e7fd;
+  --color-blue-200: #cfe1fd;
+  --color-blue-300: #8fb8f6;
+  --color-blue-400: #6ba3f0;
+  --color-blue-500: #4688ec;
+  --color-blue-600: #1868db;
+  --color-blue-700: #1558bc;
+  --color-blue-800: #12479e;
+
+  /* Done / success */
+  --color-emerald-50:  #baf3db;
+  --color-emerald-100: #a4eecd;
+  --color-emerald-200: #7ee2b8;
+  --color-emerald-300: #57d6a3;
+  --color-emerald-400: #3fbd8b;
+  --color-emerald-500: #2da06e;
+  --color-emerald-600: #216e4e;
+  --color-emerald-700: #1d5c40;
+  --color-emerald-800: #184a34;
+
+  /* Warning / blocked */
+  --color-amber-50:  #fce4a6;
+  --color-amber-100: #fedec8;
+  --color-amber-200: #fec195;
+  --color-amber-300: #fdb26a;
+  --color-amber-400: #ef9a3d;
+  --color-amber-500: #cf7a15;
+  --color-amber-600: #a86407;
+  --color-amber-700: #7f5f01;
+  --color-amber-800: #9e4c00;
+
+  /* Danger / overdue */
+  --color-red-50:  #ffd5d2;
+  --color-red-100: #ffc4c0;
+  --color-red-200: #ffada7;
+  --color-red-300: #f98f87;
+  --color-red-400: #ec6a60;
+  --color-red-500: #d0453a;
+  --color-red-600: #c03d33;
+  --color-red-700: #ae2e24;
+  --color-red-800: #93251d;
+
+  /* green-* follows the done palette */
+  --color-green-50:  #baf3db;
+  --color-green-100: #a4eecd;
+  --color-green-200: #7ee2b8;
+  --color-green-500: #2da06e;
+  --color-green-600: #216e4e;
+  --color-green-700: #1d5c40;
+}
+
 /*
  * Token architecture adapted from the Kargul Workspace design system
  * (kargulstudio/calender-app-design), re-valued to the Softnix CI.
@@ -30,36 +103,37 @@
 /* Design tokens — Softnix CI values in the Kargul token structure     */
 /* ------------------------------------------------------------------ */
 :root {
-  /* Surfaces: app vs card, separated by hairlines instead of shadows */
-  --bg-app: #f8f9fa;
+  /* Surfaces: app vs card, separated by hairlines instead of shadows.
+     Values follow the Softnix PMS DESIGN.md (Atlassian-like calm). */
+  --bg-app: #f8f8f8;
   --bg-surface: #ffffff;
-  --bg-hover: #f1f5f9;
-  --bg-selected: #e8eef5;
+  --bg-hover: #f0f1f2;
+  --bg-selected: #e9f2fe;
 
   /* Borders */
-  --border-hairline: #e2e8f0;
-  --border-control: #e2e8f0;
-  --border-subtle: #eef2f6;
-  --border-segment: #dbe3ec;
+  --border-hairline: #dddee1;
+  --border-control: #dddee1;
+  --border-subtle: #e8e9eb;
+  --border-segment: #c8c9cd;
 
-  /* Text — Ink Navy hierarchy from the Softnix palette */
-  --text-primary: #0d1b2a;
-  --text-secondary: #778da9;
-  --text-placeholder: #94a3b8;
-  --text-section: #778da9;
-  --text-heading: #0d1b2a;
+  /* Text */
+  --text-primary: #292a2e;
+  --text-secondary: #6b6e76;
+  --text-placeholder: #8f9199;
+  --text-section: #6b6e76;
+  --text-heading: #292a2e;
   --text-on-accent: #ffffff;
-  --icon: #778da9;
+  --icon: #6b6e76;
 
-  /* Brand — the single accent, used sparingly */
-  --brand: #2786c2;
-  --brand-strong: #1a5a8a;
-  --brand-tint: rgba(39, 134, 194, 0.1);
-  --brand-tint-strong: rgba(39, 134, 194, 0.16);
+  /* Brand — PMS primary */
+  --brand: #1868db;
+  --brand-strong: #1558bc;
+  --brand-tint: rgba(24, 104, 219, 0.1);
+  --brand-tint-strong: rgba(24, 104, 219, 0.16);
 
-  /* Product-tier accents (unchanged CI) */
-  --tier-data: #2786c2;
-  --tier-data-tint: rgba(39, 134, 194, 0.12);
+  /* Product-tier accents (product CI; blue tier follows the PMS primary) */
+  --tier-data: #1868db;
+  --tier-data-tint: rgba(24, 104, 219, 0.12);
   --tier-genai: #f3903f;
   --tier-genai-tint: rgba(243, 144, 63, 0.12);
   --tier-agents: #a9cb2e;
@@ -68,28 +142,28 @@
   --tier-genai-bg: #fde3c8;
   --tier-agents-fg: #43520b;
   --tier-agents-bg: #e6f2bb;
-  --tier-data-fg: #0e5289;
-  --tier-data-bg: #c9e1f4;
+  --tier-data-fg: #1558bc;
+  --tier-data-bg: #e9f2fe;
 
-  /* Status triads: color + tint bg + tint border */
-  --status-success: #00a475;
-  --status-success-tint: rgba(0, 164, 117, 0.08);
-  --status-success-border: rgba(0, 164, 117, 0.12);
-  --status-danger: #ef4747;
-  --status-danger-tint: rgba(239, 71, 71, 0.08);
-  --status-danger-border: rgba(239, 71, 71, 0.12);
-  --status-warning: #e07a1f;
-  --status-warning-tint: rgba(224, 122, 31, 0.1);
-  --status-warning-border: rgba(224, 122, 31, 0.16);
-  --status-neutral: #778da9;
-  --status-neutral-tint: rgba(119, 141, 169, 0.08);
-  --status-neutral-border: rgba(119, 141, 169, 0.14);
-  --status-info: #2786c2;
-  --status-info-tint: rgba(39, 134, 194, 0.08);
-  --status-info-border: rgba(39, 134, 194, 0.14);
+  /* Status triads — PMS pill palette (done/warning/blocked/danger/info) */
+  --status-success: #216e4e;
+  --status-success-tint: #baf3db;
+  --status-success-border: rgba(33, 110, 78, 0.28);
+  --status-danger: #ae2e24;
+  --status-danger-tint: #ffd5d2;
+  --status-danger-border: rgba(174, 46, 36, 0.28);
+  --status-warning: #7f5f01;
+  --status-warning-tint: #fce4a6;
+  --status-warning-border: rgba(127, 95, 1, 0.28);
+  --status-neutral: #505258;
+  --status-neutral-tint: #f0f1f2;
+  --status-neutral-border: #dddee1;
+  --status-info: #1558bc;
+  --status-info-tint: #cfe1fd;
+  --status-info-border: rgba(21, 88, 188, 0.28);
 
-  /* Info Blue Light — legal/informational links */
-  --link-legal: #5eadd6;
+  /* Info link — PMS selected-foreground */
+  --link-legal: #1558bc;
 
   /* Motion */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -115,7 +189,8 @@
   --shadow: rgba(0, 0, 0, 0.04) 0 2px 6px 0;
   --shadow-lg: rgba(0, 0, 0, 0.02) 0 0 0 1px, rgba(0, 0, 0, 0.04) 0 2px 6px 0, rgba(0, 0, 0, 0.1) 0 4px 8px 0;
   --font-serif: "New York", serif;
-  --font-sans: "Softnix Cereal VF", Circular, -apple-system, system-ui, Roboto, "Helvetica Neue", sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+               Arial, "Noto Sans Thai", sans-serif;
 
   /* Softnix tier accents (legacy names) */
   --brand-gradient-start: #f3903f;
@@ -127,27 +202,27 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-color-scheme="light"]) {
-    --bg-app: #0d1b2a;
-    --bg-surface: #16263a;
-    --bg-hover: #1d3049;
-    --bg-selected: #243954;
+    --bg-app: #18191a;
+    --bg-surface: #1f1f21;
+    --bg-hover: #2b2c2f;
+    --bg-selected: #1c2b42;
 
-    --border-hairline: #24354b;
-    --border-control: #2c405a;
-    --border-subtle: #1e2f45;
-    --border-segment: #33485f;
+    --border-hairline: #2b2c2f;
+    --border-control: #3a3b3f;
+    --border-subtle: #26272a;
+    --border-segment: #424348;
 
-    --text-primary: #e8eef5;
-    --text-secondary: #94a8c0;
-    --text-placeholder: #64748b;
-    --text-section: #7d92ab;
-    --text-heading: #f2f6fa;
-    --icon: #94a8c0;
+    --text-primary: #cecfd2;
+    --text-secondary: #96999e;
+    --text-placeholder: #6f7278;
+    --text-section: #96999e;
+    --text-heading: #e4e5e7;
+    --icon: #96999e;
 
-    --brand: #3d9bd4;
-    --brand-strong: #5eadd6;
-    --brand-tint: rgba(61, 155, 212, 0.16);
-    --brand-tint-strong: rgba(61, 155, 212, 0.24);
+    --brand: #669df1;
+    --brand-strong: #8fb8f6;
+    --brand-tint: rgba(102, 157, 241, 0.16);
+    --brand-tint-strong: rgba(102, 157, 241, 0.24);
 
     --tier-data-bg: #17324a;
     --tier-data-fg: #a9d3f6;
@@ -156,10 +231,12 @@
     --tier-agents-bg: #2f3a12;
     --tier-agents-fg: #d3e88f;
 
-    --status-success-tint: rgba(0, 164, 117, 0.14);
-    --status-danger-tint: rgba(239, 71, 71, 0.14);
-    --status-warning-tint: rgba(224, 122, 31, 0.14);
-    --status-neutral-tint: rgba(148, 168, 192, 0.12);
+    /* PMS dark pill tints (low-luminance per DESIGN.md colors-dark) */
+    --status-success-tint: #1c3329;
+    --status-danger-tint: #42221f;
+    --status-warning-tint: #45370f;
+    --status-neutral-tint: #2b2c2f;
+    --status-info-tint: #1c2b42;
 
     /* Legacy aliases */
     --background: var(--bg-surface);

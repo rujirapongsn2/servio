@@ -338,7 +338,7 @@ export default function AnalyticsPage() {
 
           <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
             <div className="text-sm font-medium text-gray-600">Avg Sentiment</div>
-            <div className="text-3xl font-bold text-purple-600 mt-2">
+            <div className={`text-3xl font-bold mt-2 ${summary.avg_sentiment >= 0 ? "text-emerald-600" : "text-red-700"}`}>
               {summary.avg_sentiment >= 0 ? "+" : ""}{summary.avg_sentiment.toFixed(2)}
             </div>
           </div>
