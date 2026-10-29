@@ -54,3 +54,10 @@ The Settings monitor shows video model configuration, FFmpeg/FFprobe execution c
 Queue counts cover unexpired customer conversation clips in the requested team, or the default team when no team is supplied. Curated Knowledge import jobs use the existing import progress UI and are not included in these counts. A missing or completed worker task is reported as unavailable; unreadable queue data is unknown rather than zero.
 
 Some compatible vision endpoints return prose instead of the requested JSON. Video analysis first tries one structured multimodal request. If that response fails validation, it asks the same configured model to describe the ordered images and then structure only that description in a text-only request. Final evidence still requires every original frame ID exactly once and rejects invented event references. No other provider or model is selected automatically. This fallback can add two model requests per batch. The whole clip has a 25-minute processing deadline, including decoding and any fallback calls.
+
+
+## Chat references
+
+Web Chat and Bubble group video references below the assistant answer for each turn. Cards defer video loading until opened. The viewer uses a side panel on wide screens and fills the widget or mobile viewport on narrow screens. Selecting a timed section seeks after metadata loads, stops at its end, and offers replay or continuation. Seeking outside the selected section returns to full-clip playback.
+
+When reliable timestamps are absent, the viewer opens ordered evidence images and never converts frame indices into seconds. Full-clip playback remains available. The source and sampling limits are expandable. WebSocket video presentations preserve explicit null timing fields required by the client schema.

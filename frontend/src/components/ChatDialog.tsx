@@ -9,7 +9,7 @@ import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
 import { ProductCarousel } from "@/components/ProductCarousel";
-import { ProductPresentations } from "@/lib/product-presentations";
+import { ProductPresentations, type KnowledgeVideo } from "@/lib/product-presentations";
 import { answerLandedAfter } from "@/lib/chat-flow";
 import { Message, ToolCall } from "@/lib/types";
 
@@ -58,12 +58,18 @@ export function ChatHistory({ locale = "th", messages, isLoading, collapsed = fa
   const displayMessages = collapsed ? [] : mergedMessages;
   const audioAfterMessage = new Map<number, string[]>();
   let audioCallIds: string[] = [];
+  const videoAfterMessage = new Map<number, KnowledgeVideo[]>();
+  let turnVideos: KnowledgeVideo[] = [];
   let answerIndex = -1;
   const finishAudioTurn = (endIndex: number, pending: boolean) => {
     const targetIndex = answerIndex >= 0 ? answerIndex : pending ? -1 : endIndex;
     if (audioCallIds.length > 0 && targetIndex >= 0) {
       audioAfterMessage.set(targetIndex, audioCallIds);
     }
+    if (turnVideos.length > 0 && targetIndex >= 0) {
+      videoAfterMessage.set(targetIndex, Array.from(new Map(turnVideos.map(video => [video.asset_id, video])).values()));
+    }
+    turnVideos = [];
     audioCallIds = [];
     answerIndex = -1;
   };
@@ -73,12 +79,17 @@ export function ChatHistory({ locale = "th", messages, isLoading, collapsed = fa
     }
     if (message.type === "function_call_output") {
       const presentation = presentations[message.call_id];
+      if (presentation?.type === "knowledge_video") { turnVideos.push(...presentation.videos); answerIndex = -1; }
       if (presentation?.type === "knowledge_media" && presentation.audio.length > 0) {
         audioCallIds.push(message.call_id);
         answerIndex = -1;
       }
     }
     if (message.type === "message" && message.role === "assistant") {
+      if ("id" in message && typeof message.id === "string") {
+        const presentation = presentations[message.id];
+        if (presentation?.type === "knowledge_video") turnVideos.push(...presentation.videos);
+      }
       const content = message.content;
       const hasText = typeof content === "string"
         ? content.trim().length > 0
@@ -102,7 +113,7 @@ export function ChatHistory({ locale = "th", messages, isLoading, collapsed = fa
           if (message.type === "message" && message.role === "user") productResponse = false;
           if (message.type === "message" && message.role === "assistant" && "id" in message && typeof message.id === "string") {
             const presentation = presentations[message.id];
-            if (presentation?.type === "knowledge_video") return <Fragment key={message.id}><MessageBubble message={message} collapsed={collapsed} /><KnowledgeVideos videos={presentation.videos} locale={locale} /></Fragment>;
+
             if (presentation?.type === "knowledge_product_carousel") {
               const messageId = message.id;
               return <ProductCarousel key={messageId} presentation={presentation} disabled={productActionsDisabled || isLoading || !onKnowledgeInquiry} onInquire={(cardId) => onKnowledgeInquiry?.(messageId, cardId)} />;
@@ -110,7 +121,7 @@ export function ChatHistory({ locale = "th", messages, isLoading, collapsed = fa
           }
           if (message.type === "function_call_output" && presentations[message.call_id]) {
             const presentation = presentations[message.call_id];
-            if (presentation.type === "knowledge_video") return <KnowledgeVideos key={`video-${message.call_id}`} videos={presentation.videos} locale={locale} />;
+            if (presentation.type === "knowledge_video") return null;
             if (presentation.type === "knowledge_media") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             if (presentation.type === "knowledge_images") return <KnowledgeImages key={`images-${message.call_id}`} images={presentation.images} />;
             if (presentation.type === "knowledge_product_carousel") return null;
@@ -158,6 +169,7 @@ export function ChatHistory({ locale = "th", messages, isLoading, collapsed = fa
         }).map((messageNode, index) => (
           <Fragment key={index}>
             {messageNode}
+            {videoAfterMessage.has(index) && <KnowledgeVideos videos={videoAfterMessage.get(index) ?? []} locale={locale} />}
             {audioAfterMessage.get(index)?.map((callId) => {
               const presentation = presentations[callId];
               return presentation?.type === "knowledge_media"

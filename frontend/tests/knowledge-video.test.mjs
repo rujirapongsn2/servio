@@ -54,24 +54,24 @@ test('video import stays disabled unless server confirms readiness; timestamps a
 });
 
 const players = load('src/components/KnowledgeVideos.tsx', { '@/lib/api': { buildApiUrl: value => value } });
-test('unknown-time playback shows frame order and coverage, while media-time events seek correctly', async () => {
-  const element = { currentTime: 0, play: async () => undefined };
+test('unknown-time references open evidence frames without seeking and allow full video playback', async () => {
+  const element = { currentTime: 0, readyState: 1, play: async () => undefined, pause() {} };
   let tree;
   await act(async () => { tree = create(React.createElement(players.KnowledgeVideos, { videos: [video] }), { createNodeMock: node => node.type === 'video' ? element : null }); });
   try {
+    assert.equal(tree.root.findAllByType('video').length, 0);
+    await act(async () => tree.root.findByProps({ 'aria-label': 'เปิดวิดีโออ้างอิง Door camera' }).props.onClick());
+    assert.match(text(tree), /ไม่ทราบเวลา/);
+    assert.match(text(tree), /ภาพอ้างอิงลำดับ 11/);
+    assert.equal(tree.root.findAllByType('video').length, 0);
+    assert.equal(element.currentTime, 0);
+    await act(async () => tree.root.findAllByType('button').find(b => b.children.includes('ดูวิดีโอเต็ม')).props.onClick());
     assert.ok(tree.root.findByType('video').props.controls);
     assert.ok(tree.root.findByType('video').props.playsInline);
-    assert.match(text(tree), /ไม่ทราบเวลา/);
-    assert.match(text(tree), /11/);
-    assert.match(text(tree), /ไม่ครอบคลุม/);
-    assert.equal(tree.root.findAllByType('button').length, 0);
-    const timed = { ...video, time_basis: 'media', duration_ms: 10000, events: [{ ...video.events[0], start_ms: 2000, end_ms: 4000, frames: [] }] };
-    await act(async () => tree.update(React.createElement(players.KnowledgeVideos, { videos: [timed] })));
-    await act(async () => tree.root.findByType('button').props.onClick());
-    assert.equal(element.currentTime, 2);
-    assert.match(text(tree), /0:02/);
+    assert.equal(element.currentTime, 0);
     await act(async () => tree.root.findByType('video').props.onError());
     assert.equal(tree.root.findAllByType('video').length, 0);
+    assert.match(text(tree), /วิดีโอไม่พร้อมใช้งาน/);
   } finally { await act(async () => tree.unmount()); }
 });
 
@@ -199,7 +199,7 @@ test('chat renders video evidence linked by assistant ID or tool call ID without
   for (const source of [{ type: 'message', role: 'assistant', id: attachmentId, content: 'หลักฐานจากคลิปที่แนบ' }, { type: 'function_call_output', call_id: attachmentId, output: 'evidence' }]) {
     let tree;
     await act(async () => { tree = create(React.createElement(ChatHistory, { messages: [source, { type: 'message', role: 'assistant', content: 'พบคนเปิดประตู แต่ไม่ทราบเวลานาฬิกา' }], presentations: { [attachmentId]: presentation([video]) }, isLoading: false })); });
-    try { assert.equal(tree.root.findAllByType('video').length, 1); assert.match(text(tree), /พบคนเปิดประตู/); }
+    try { assert.equal(tree.root.findAllByProps({ 'aria-label': 'เปิดวิดีโออ้างอิง Door camera' }).length, 1, text(tree)); assert.match(text(tree), /พบคนเปิดประตู/); }
     finally { await act(async () => tree.unmount()); }
   }
 });
@@ -237,4 +237,77 @@ test('Thai coverage warnings are translated once without repeating the visible t
   ];
   assert.deepEqual(players.videoWarnings({ ...video, warnings }, 'th'), ['รุ่นนี้วิเคราะห์เฉพาะภาพในคลิป ไม่วิเคราะห์เสียง', 'เริ่มวิเคราะห์เมื่อบันทึกแหล่งความรู้']);
   assert.equal(players.videoWarnings({ ...video, warnings }, 'en')[0], warnings[1]);
+});
+
+test('reference cards defer players until opened and stop at the selected interval', async () => {
+  const element = { currentTime: 0, readyState: 1, play: async () => {}, pause() { this.paused = true; } };
+  const timed = { ...video, time_basis: 'media', duration_ms: 10000, events: [{ ...video.events[0], start_ms: 2000, end_ms: 4000 }] };
+  let tree;
+  await act(async () => { tree = create(React.createElement(players.KnowledgeVideos, { videos: [timed] }), { createNodeMock: node => node.type === 'video' ? element : null }); });
+  try {
+    assert.equal(tree.root.findAllByType('video').length, 0, 'collapsed reference must not mount a video player');
+    await act(async () => tree.root.findAllByType('button').find(b => b.props['aria-label'] === 'เปิดวิดีโออ้างอิง Door camera').props.onClick());
+    assert.equal(tree.root.findAllByType('dialog').length, 1);
+    assert.equal(element.currentTime, 2);
+    element.currentTime = 4.2;
+    await act(async () => tree.root.findByType('video').props.onTimeUpdate());
+    assert.equal(element.paused, true);
+    assert.equal(element.currentTime, 4);
+    assert.match(text(tree), /ดูซ้ำ/);
+    await act(async () => tree.root.findAllByType('button').find(b => b.children.includes('ดูต่อทั้งคลิป')).props.onClick());
+    element.paused = false; element.currentTime = 5;
+    await act(async () => tree.root.findByType('video').props.onTimeUpdate());
+    assert.equal(element.paused, false);
+    await act(async () => tree.root.findByProps({ 'aria-label': 'กลับสู่แชต' }).props.onClick());
+    assert.equal(tree.root.findAllByType('video').length, 0);
+  } finally { await act(async () => tree.unmount()); }
+});
+
+test('reference playback waits for metadata and changes ranges without using frame numbers as time', async () => {
+  const element = { currentTime: 0, readyState: 0, play: async () => {}, pause() {} };
+  const timed = { ...video, time_basis: 'media', duration_ms: 20000, events: [
+    { ...video.events[0], start_ms: 2000, end_ms: 4000 },
+    { ...video.events[0], event_id: 'second', start_ms: 8000, end_ms: 10000 },
+  ] };
+  let tree;
+  await act(async () => { tree = create(React.createElement(players.KnowledgeVideos, { videos: [timed] }), { createNodeMock: node => node.type === 'video' ? element : null }); });
+  try {
+    await act(async () => tree.root.findByProps({ 'aria-label': 'เปิดวิดีโออ้างอิง Door camera' }).props.onClick());
+    assert.equal(element.currentTime, 0);
+    element.readyState = 1;
+    await act(async () => tree.root.findByType('video').props.onLoadedMetadata());
+    assert.equal(element.currentTime, 2);
+    await act(async () => tree.root.findAllByType('button').find(b => b.findAllByType('span').some(span => span.children.some(child => typeof child === 'string' && child.includes('0:08')))).props.onClick());
+    assert.equal(element.currentTime, 8);
+    assert.equal(tree.root.findAllByType('dialog').length, 1);
+    await act(async () => tree.root.findByType('dialog').props.onCancel());
+    assert.equal(tree.root.findAllByType('dialog').length, 0);
+  } finally { await act(async () => tree.unmount()); }
+});
+
+test('video sources appear once after their answer and never move into the next user turn', async () => {
+  const { ChatHistory } = load('src/components/ChatDialog.tsx', {
+    clsx: { default: (...values) => values.filter(Boolean).join(' ') }, '@/lib/chat-flow': load('src/lib/chat-flow.ts'),
+    '@/components/KnowledgeVideos': { KnowledgeVideos: ({ videos }) => React.createElement('references', null, videos.map(v => v.title).join(',')) },
+    '@/components/KnowledgeAudio': { KnowledgeAudio: () => null }, '@/components/KnowledgeImages': { KnowledgeImages: () => null },
+    '@/components/ProductCarousel': { ProductCarousel: () => null }, '@/components/ChatLoadingDots': { default: () => null },
+    '@/components/MessageBubble': { MessageBubble: ({ message }) => React.createElement('p', null, message.content || '') },
+  });
+  const messages = [
+    { type: 'message', role: 'user', content: 'first question' },
+    { type: 'function_call_output', call_id: 'call', output: 'evidence' },
+    { type: 'message', role: 'assistant', id: 'answer', content: 'first answer' },
+    { type: 'message', role: 'user', content: 'second question' },
+    { type: 'message', role: 'assistant', content: 'second answer' },
+  ];
+  let tree;
+  await act(async () => { tree = create(React.createElement(ChatHistory, { messages, presentations: { call: presentation([video]), answer: presentation([video]) }, isLoading: false })); });
+  try {
+    assert.equal(tree.root.findAllByType('references').length, 1);
+    assert.equal(tree.root.findByType('references').children.join(''), 'Door camera');
+    const nodes = tree.toJSON().children[0].children;
+    const index = nodes.findIndex(node => node.type === 'references');
+    assert.equal(nodes[index - 1].children.join(''), 'first answer');
+    assert.equal(nodes[index + 1].children.join(''), 'second question');
+  } finally { await act(async () => tree.unmount()); }
 });

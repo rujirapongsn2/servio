@@ -394,7 +394,7 @@ class WebsocketHelper:
                     carousel = hydrate_knowledge_images(item.get("output"), self.team_agent_id, bundle_id) or hydrate_knowledge_media(item.get("output"), self.team_agent_id, bundle_id) or hydrate_knowledge_videos(item.get("output"), self.team_agent_id, bundle_id)
                 if carousel is not None and isinstance(call_id, str) and call_id not in self.presentations:
                     if len(self.presentations) < 50:
-                        self.presentations[call_id] = carousel.model_dump(exclude_none=True)
+                        self.presentations[call_id] = carousel.model_dump(exclude_none=carousel.type != "knowledge_video")
                         if carousel.model_dump().get("type") in ("knowledge_images", "knowledge_media") and bundle_id is not None:
                             refs = self._knowledge_image_card_refs(item.get("output"), bundle_id)
                             if refs is not None:

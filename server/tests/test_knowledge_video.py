@@ -226,3 +226,41 @@ def test_analysis_deadline_prevents_model_request(monkeypatch):
     frame=video.VideoFrame(frame_index=0,image_asset_id='a'*64)
     with pytest.raises(ValueError,match='processing time limit'):
         video._analyze_frames([frame],{'a'*64:b'jpeg'},deadline=time.monotonic()-1)
+
+
+def test_websocket_video_references_preserve_null_timing(monkeypatch):
+    import asyncio
+    from agents import Agent, RunItemStreamEvent, ToolCallItem, ToolCallOutputItem
+    from app import db_config
+    monkeypatch.setattr(db_config, 'init_database', lambda: None)
+    from app import utils
+    from app.agent_config import create_okf_knowledge_graph_tool
+    source = rag.KnowledgeVideoPresentation(response='Observed', videos=[rag.VideoCard(
+        asset_id='a'*64, title='Unknown time', source_label='clip.mp4',
+        video_url='/api/knowledge-video/'+'a'*64+'?token=test',
+        time_basis='frame_order', complete=False, warnings=[], events=[rag.VideoEventCard(
+            event_id='e0001', description='Observed', start_frame=0, end_frame=30,
+            frames=[rag.VideoEvidenceFrameCard(frame_index=i, image_url='/api/knowledge-video/'+'a'*64+'?token=test&frame='+'b'*64) for i in [0,30]])])])
+    monkeypatch.setattr(utils, 'hydrate_knowledge_images', lambda *args: None)
+    monkeypatch.setattr(utils, 'hydrate_knowledge_media', lambda *args: None)
+    monkeypatch.setattr(utils, 'hydrate_knowledge_videos', lambda *args: source)
+    class Analytics:
+        def __getattr__(self, key): return lambda *args, **kwargs: None
+    class Socket:
+        sent=[]
+        async def send_text(self, value): self.sent.append(json.loads(value))
+    monkeypatch.setattr(utils, 'AnalyticsService', Analytics)
+    tool=create_okf_knowledge_graph_tool('local_video', {'okf_bundle_id':1}, runtime_team_agent_id=1)
+    agent=Agent(name='Video', tools=[tool]);socket=Socket()
+    helper=utils.WebsocketHelper(socket, [], agent, 'test', team_agent_id=1)
+    async def run():
+        call=ToolCallItem(agent=agent, raw_item={'type':'function_call','call_id':'video-call','name':tool.name,'arguments':'{}'})
+        await helper.handle_new_item(RunItemStreamEvent(name='tool_called',item=call))
+        item=ToolCallOutputItem(agent=agent, raw_item={'type':'function_call_output','call_id':'video-call','output':'evidence'},output='evidence')
+        await helper.handle_new_item(RunItemStreamEvent(name='tool_output',item=item))
+    asyncio.run(run())
+    card=socket.sent[-1]['presentations']['video-call']['videos'][0]
+    assert 'poster_url' in card and card['poster_url'] is None
+    assert 'duration_ms' in card and card['duration_ms'] is None
+    assert card['events'][0]['start_ms'] is None and card['events'][0]['end_ms'] is None
+    assert card['events'][0]['frames'][0]['offset_ms'] is None
