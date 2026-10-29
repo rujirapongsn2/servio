@@ -1,3 +1,4 @@
+import json
 import hashlib
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ def analyze(monkeypatch):
     monkeypatch.setenv('LOCAL_KNOWLEDGE_VIDEO_ENABLED', 'true')
     monkeypatch.setenv('KNOWLEDGE_VIDEO_FRAME_STRIDE', '3')
     calls = []
-    def fake(frames, images):
+    def fake(frames, images, **kwargs):
         calls.append([frame.frame_index for frame in frames])
         assert all(images[frame.image_asset_id].startswith(b'\xff\xd8') for frame in frames)
         events = [{'description': 'ประตูเปลี่ยนจากปิดเป็นเปิด ทิศทางไม่ทราบ',
@@ -173,3 +174,55 @@ def test_unrelated_video_does_not_replace_image_or_audio_cards(store, clip, monk
     assert result['type']=='knowledge_media_refs' and result['audio'][0]['transcript']=='ประตู'
     explicit=api.query_bundle(bundle['id'],'วิดีโอประตู',1,image_links=False)
     assert explicit['type']=='knowledge_video_refs' and explicit['videos']
+
+
+def test_real_provider_style_prose_uses_same_model_vision_then_structuring(monkeypatch):
+    from types import SimpleNamespace
+    import openai
+    from app import provider_models
+    calls=[]
+    valid={'observations':[{'frame_index':i,'text':f'คนอยู่ในภาพเฟรม {i}'} for i in [0,30,60]],
+           'events':[{'description':'คนเคลื่อนจากซ้ายไปขวา','evidence_frame_indices':[0,60]}]}
+    responses=["I don’t have an answer for this yet. Would you like me to try finding more information?",
+               'ภาพ 1 คนอยู่ซ้าย ภาพ 2 คนอยู่กลาง ภาพ 3 คนอยู่ขวา',json.dumps(valid)]
+    class Client:
+        def __init__(self,**kwargs): self.chat=SimpleNamespace(completions=self)
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def create(self,**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',message=SimpleNamespace(content=responses.pop(0)))])
+    monkeypatch.setattr(openai,'OpenAI',Client)
+    monkeypatch.setattr(provider_models,'get_task_model',lambda _: {'model_id':'configured-vision','base_url':'https://vision.test/v1','api_key':'test-only'})
+    frames=[video.VideoFrame(frame_index=i,image_asset_id='a'*64) for i in [0,30,60]]
+    observations,events=video._analyze_frames(frames,{'a'*64:b'jpeg'})
+    assert set(observations)=={0,30,60} and events[0]['evidence_frame_indices']==[0,60]
+    assert len(calls)==3 and {call['model'] for call in calls}=={'configured-vision'}
+    assert 'image_url' in str(calls[1]['messages'])
+    assert 'image_url' not in str(calls[2]['messages'])
+    assert 'ภาพ 1 คนอยู่ซ้าย' in str(calls[2]['messages'])
+
+
+@pytest.mark.parametrize('indices', [[0,1,2],[0,30,30],[0,30,True]])
+def test_structured_description_cannot_invent_or_duplicate_frame_ids(indices):
+    value=json.dumps({'observations':[{'frame_index':i,'text':'visible'} for i in indices],'events':[]})
+    with pytest.raises(ValueError,match='invalid evidence'):
+        video._parse_frame_analysis(value,[0,30,60])
+
+
+def test_structured_description_cannot_invent_event_frame():
+    value=json.dumps({'observations':[{'frame_index':i,'text':'visible'} for i in [0,30,60]],
+        'events':[{'description':'movement','evidence_frame_indices':[0,99]}]})
+    with pytest.raises(ValueError,match='invalid evidence'):
+        video._parse_frame_analysis(value,[0,30,60])
+
+
+def test_analysis_deadline_prevents_model_request(monkeypatch):
+    import time
+    import httpx
+    from app import provider_models
+    monkeypatch.setattr(provider_models,'get_task_model',lambda _: {'model_id':'configured-vision','base_url':'https://vision.test/v1','api_key':'test-only'})
+    monkeypatch.setattr(httpx.Client,'send',lambda *args,**kwargs: pytest.fail('Expired job contacted provider'))
+    frame=video.VideoFrame(frame_index=0,image_asset_id='a'*64)
+    with pytest.raises(ValueError,match='processing time limit'):
+        video._analyze_frames([frame],{'a'*64:b'jpeg'},deadline=time.monotonic()-1)
