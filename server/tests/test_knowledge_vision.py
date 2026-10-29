@@ -27,6 +27,48 @@ def test_disabled_ocr_preserves_legacy_without_provider_call(monkeypatch):
     assert vision.extract_text(picture()) == ('', [])
 
 
+def test_generic_chat_reply_is_not_ocr_and_does_not_poison_retry_cache(monkeypatch):
+    replies = iter([
+        'I don’t have an answer for this yet. Would you like me to try finding more information?',
+        '{"text":"SKU-427","status":"ready"}',
+    ])
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED', 'true')
+    monkeypatch.setattr(provider_models, 'get_task_model', lambda purpose: CONFIG)
+    monkeypatch.setattr(vision, '_complete', lambda *a, **kw: next(replies))
+    result = vision.extract_text_with_status(picture())
+    assert result.status == 'unavailable'
+    assert result.text == '' and result.warnings
+    result = vision.extract_text_with_status(picture())
+    assert result.status == 'ready' and result.text == 'SKU-427'
+
+
+@pytest.mark.parametrize('reply', [
+    'There is no visible text in the image.',
+    'There is no readable text in the image provided.',
+    '{"text":"","status":"empty"}',
+])
+def test_no_text_is_empty_instead_of_model_prose(monkeypatch, reply):
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED', 'true')
+    monkeypatch.setattr(provider_models, 'get_task_model', lambda purpose: CONFIG)
+    monkeypatch.setattr(vision, '_complete', lambda *a, **kw: reply)
+    result = vision.extract_text_with_status(picture())
+    assert result.status == 'empty' and result.text == ''
+
+
+@pytest.mark.parametrize('payload', [
+    '{"text":"","status":"ready"}',
+    '{"text":"SKU-123","status":"empty"}',
+    '{"text":"I don’t have an answer for this yet.","status":"ready"}',
+    '{"text":"SKU-123","status":"ready","extra":"invented"}',
+])
+def test_invalid_structured_ocr_never_becomes_searchable_text(monkeypatch, payload):
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED', 'true')
+    monkeypatch.setattr(provider_models, 'get_task_model', lambda purpose: CONFIG)
+    monkeypatch.setattr(vision, '_complete', lambda *a, **kw: payload)
+    result = vision.extract_text_with_status(picture())
+    assert result.status == 'unavailable' and result.text == ''
+
+
 def test_ocr_uses_registered_model_and_normalized_image(monkeypatch):
     calls = []
     def respond(request):
@@ -36,7 +78,8 @@ def test_ocr_uses_registered_model_and_normalized_image(monkeypatch):
         image = data['messages'][1]['content'][1]['image_url']['url']
         assert image.startswith('data:image/png;base64,')
         assert 'untrusted' in data['messages'][0]['content']
-        return httpx.Response(200, json={'id': 'test', 'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': 'สินค้า ทดสอบ\nSKU-427 ราคา 125 บาท'}, 'finish_reason': 'stop'}]})
+        assert data['response_format'] == {'type': 'json_object'}
+        return httpx.Response(200, json={'id': 'test', 'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': json.dumps({'text': 'สินค้า ทดสอบ\nSKU-427 ราคา 125 บาท', 'status': 'ready'})}, 'finish_reason': 'stop'}]})
     monkeypatch.setattr(vision, 'OpenAI', lambda **kwargs: OpenAI(**kwargs, http_client=httpx.Client(transport=httpx.MockTransport(respond))))
     monkeypatch.setattr(provider_models, 'get_task_model', lambda purpose: CONFIG)
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED', 'true')
@@ -51,7 +94,7 @@ def test_ocr_uses_registered_model_and_normalized_image(monkeypatch):
 def test_imported_ocr_is_searchable_and_original_is_identical(store, tmp_path, monkeypatch):
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED', 'true')
     monkeypatch.setattr(provider_models, 'get_task_model', lambda purpose: CONFIG)
-    monkeypatch.setattr(vision, '_complete', lambda *args, **kwargs: 'SKU-427 รับประกัน 77 วัน')
+    monkeypatch.setattr(vision, '_complete', lambda *args, **kwargs: json.dumps({'text': 'SKU-427 รับประกัน 77 วัน', 'status': 'ready'}))
     bundle, claims, original, _ = imported(store, tmp_path)
     api, _ = store
     result = api._query_text_bundle(bundle['id'], 'SKU-427', 1)

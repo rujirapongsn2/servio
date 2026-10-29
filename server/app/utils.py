@@ -328,7 +328,7 @@ class WebsocketHelper:
             refs.extend(call_refs[:take])
             if len(images) >= 5:
                 break
-        built = build_carousel_message(images, refs, self._marker_summary(item))
+        built = build_carousel_message(images, refs, self._marker_summary(item), self.team_agent_id)
         if built is None:
             return
         message_id, carousel, card_refs = built

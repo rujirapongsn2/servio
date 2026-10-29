@@ -264,3 +264,29 @@ def test_websocket_video_references_preserve_null_timing(monkeypatch):
     assert 'duration_ms' in card and card['duration_ms'] is None
     assert card['events'][0]['start_ms'] is None and card['events'][0]['end_ms'] is None
     assert card['events'][0]['frames'][0]['offset_ms'] is None
+
+
+def test_agent_tool_preserves_unsigned_video_references(monkeypatch):
+    import asyncio
+    from app import agent_config, local_image_rag, okf_service
+    monkeypatch.setattr(local_image_rag, 'image_filename_inventory', lambda *args: [])
+    result = {'type': 'knowledge_video_refs', 'version': 1, 'response': 'Observed frying at frames 60–150',
+              'videos': [{'bundle_id': 23, 'concept_id': 'cook', 'asset_id': 'a'*64, 'source_hash': 'b'*64}],
+              'debug': 'must not reach the model'}
+    monkeypatch.setattr(okf_service.OKFService, 'query_bundle', lambda self, **kwargs: result)
+    tool = agent_config.create_okf_knowledge_graph_tool('video_knowledge', {'okf_bundle_id': 23}, runtime_team_agent_id=24)
+    value = asyncio.run(tool.on_invoke_tool(None, '{"query":"การทอดทำอย่างไร"}'))
+    assert json.loads(value) == {key: result[key] for key in ('type', 'version', 'response', 'videos')}
+    assert 'video_url' not in value and '?token=' not in value
+
+
+def test_semantic_video_source_keeps_reference_without_literal_query_match(store, clip):
+    api, _ = store
+    bundle = api.import_knowledge_files([clip], 'Device', 1, 'private', None)
+    concept = api.list_concepts(bundle['id'], 1)[0]
+    query = 'semantic_only_phrase_987'
+    assert rag.query_bundle(bundle['id'], query, 1) == []
+    refs = rag.query_bundle(bundle['id'], query, 1, text_concepts=[{'concept_id': concept['concept_id']}])
+    assert len(refs) == 1 and refs[0]['concept_id'] == concept['concept_id']
+    assert rag.query_bundle(bundle['id'], query, 2, text_concepts=[{'concept_id': concept['concept_id']}]) == []
+    assert rag.query_bundle(bundle['id'], query, 1, text_concepts=[{'concept_id': 'not-in-this-bundle'}]) == []

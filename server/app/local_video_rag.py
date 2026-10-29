@@ -196,11 +196,12 @@ def concept_presentation(bundle_id: int, concept_id: str, team_id: int | None):
     return hydrate_knowledge_videos({'type': 'knowledge_video_refs', 'version': 1, 'response': '', 'videos': [refs]}, team_id, bundle_id)
 
 
-def query_bundle(bundle_id: int, query: str, team_id: int | None, limit: int = 3, *, links: bool = False) -> list[dict]:
+def query_bundle(bundle_id: int, query: str, team_id: int | None, limit: int = 3, *, links: bool = False, text_concepts: list[dict] | None = None) -> list[dict]:
     from app.okf_service import _bundle_available_to_team, _ensure_within, _parse_frontmatter, _query_terms
     if not enabled() or team_id is None: return []
     terms = _query_terms(query)
     explicit_video = any(word in query.lower() for word in ('video', 'cctv', 'วิดีโอ', 'คลิป'))
+    semantic_ids = {item.get('concept_id') for item in (text_concepts or [])}
     ranked = []
     with get_db() as db:
         bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
@@ -213,6 +214,8 @@ def query_bundle(bundle_id: int, query: str, team_id: int | None, limit: int = 3
             evidence, _, _ = _asset(root, frontmatter)
             if hashlib.sha256(markdown.encode()).hexdigest() != concept.content_hash: continue
             score = sum(term in (concept.title + ' ' + body).lower() for term in terms)
+            if concept.concept_id in semantic_ids:
+                score += 1
             if score <= 0 and terms and not explicit_video:
                 continue
             ranked.append((score, {'bundle_id': bundle_id, 'concept_id': concept.concept_id, 'asset_id': evidence.asset_id,

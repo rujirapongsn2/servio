@@ -10,11 +10,12 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from openai import OpenAIError
 from sqlalchemy import bindparam, text
 
 from app import product_image_rerank as reranker
@@ -68,6 +69,8 @@ class KnowledgeCard(BaseModel):
     source_label: str
     description: str
     image_url: str
+    part_number: str | None = None
+    brand: str | None = None
 
 
 class KnowledgeCarousel(BaseModel):
@@ -100,6 +103,8 @@ class SearchMatch:
     source_label: str
     description: str
     score: float
+    match_basis: Literal["visual", "pattern_and_color", "color_only", "pattern_only"] = "visual"
+    comparison_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -200,6 +205,18 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
     return SearchResult("matched" if matches else "no_match", tuple(matches))
 
 
+def _known_tile_refs(team_id, rows):
+    from app.okf_service import OKFService
+    service = OKFService()
+    result = {}
+    for bundle_id in {row['bundle_id'] for row in rows}:
+        for product in service._query_image_products(bundle_id, 'กระเบื้อง', team_id):
+            if product.get('category') == 'tile' or product.get('category_th') == 'กระเบื้อง':
+                ref = product['image']
+                result[(bundle_id, ref['concept_id'], ref['source_hash'], ref['asset_id'])] = product.get('surface_pattern')
+    return result
+
+
 def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") -> SearchResult:
     settings = reranker.RerankSettings.from_environment()
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
@@ -207,6 +224,7 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
     with get_db() as db:
         thresholds = image_policy.thresholds(db, current, "rerank")
     candidates = []
+    tile_refs = _known_tile_refs(team_id, rows)
     matches = {}
     seen = set()
     exact = []
@@ -214,7 +232,8 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
     for row in rows:
         score = float(row["score"])
         if (row["bundle_id"] not in current or row["asset_id"] in seen
-                or not math.isfinite(score) or not -1 <= score <= 1 or score < thresholds[row["bundle_id"]]):
+                or not math.isfinite(score) or not -1 <= score <= 1
+                or (score < thresholds[row["bundle_id"]] and (row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"]) not in tile_refs)):
             continue
         ref = KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
         try:
@@ -233,15 +252,27 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
         if len(candidates) < settings.candidates:
             candidate_id = f"c{len(candidates) + 1:02d}"
             candidates.append(reranker.VisualCandidate(candidate_id, original, score, actual_hash,
-                                                       ref.source, match.title))
+                                                       ref.source, match.title, tile_refs.get((ref.bundle, ref.concept, ref.source, ref.asset))))
             matches[candidate_id] = match
+    logging.getLogger(__name__).info("image_rerank rows=%s tile_refs=%s candidates=%s", len(rows), len(tile_refs), len(candidates))
     if exact and not query:
         selected = exact[:limit]
     elif candidates:
         try:
-            ranked = reranker.rerank(data, tuple(candidates), settings, query=query) if query else reranker.rerank(data, tuple(candidates), settings)
-        except reranker.RerankUnavailable:
-            logging.getLogger(__name__).warning("Product image comparison unavailable")
+            tile_candidates = tuple(item for item in candidates if (matches[item.id].reference.bundle,
+                matches[item.id].reference.concept, item.source_hash, item.asset_hash) in tile_refs)
+            surface = None
+            if tile_candidates:
+                from app.tile_surface_search import compare_tiles
+                surface = compare_tiles(data, tile_candidates, settings, query)
+            if surface is not None and (surface.applicable or len(tile_candidates) == len(candidates)):
+                ranked = tuple(item.id for item in surface.matches)
+                for item in surface.matches:
+                    matches[item.id] = replace(matches[item.id], match_basis=item.basis, comparison_note=item.note)
+            else:
+                ranked = reranker.rerank(data, tuple(candidates), settings, query=query) if query else reranker.rerank(data, tuple(candidates), settings)
+        except (reranker.RerankUnavailable, ValueError, OpenAIError) as exc:
+            logging.getLogger(__name__).warning("Product image comparison unavailable: %s", type(exc).__name__)
             return SearchResult("unavailable")
         selected = [matches[candidate_id] for candidate_id in ranked]
     else:
@@ -285,6 +316,11 @@ def resolve_inquiry(team_id: int | None, ref: KnowledgeCardRef) -> tuple[str, st
         title = concept.title
     if ref.bundle not in assigned_bundles(team_id):
         raise ValueError("Product is no longer available; search again")
+    from app.product_catalog_labels import catalog_labels
+    label = catalog_labels([ref.asset], team_id).get(ref.asset)
+    if label:
+        title = label["title"]
+        source += "\nCatalog identity (source data): " + json.dumps(label, ensure_ascii=False)
     return f"สอบถามสินค้านี้ {title}", source
 
 
@@ -315,17 +351,30 @@ class ImageSearchSession:
         message_id = "msg_" + uuid.uuid4().hex
         refs = {}
         products = []
+        from app.product_catalog_labels import catalog_labels
+        labels = catalog_labels([match.reference.asset for match in result.matches], team_id)
         for match in result.matches:
             card_id = uuid.uuid4().hex
             ref = match.reference
             refs[card_id] = ref
             token = images._grant(ref.bundle, ref.concept, ref.asset, ref.source, team_id)
-            products.append(KnowledgeCard(id=card_id, asset_id=ref.asset, title=match.title, source_label=match.source_label,
-                description=match.description, image_url=f"/api/knowledge-images/{ref.asset}?token={token}"))
+            products.append(KnowledgeCard(id=card_id, asset_id=ref.asset, title=labels.get(ref.asset, {}).get("title", match.title), source_label=match.source_label,
+                part_number=labels.get(ref.asset, {}).get("part_number"), brand=labels.get(ref.asset, {}).get("brand"),
+                description=match.comparison_note or match.description, image_url=f"/api/knowledge-images/{ref.asset}?token={token}"))
         self.refs[message_id] = (now, refs)
         while len(self.refs) > 20:
             self.refs.popitem(last=False)
-        return message_id, KnowledgeCarousel(summary=f"พบสินค้าที่ใกล้เคียง {len(products)} รายการ", products=products)
+        basis = result.matches[0].match_basis
+        count = len(products)
+        if basis == 'color_only':
+            summary = f"พบกระเบื้องโทนสีใกล้เคียง {count} รายการครับ ลายอาจต่างจากภาพ และยังไม่ยืนยันรุ่นหรือสต็อก"
+        elif basis == 'pattern_only':
+            summary = f"พบกระเบื้องลายใกล้เคียง {count} รายการครับ โทนสีอาจต่างจากภาพ และยังไม่ยืนยันรุ่นหรือสต็อก"
+        else:
+            label = 'กระเบื้องลายและโทนสี' if basis == 'pattern_and_color' else 'สินค้า'
+            summary = f"พบ{label}ใกล้เคียง {count} รายการครับ ยังไม่ยืนยันว่าเป็นรุ่นเดียวกันหรือมีสต็อก"
+
+        return message_id, KnowledgeCarousel(summary=summary, products=products)
 
     def register(self, message_id: str, refs: dict):
         """Register externally-built card refs (carousel marker path)."""

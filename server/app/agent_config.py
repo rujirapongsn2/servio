@@ -329,9 +329,10 @@ def create_okf_knowledge_graph_tool(
 ):
     """Create a local OKF knowledge graph search tool from configuration."""
     from app.okf_service import OKFService
+    from app.knowledge_turn import KNOWLEDGE_SEARCH_GUIDANCE, reuse_knowledge_searches
 
     bundle_id = int(config.get("okf_bundle_id", 0) or 0)
-    description = config.get("description", f"Search local OKF knowledge using {tool_name}")
+    description = config.get("description", f"Search local OKF knowledge using {tool_name}") + KNOWLEDGE_SEARCH_GUIDANCE
     retrieval = config.get("retrieval", {}) if isinstance(config.get("retrieval"), dict) else {}
     limit = int(retrieval.get("limit", 5) or 5)
     expand_links = bool(retrieval.get("expand_links", True))
@@ -349,7 +350,10 @@ def create_okf_knowledge_graph_tool(
                 break
             visible_filenames.append(filename)
         description += (
-            " This is an image library. Return photos from the library by querying exact "
+            " This is an image library with extracted product categories and colors. "
+            "For product availability or color questions, search this library using the product "
+            "and requested color to return matching photos, even when the customer did not explicitly "
+            "ask for pictures. For a specific product identified in document knowledge, query exact "
             "source filenames identified in the product knowledge. Available image filenames: "
             + json.dumps(visible_filenames, ensure_ascii=False)
             + (" (partial inventory)" if len(visible_filenames) < len(image_filenames) else "")
@@ -376,6 +380,8 @@ def create_okf_knowledge_graph_tool(
                 return json.dumps({key: result[key] for key in ('type','version','response','audio','images') if key in result}, ensure_ascii=False)
             if result.get("type") == "knowledge_image_refs":
                 return json.dumps({key: result[key] for key in ("type", "version", "response", "images")}, ensure_ascii=False)
+            if result.get("type") == "knowledge_video_refs":
+                return json.dumps({key: result[key] for key in ("type", "version", "response", "videos")}, ensure_ascii=False)
             return result.get("response", "No matching OKF concepts found.")
         except Exception as e:
             return f"Error searching OKF knowledge: {str(e)}"
@@ -451,7 +457,7 @@ def create_okf_knowledge_graph_tool(
     tool = function_tool(selected_function)
     tool._servio_knowledge_bundle_id = bundle_id
     tool._servio_image_filenames = image_filenames
-    return tool
+    return reuse_knowledge_searches(tool, (tool_name, bundle_id, runtime_team_agent_id, limit, expand_links))
 
 
 def create_softnix_tool(tool_name: str, config: Dict[str, Any]):
@@ -756,8 +762,22 @@ def build_agent_from_db(
                 "before searching. Include the specific product, place, or subject in the query."
             )
 
+    if any(getattr(tool, '_servio_knowledge_bundle_id', None) is not None for tool in tools):
+        from app.knowledge_turn import CUSTOMER_KNOWLEDGE_REPLIES
+        instructions += CUSTOMER_KNOWLEDGE_REPLIES
+
     if any(getattr(tool, "_servio_image_filenames", None) for tool in tools):
         instructions += (
+            "\n\nFor product browsing, availability, or color questions, retrieve matching photos "
+            "from the available image library before answering, even if the user did not explicitly "
+            "ask for pictures. Search with the product type and requested color together. "
+            "A document or table result alone does not display pictures. If you also need official "
+            "names or specifications, use document knowledge as a supplement and match its exact "
+            "source filenames to the photos. Do not repeat an image search that already returned "
+            "the requested matching photos this turn. If the image search finds no match, do not "
+            "substitute unrelated pictures or claim that none exist in other catalogs. "
+            "For a simple product/color question, keep the reply to 1-2 short sentences; "
+            "do not list image filenames or describe each pattern unless requested. "
             "\n\nWhen a user asks to see product pictures, first search the "
             "product document knowledge for the requested product and its exact image filename. "
             "Then call the image library with that exact filename to display the matching photo. "

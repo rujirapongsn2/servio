@@ -144,6 +144,7 @@ class ExtractedKnowledge:
     warnings: List[str]
     image_bytes: Optional[bytes] = None
     image_text_status: Optional[Literal['ready', 'empty', 'unavailable', 'not_requested']] = None
+    image_products: Optional[Dict[str, Any]] = None
     audio_bytes: Optional[bytes] = None
     audio_metadata: Optional[Dict[str, Any]] = None
     video: Optional[Any] = None
@@ -369,7 +370,7 @@ def _extract_pdf_text(path: Path) -> tuple[str, List[str]]:
         raise OKFValidationError(str(exc)) from exc
 
 
-def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None, *, preview: bool = False, on_progress: Optional[Callable[[str, str], None]] = None) -> ExtractedKnowledge:
+def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None, *, preview: bool = False, on_progress: Optional[Callable[[str, str], None]] = None, catalog_context: Optional[str] = None) -> ExtractedKnowledge:
     rel = (rel_path or Path(path.name)).as_posix()
     suffix = path.suffix.lower()
     warnings: List[str] = []
@@ -410,6 +411,12 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None, *, prev
             validated_image(data)
         except ValueError as exc:
             raise OKFValidationError(f"{path.name}: {exc}") from exc
+        if preview:
+            return ExtractedKnowledge(
+                title=title, source_file=rel, document_type=suffix.lstrip('.'),
+                text=f'Image source: {rel}', content_hash=hashlib.sha256(data).hexdigest(),
+                warnings=[], image_bytes=data, image_text_status='not_requested',
+            )
         from app.knowledge_vision import extract_text_with_status
         if on_progress:
             from app.knowledge_vision import enabled as ocr_enabled
@@ -418,10 +425,15 @@ def _extract_knowledge_file(path: Path, rel_path: Optional[Path] = None, *, prev
                 on_progress("Extracting image text", rel)
         ocr = extract_text_with_status(data)
         ocr_text, ocr_warnings = ocr.text, ocr.warnings
-        body = f"Image source: {rel}" + ("\n\nOCR text:\n" + ocr_text if ocr_text else "")
+        from app.knowledge_products import extract_products, image_body
+        if on_progress:
+            on_progress("Extracting image products", rel)
+        products, product_warnings = extract_products(data, ocr_text, catalog_context)
+        body = image_body(rel, ocr_text, products)
         return ExtractedKnowledge(title=title, source_file=rel, document_type=suffix.lstrip("."),
             text=body,
-            content_hash=hashlib.sha256(data).hexdigest(), warnings=ocr_warnings, image_bytes=data, image_text_status=ocr.status)
+            content_hash=hashlib.sha256(data).hexdigest(), warnings=ocr_warnings + product_warnings,
+            image_bytes=data, image_text_status=ocr.status, image_products=products)
     if on_progress:
         on_progress("Extracting document text", rel)
     if suffix in {".txt", ".csv", ".tsv"}:
@@ -521,7 +533,10 @@ def _write_generated_okf_bundle(
             asset_path = Path("assets") / (asset_id + (".png" if source.document_type == "png" else ".jpg"))
             (destination / "assets").mkdir(exist_ok=True)
             (destination / asset_path).write_bytes(source.image_bytes)
-            frontmatter.update(image_asset_id=asset_id, image_asset_path=asset_path.as_posix())
+            frontmatter.update(image_asset_id=asset_id, image_asset_path=asset_path.as_posix(),
+                               image_text_status=source.image_text_status or 'not_requested')
+            if source.image_products is not None:
+                frontmatter['image_products'] = source.image_products
         if source.source_url:
             frontmatter.update(source_url=source.source_url, final_url=source.final_url, fetched_at=source.fetched_at)
         body = f"# {source.title}\n\n{source.text}\n"
@@ -534,7 +549,7 @@ def _write_generated_okf_bundle(
         )
 
 
-def _collect_url_sources(urls: List[str]) -> tuple[List[ExtractedKnowledge], List[str]]:
+def _collect_url_sources(urls: List[str], *, preview: bool = False, catalog_context: Optional[str] = None) -> tuple[List[ExtractedKnowledge], List[str]]:
     from app.knowledge_urls import MAX_BATCH_BYTES, URLImportError, download_url, validate_urls
     from urllib.parse import unquote, urlsplit
     import time
@@ -553,7 +568,8 @@ def _collect_url_sources(urls: List[str]) -> tuple[List[ExtractedKnowledge], Lis
                     raise URLImportError("URL batch exceeds the 50MB download limit")
                 path = Path(temporary) / f"source_{index}{downloaded.suffix}"
                 path.write_bytes(downloaded.data)
-                source = _extract_knowledge_file(path)
+                source = _extract_knowledge_file(path, **({'preview': True} if preview else {}),
+                                                 **({'catalog_context': catalog_context} if catalog_context else {}))
                 if "\x00" in source.text:
                     raise URLImportError("URL returned binary content instead of readable text")
                 if len(source.text) > 2_000_000:
@@ -571,7 +587,7 @@ def _collect_url_sources(urls: List[str]) -> tuple[List[ExtractedKnowledge], Lis
         raise OKFValidationError(str(exc)) from exc
 
 
-def _collect_knowledge_sources(source_paths: List[Path], *, preview: bool = False, on_progress: Optional[Callable[[str, str], None]] = None) -> tuple[List[ExtractedKnowledge], List[str]]:
+def _collect_knowledge_sources(source_paths: List[Path], *, preview: bool = False, on_progress: Optional[Callable[[str, str], None]] = None, catalog_context: Optional[str] = None) -> tuple[List[ExtractedKnowledge], List[str]]:
     with tempfile.TemporaryDirectory(prefix="okf_expand_") as tmp_name:
         expanded_dir = Path(tmp_name)
         candidate_files: List[tuple[Path, Path]] = []
@@ -596,7 +612,9 @@ def _collect_knowledge_sources(source_paths: List[Path], *, preview: bool = Fals
         seen_hashes: Dict[str, str] = {}
         for file_path, rel_path in candidate_files:
             try:
-                extracted = _extract_knowledge_file(file_path, rel_path, preview=preview, **({"on_progress": on_progress} if on_progress else {}))
+                extracted = _extract_knowledge_file(file_path, rel_path, preview=preview,
+                    **({"on_progress": on_progress} if on_progress else {}),
+                    **({'catalog_context': catalog_context} if catalog_context else {}))
                 warnings.extend(extracted.warnings)
                 duplicate_source = seen_hashes.get(extracted.content_hash)
                 if duplicate_source:
@@ -838,7 +856,7 @@ class OKFService:
             tmp_dir = Path(tmp_name)
             generated_dir = tmp_dir / "generated_okf"
             tables = self._prepare_tables(source_paths, generated_dir, queryable, urls)
-            sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths, **({"on_progress": on_progress} if on_progress else {}))
+            sources, warnings = _collect_url_sources(urls, catalog_context=display_name) if urls is not None else _collect_knowledge_sources(source_paths, catalog_context=display_name, **({"on_progress": on_progress} if on_progress else {}))
             duplicate_warnings = self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
                 team_agent_id=team_agent_id,
@@ -908,7 +926,7 @@ class OKFService:
     ) -> Dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="okf_tables_preview_") as tmp_name:
             tables = self._prepare_tables(source_paths, Path(tmp_name), queryable, urls)
-        sources, warnings = _collect_url_sources(urls) if urls is not None else _collect_knowledge_sources(source_paths, preview=True)
+        sources, warnings = _collect_url_sources(urls, preview=True) if urls is not None else _collect_knowledge_sources(source_paths, preview=True)
         warnings.extend(
             self._existing_duplicate_warnings(
                 [source.content_hash for source in sources],
@@ -924,6 +942,7 @@ class OKFService:
                 text, text_status = '', 'not_requested'
             elif media_kind == 'image':
                 text = text.split('\n\nOCR text:\n', 1)[1] if '\n\nOCR text:\n' in text else ''
+                text = text.split('\n\nProduct observations', 1)[0]
                 text_status = source.image_text_status or ('ready' if text.strip() else 'empty')
             excerpt = re.sub(r"\s+", " ", text).strip()[:260]
             documents.append(
@@ -939,6 +958,7 @@ class OKFService:
                     "text": text[:12000],
                     "text_truncated": len(text) > 12000,
                     "content_hash": source.content_hash,
+                    "image_products": source.image_products,
                 }
             )
         return {
@@ -1100,7 +1120,12 @@ class OKFService:
                     path.write_text(markdown, encoding="utf-8")
                 concepts, metadata = parse_okf_directory(source)
                 bundle.okf_version = metadata.get("okf_version")
-                bundle.validation_summary = {**(bundle.validation_summary or {}), "warnings": metadata.get("warnings", []), "reindexed_at": datetime.utcnow().isoformat() + "Z"}
+                warnings = list(metadata.get('warnings', []))
+                warnings.extend(
+                    f"{item.frontmatter.get('source_file', item.file_path)}: Image OCR unavailable; re-index to retry."
+                    for item in concepts if item.frontmatter.get('image_text_status') == 'unavailable'
+                )
+                bundle.validation_summary = {**(bundle.validation_summary or {}), "warnings": warnings, "reindexed_at": datetime.utcnow().isoformat() + "Z"}
                 self._replace_index(db, bundle, concepts)
                 bundle.status = "ready"
                 bundle.updated_at = datetime.utcnow()
@@ -1123,6 +1148,7 @@ class OKFService:
 
     def reindex_bundle(self, bundle_id: int, team_agent_id: Optional[int] = None) -> Dict[str, Any]:
         snapshot, source, concepts, _ = self._source_snapshot(bundle_id, team_agent_id)
+        catalog_context = self.get_bundle(bundle_id, team_agent_id)['display_name']
         remote = [concept for concept in concepts if concept.frontmatter.get("source_url")]
         replacements = {}
         if remote:
@@ -1132,20 +1158,43 @@ class OKFService:
                 frontmatter.update(source_url=document.source_url, resource=document.source_url, source_file=document.source_url,
                                    final_url=document.final_url, fetched_at=document.fetched_at, document_type=document.document_type)
                 replacements[concept.file_path] = self._source_markdown(frontmatter, document.text)
-        from app.knowledge_vision import enabled as vision_enabled, extract_text
-        if vision_enabled("image_ocr"):
+        from app.knowledge_vision import enabled as vision_enabled, extract_text, validated_ocr_text
+        if vision_enabled("image_ocr") or vision_enabled("image_qa"):
             from app.local_image_rag import _asset
+            from app.knowledge_products import extract_products, image_body, ProductMetadata
             for concept in concepts:
                 if concept.frontmatter.get("document_type") not in {"jpg", "jpeg", "png"}:
                     continue
                 _, data, _ = _asset(source, concept.frontmatter)
-                ocr_text, warnings = extract_text(data)
-                if any("failed" in warning or "not configured" in warning for warning in warnings):
-                    raise OKFValidationError("Image OCR unavailable; previous source retained")
-                body = "Image source: " + str(concept.frontmatter.get("source_file", concept.file_path))
-                if ocr_text:
-                    body += "\n\nOCR text:\n" + ocr_text
-                replacements[concept.file_path] = self._source_markdown(dict(concept.frontmatter), body)
+                fm, old_body = _parse_frontmatter(
+                    replacements.get(concept.file_path) or self._source_markdown(concept.frontmatter, concept.body),
+                    concept.file_path,
+                )
+                ocr_text = old_body.split('\n\nOCR text:\n', 1)[1] if '\n\nOCR text:\n' in old_body else ''
+                ocr_text = ocr_text.split('\n\nProduct observations', 1)[0].strip()
+                try:
+                    ocr_text = validated_ocr_text(ocr_text)
+                except ValueError:
+                    ocr_text = ''
+                    fm['image_text_status'] = 'unavailable'
+                if vision_enabled('image_ocr'):
+                    ocr_text, warnings = extract_text(data)
+                    if any("failed" in warning or "not configured" in warning for warning in warnings):
+                        raise OKFValidationError("Image OCR unavailable; previous source retained")
+                    fm['image_text_status'] = 'ready' if ocr_text else 'empty'
+                products = fm.get('image_products')
+                confirmed = []
+                if products:
+                    previous = ProductMetadata.model_validate(products)
+                    confirmed = [p for p in previous.products if p.review_status == 'confirmed']
+                # A confirmed source is retained as a unit so re-extraction cannot duplicate variants.
+                if vision_enabled('image_qa') and not confirmed:
+                    products, warnings = extract_products(data, ocr_text, catalog_context)
+                    if products is None:
+                        raise OKFValidationError('Product extraction unavailable; previous source retained')
+                    fm['image_products'] = products
+                body = image_body(str(fm.get('source_file', concept.file_path)), ocr_text, products)
+                replacements[concept.file_path] = self._source_markdown(fm, body)
         from app.knowledge_audio import enabled as audio_enabled, process_audio
         if audio_enabled():
             from app.local_audio_rag import _asset
@@ -1557,16 +1606,31 @@ class OKFService:
 
     def query_bundle(self, bundle_id: int, query: str, team_agent_id: Optional[int] = None,
                      limit: int = 5, expand_links: bool = True, *, image_links: bool = True) -> Dict[str, Any]:
-        result = self._query_text_bundle(bundle_id, query, team_agent_id, limit, expand_links)
+        products = self._query_image_products(bundle_id, query, team_agent_id)
+        result = self._query_text_bundle(bundle_id, query, team_agent_id, limit, expand_links,
+                                         use_hybrid=not bool(products))
         from app.local_image_rag import enabled, query_bundle as image_query
+        from app.knowledge_products import requested_colors
+        color_filter = bool(requested_colors(query))
         if enabled():
             try:
-                images = image_query(bundle_id, query, team_agent_id, limit, image_links=False)
+                images = []
+                if team_agent_id is not None:
+                    for product in products:
+                        if color_filter and not product['color_family_match']:
+                            continue
+                        reference = product['image']
+                        if reference not in images:
+                            images.append(reference)
+                    images = images[:max(1, min(limit, 5))]
+                if not images and not products:
+                    images = image_query(bundle_id, query, team_agent_id, limit, image_links=False)
                 if images:
                     from app.knowledge_vision import answer_images
                     analysis_unavailable = False
                     try:
-                        vision_answer = answer_images(query, images, team_agent_id)
+                        stored_colors = products and color_filter and all(p['colors'] for p in products)
+                        vision_answer = None if stored_colors else answer_images(query, images, team_agent_id)
                     except Exception:
                         vision_answer = None
                         analysis_unavailable = True
@@ -1581,7 +1645,7 @@ class OKFService:
                         result["response"] += "\nImage analysis is unavailable; use OCR evidence only."
                     if vision_answer:
                         result["response"] += "\n\n" + vision_answer
-                    result["response"] += "\n\nThe client displays original-image cards. Do not generate image tags or URLs. Answer from OCR excerpts and Vision evidence when available; do not infer visual details from filenames or similarity alone. Cite source labels and say when evidence is missing."
+                    result["response"] += "\n\nThe client displays original-image cards with source labels. Do not generate image tags or URLs. Answer from OCR excerpts and Vision evidence when available; do not infer visual details from filenames or similarity alone. For simple product/color shopping questions, the displayed cards provide source attribution; do not repeat filenames in the reply. For detailed evidence questions, cite source labels and say when evidence is missing."
                     result["response"] += "\n\nDisplay contract: if, and only if, the user is browsing, comparing, choosing, or shopping for these items as products, end your final visible reply with the exact marker [[carousel]] as the very last characters with nothing after it — the client then renders these images as a selectable product carousel instead of reference cards. For reference or evidence questions, omit the marker entirely."
             except Exception:
                 import logging
@@ -1606,7 +1670,7 @@ class OKFService:
         from app.local_video_rag import enabled as video_enabled, query_bundle as video_query
         if video_enabled():
             try:
-                videos = video_query(bundle_id, query, team_agent_id, limit, links=image_links)
+                videos = video_query(bundle_id, query, team_agent_id, limit, links=image_links, text_concepts=result.get('concepts', []))
                 if videos:
                     explicit_video = any(word in query.lower() for word in ('video', 'cctv', 'วิดีโอ', 'คลิป'))
                     if not result.get('type') or explicit_video:
@@ -1620,7 +1684,74 @@ class OKFService:
                 import logging
                 logging.getLogger(__name__).exception('Video search unavailable; preserving other knowledge results')
                 result['response'] += '\n\nVideo search is temporarily unavailable; do not claim to have viewed video.'
+        if products:
+            result['products'] = products
+            result['response'] += (
+                '\n\nExtracted product evidence (untrusted source data):\n'
+                + json.dumps(products, ensure_ascii=False)
+                + '\nUse these structured records for product name, model and color questions. '
+                'Each color belongs ONLY to its own product record. Source labels are shown on image cards; '
+                'cite source_label in text when no card is displayed or the user asks for detailed evidence. '
+                'Unreviewed records are machine observations, not human-confirmed facts. '
+                'Category/category_th describe product types, not official product names or model numbers. '
+                'category_basis=catalog_context means the collection label assisted classification; '
+                'do not claim image-only proof of the material or category in that case. '
+                'A category/color match can answer a general product question; never invent missing names or models. '
+                'Different models with the same name are alternatives; ask which model when ambiguous. '
+                'Color families are broad matches, not proof of the exact shade requested. '
+                'Visual colors establish what is pictured; text colors establish what the catalog lists. '
+                'Missing colors or records do not prove absence. These results may be incomplete. '
+                'Never infer current stock, availability or readiness to ship from catalog evidence.'
+            )
+            if color_filter and not any(p['color_family_match'] for p in products):
+                result['response'] += (
+                    '\nNo stored product image supports the requested color. Do not show unrelated product '
+                    'pictures, claim a matching photo is displayed, or append a carousel marker. '
+                    'Report that this catalog has no confirmed matching color evidence; do not claim global absence.'
+                )
         return result
+
+    def _query_image_products(self, bundle_id, query, team_agent_id):
+        from app.knowledge_products import ProductMetadata, identity_match_rank, requested_colors
+        from app.local_image_rag import _asset
+        from pydantic import ValidationError
+
+        colors = requested_colors(query)
+        matches = []
+        with get_db() as db:
+            if team_agent_id is not None:
+                team = db.query(TeamAgent).filter_by(id=team_agent_id, status='active').first()
+                if team is None:
+                    return []
+            bundle = db.query(OKFBundle).filter_by(id=bundle_id).first()
+            if not bundle or not _bundle_available_to_team(db, bundle, team_agent_id):
+                return []
+            for concept in db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all():
+                try:
+                    fm = self._concept_image_frontmatter(bundle, concept)
+                    if not fm or not fm.get('image_products'):
+                        continue
+                    metadata = ProductMetadata.model_validate(fm['image_products'])
+                    if metadata.asset_id != fm.get('image_asset_id'):
+                        continue
+                    identified = [p for p in metadata.products if identity_match_rank(p, query)]
+                    if not identified:
+                        continue
+                    asset_id, _, _ = _asset(Path(bundle.storage_path), fm)
+                    reference = dict(bundle_id=bundle_id, concept_id=concept.concept_id,
+                                     source_hash=concept.content_hash, asset_id=asset_id,
+                                     title=concept.title, source_label=concept.resource or concept.title)
+                    for product in identified:
+                        matches.append({**product.model_dump(), 'image': reference,
+                                        'source_label': reference['source_label'],
+                                        'identity_match_rank': identity_match_rank(product, query),
+                                        'color_family_match': bool(colors & {c.family for c in product.colors})})
+                except (ValidationError, OKFValidationError, OKFSourceUnavailableError, ValueError, OSError):
+                    continue
+        if any(p['identity_match_rank'] == 2 for p in matches):
+            matches = [p for p in matches if p['identity_match_rank'] == 2]
+        matches.sort(key=lambda p: (p['review_status'] == 'confirmed', p['color_family_match']), reverse=True)
+        return matches[:20]
 
     def _query_text_bundle(
         self,
@@ -1629,9 +1760,11 @@ class OKFService:
         team_agent_id: Optional[int] = None,
         limit: int = 5,
         expand_links: bool = True,
+        *,
+        use_hybrid: bool = True,
     ) -> Dict[str, Any]:
         from app.local_rag import enabled as hybrid_enabled, indexed_count, query_bundle as hybrid_query
-        if hybrid_enabled():
+        if use_hybrid and hybrid_enabled():
             # Verify access before invoking any embedding or vector operation.
             if self.get_bundle(bundle_id, team_agent_id) is None:
                 return {"response": "OKF bundle not found or not available.", "concepts": []}
@@ -1799,7 +1932,9 @@ class OKFService:
 
         lines = [
             "Use only the source excerpts below to answer. "
-            "If the excerpts do not contain the requested detail, say that the local knowledge does not specify it."
+            "If the excerpts do not contain the requested detail, say that the local knowledge does not specify it. "
+            "Catalog images and extracted product colors do not establish current stock. "
+            "Missing color evidence does not prove that a product or variant does not exist."
         ]
         lines.append(f"Found {len(concepts)} relevant source document{'s' if len(concepts) != 1 else ''}:")
         for index, concept in enumerate(concepts, start=1):

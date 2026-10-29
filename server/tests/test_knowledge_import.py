@@ -131,6 +131,58 @@ def test_import_audio_reports_transcription_but_preview_does_not(store, tmp_path
     assert events == [('Transcribing audio', 'cats.wav')]
 
 
+def test_image_batch_preview_defers_model_work_until_import(store, tmp_path, monkeypatch):
+    from app import knowledge_products
+    from test_knowledge_images import picture
+    calls = []
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'true')
+    monkeypatch.setattr(knowledge_vision, 'extract_text_with_status', lambda data: calls.append('ocr') or knowledge_vision.OCRResult('', [], 'empty'))
+    monkeypatch.setattr(knowledge_products, 'extract_products', lambda *args: calls.append('products') or (None, []))
+    paths = []
+    for index in range(20):
+        path = tmp_path / f'tile-{index}.png'
+        path.write_bytes(picture(color=(index, 100, 100)))
+        paths.append(path)
+    preview = store[0].preview_knowledge_files(paths, 1)
+    assert calls == [], 'Review must validate files without running external image models'
+    assert preview['source_count'] == 20
+    assert all(document['text_status'] == 'not_requested' for document in preview['documents'])
+    assert all(document['image_products'] is None for document in preview['documents'])
+    okf_service._extract_knowledge_file(paths[0])
+    assert calls == ['ocr', 'products']
+
+
+def test_multipart_image_review_returns_without_image_inference(client, store, monkeypatch):
+    from app import admin_routes, knowledge_products
+    from app.auth import create_access_token
+    from test_knowledge_images import picture
+    monkeypatch.setattr(admin_routes, 'OKFService', lambda: store[0])
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'true')
+    monkeypatch.setattr(knowledge_vision, 'extract_text_with_status', lambda *a: pytest.fail('review called OCR'))
+    monkeypatch.setattr(knowledge_products, 'extract_products', lambda *a: pytest.fail('review called product model'))
+    files = [('files', (f'tile-{i}.png', picture(color=(i, 100, 100)), 'image/png')) for i in range(20)]
+    response = client.post('/api/admin/okf-bundles/preview?team_agent_id=1',
+        headers={'Authorization': 'Bearer ' + create_access_token({'sub': 'owner'})},
+        data={'display_name': 'Tiles', 'import_mode': 'knowledge'}, files=files)
+    assert response.status_code == 200
+    assert response.json()['source_count'] == 20
+    assert all(item['text_status'] == 'not_requested' for item in response.json()['documents'])
+
+
+def test_image_url_review_also_defers_inference(store, monkeypatch):
+    from types import SimpleNamespace
+    from app import knowledge_products, knowledge_urls
+    from test_knowledge_images import picture
+    monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'true')
+    monkeypatch.setattr(knowledge_urls, 'download_url', lambda url, **kw:
+        SimpleNamespace(data=picture(), suffix='.png', final_url=url))
+    monkeypatch.setattr(knowledge_vision, 'extract_text_with_status', lambda *a: pytest.fail('URL review called OCR'))
+    monkeypatch.setattr(knowledge_products, 'extract_products', lambda *a: pytest.fail('URL review called product model'))
+    preview = store[0].preview_knowledge_files([], 1, urls=['https://example.com/tile.png'])
+    assert preview['source_count'] == 1
+    assert preview['documents'][0]['text_status'] == 'not_requested'
+
+
 def test_image_preview_does_not_present_filename_as_ocr(store, tmp_path, monkeypatch):
     from PIL import Image
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'true')
@@ -144,12 +196,14 @@ def test_image_preview_does_not_present_filename_as_ocr(store, tmp_path, monkeyp
     assert preview['character_count'] == 0
     monkeypatch.setattr(knowledge_vision, 'extract_text_with_status', lambda data: knowledge_vision.OCRResult('First OCR line\nSecond OCR line', [], 'ready'))
     preview = store[0].preview_knowledge_files([source], 1)['documents'][0]
-    assert preview['text_status'] == 'ready'
-    assert preview['text'] == 'First OCR line\nSecond OCR line'
+    assert preview['text_status'] == 'not_requested' and preview['text'] == ''
+    imported = okf_service._extract_knowledge_file(source)
+    assert imported.image_text_status == 'ready'
+    assert 'First OCR line\nSecond OCR line' in imported.text
 
 
 @pytest.mark.parametrize('outcome,expected', [('blank', 'empty'), ('failed', 'unavailable'), ('missing', 'unavailable'), ('disabled', 'not_requested')])
-def test_image_preview_reports_actual_ocr_outcome(store, tmp_path, monkeypatch, outcome, expected):
+def test_image_import_reports_actual_ocr_outcome(store, tmp_path, monkeypatch, outcome, expected):
     from PIL import Image
     from app import provider_models
     monkeypatch.setenv('LOCAL_KNOWLEDGE_IMAGES_ENABLED', 'true')
@@ -164,6 +218,6 @@ def test_image_preview_reports_actual_ocr_outcome(store, tmp_path, monkeypatch, 
     monkeypatch.setattr(knowledge_vision, '_cached_ocr', ocr)
     source = tmp_path / 'blank.png'
     Image.new('RGB', (4, 4), 'white').save(source)
-    preview = store[0].preview_knowledge_files([source], 1)['documents'][0]
-    assert preview['text_status'] == expected
-    assert preview['text'] == preview['excerpt'] == ''
+    imported = okf_service._extract_knowledge_file(source)
+    assert imported.image_text_status == expected
+    assert '\n\nOCR text:\n' not in imported.text

@@ -61,3 +61,6 @@ Some compatible vision endpoints return prose instead of the requested JSON. Vid
 Web Chat and Bubble group video references below the assistant answer for each turn. Cards defer video loading until opened. The viewer uses a side panel on wide screens and fills the widget or mobile viewport on narrow screens. Selecting a timed section seeks after metadata loads, stops at its end, and offers replay or continuation. Seeking outside the selected section returns to full-clip playback.
 
 When reliable timestamps are absent, the viewer opens ordered evidence images and never converts frame indices into seconds. Full-clip playback remains available. The source and sampling limits are expandable. WebSocket video presentations preserve explicit null timing fields required by the client schema.
+
+
+Video tool results retain unsigned `knowledge_video_refs` through the Agent tool boundary. The WebSocket layer validates the team, bundle and source before signing playback links. Video references also follow concept IDs returned by semantic text retrieval, so a natural-language question does not need an exact phrase match or the word “video” to retain its source clip.

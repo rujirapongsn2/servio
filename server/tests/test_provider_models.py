@@ -1,5 +1,6 @@
 """Provider catalog CRUD, image default selection and authorization regressions."""
 from contextlib import contextmanager
+import json
 from unittest.mock import patch
 
 import pytest
@@ -223,7 +224,7 @@ def test_ocr_environment_cache_tracks_model_endpoint_and_preserves_disabled_stat
     monkeypatch.setenv("IMAGE_OCR_API_KEY", "not-required")
     monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED", "false")
     calls = []
-    monkeypatch.setattr(vision, "_complete", lambda config, *args, **kwargs: calls.append(config) or config["model_id"])
+    monkeypatch.setattr(vision, "_complete", lambda config, *args, **kwargs: calls.append(config) or json.dumps({"text": config["model_id"], "status": "ready"}))
     assert vision.extract_text_with_status(b"image").status == "not_requested"
     assert calls == []
     monkeypatch.setenv("LOCAL_KNOWLEDGE_IMAGE_OCR_ENABLED", "true")

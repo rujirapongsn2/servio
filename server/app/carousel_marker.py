@@ -36,7 +36,7 @@ def strip_marker(content):
     return content, False
 
 
-def build_carousel_message(images, refs, summary_text):
+def build_carousel_message(images, refs, summary_text, team_agent_id=None):
     """Build a knowledge_product_carousel presentation for the client.
 
     ``images`` is the list from a ``knowledge_images`` presentation
@@ -53,6 +53,8 @@ def build_carousel_message(images, refs, summary_text):
     if not images or len(images) != len(refs):
         return None
 
+    from app.product_catalog_labels import catalog_labels
+    labels = catalog_labels([image["asset_id"] for image in images], team_agent_id)
     card_refs = {}
     products = []
     for image, ref in zip(images, refs):
@@ -62,9 +64,11 @@ def build_carousel_message(images, refs, summary_text):
             KnowledgeCard(
                 id=card_id,
                 asset_id=image["asset_id"],
-                title=image["title"],
+                title=labels.get(image["asset_id"], {}).get("title", image["title"]),
+                part_number=labels.get(image["asset_id"], {}).get("part_number"),
+                brand=labels.get(image["asset_id"], {}).get("brand"),
                 source_label=image["source_label"],
-                description=str(ref.concept)[:4000],
+                description="",
                 image_url=image["image_url"],
             )
         )

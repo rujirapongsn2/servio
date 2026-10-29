@@ -68,6 +68,7 @@ class VisualCandidate:
     asset_hash: str
     source_hash: str
     title: str
+    surface_pattern: str | None = None
 
 
 def _specific_product_type(value: str | None) -> str | None:
