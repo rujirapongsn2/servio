@@ -860,3 +860,132 @@ def test_rejected_duplicate_does_not_hide_qualifying_bundle(runtime, nearest_row
     monkeypatch.setattr(search.reranker, "rerank", lambda _, supplied, settings: tuple(item.id for item in supplied))
     nearest_rows.extend([first, second])
     assert [match.reference.bundle for match in search.search_image(1, request()).matches] == [2]
+
+
+def add_surface_context(runtime, row, *, context="รูปภาพพื้นไม้ลามิเนต", asset_id=None):
+    import yaml
+    get_db, root = runtime
+    path = root / (row["concept_id"] + ".md")
+    _, header, body = path.read_text().split("---", 2)
+    fm = yaml.safe_load(header)
+    fm["image_products"] = {"version": 1, "asset_id": asset_id or row["asset_id"],
+        "model_id": "test", "extracted_at": "2026-10-30T00:00:00Z", "products": [],
+        "catalog_context": context}
+    markdown = "---\n" + yaml.safe_dump(fm, allow_unicode=True) + "---" + body
+    path.write_text(markdown)
+    row["source_hash"] = hashlib.sha256(markdown.encode()).hexdigest()
+    with get_db() as db:
+        db.query(OKFConceptIndex).filter_by(bundle_id=1, concept_id=row["concept_id"]).one().content_hash = row["source_hash"]
+
+
+@pytest.mark.parametrize("catalog_is_surface", [True, False])
+def test_unlabelled_laminate_uses_independent_surface_verification(runtime, nearest_rows, monkeypatch, catalog_is_surface):
+    from app import tile_surface_search as surface
+    from PIL import ImageDraw
+    row = add_concept(runtime, "Almond oak")
+    add_surface_context(runtime, row)
+    nearest_rows.append(row)
+    monkeypatch.setenv("MULTIMODAL_IMAGE_RERANK_ENABLED", "true")
+    monkeypatch.setattr(search.reranker, "rerank", lambda *a, **kw: pytest.fail("Verified surface catalog needs surface comparison"))
+    config = {"catalog_id": 1, "model_id": "test", "base_url": "http://example.invalid", "api_key": "test"}
+    monkeypatch.setattr(surface.vision, "get_task_model", lambda _: config)
+    observations = []
+    def classify(config, data, settings):
+        observations.append(data)
+        return surface.SurfaceQuery(is_surface=True if len(observations) == 1 else catalog_is_surface,
+                                    confidence=.99, pattern="wood_grain", colors=["red"])
+    monkeypatch.setattr(surface, "classify_surface", classify)
+    def catalog(config, candidates, settings):
+        return {item.id: surface.CatalogSurface(id=item.id,
+                **classify(config, item.image, settings).model_dump()) for item in candidates}
+    monkeypatch.setattr(surface, "classify_catalog_surfaces", catalog)
+    query = Image.new("RGB", (64, 64), "white")
+    ImageDraw.Draw(query).rectangle((4, 4, 60, 60), fill="red")
+    data = io.BytesIO(); query.save(data, "PNG")
+    result = search.search_image(1, request(data.getvalue()))
+    assert len(observations) == 2  # Query and catalog are verified independently.
+    if catalog_is_surface:
+        assert result.status == "matched"
+        assert result.matches[0].match_basis == "pattern_and_color"
+        _, card = search.ImageSearchSession().presentation(result, 1)
+        assert "ยังไม่ยืนยันว่าเป็นรุ่นเดียวกัน" in card.summary
+        assert "กระเบื้อง" not in card.summary
+    else:
+        assert result.status == "no_match"
+
+
+def test_surface_routing_requires_metadata_for_current_image(runtime):
+    row = add_concept(runtime, "oak")
+    add_surface_context(runtime, row, asset_id="f" * 64)
+    assert search._known_surface_refs(1, [row]) == {}
+
+
+def confirm_product_code(runtime, row, code):
+    import yaml
+    get_db, root = runtime
+    path = root / (row['concept_id'] + '.md')
+    _, header, body = path.read_text().split('---', 2)
+    fm = yaml.safe_load(header)
+    fm['image_products'] = {'version': 1, 'asset_id': row['asset_id'], 'model_id': 'test',
+        'extracted_at': '2026-10-30T00:00:00Z', 'products': [{'name': 'Catalog product',
+        'sku': code, 'model': code, 'category': 'office_chair',
+        'evidence': 'Printed product code', 'review_status': 'confirmed'}]}
+    markdown = '---\n' + yaml.safe_dump(fm) + '---' + body
+    path.write_text(markdown)
+    row['source_hash'] = hashlib.sha256(markdown.encode()).hexdigest()
+    with get_db() as db:
+        db.query(OKFConceptIndex).filter_by(bundle_id=1, concept_id=row['concept_id']).one().content_hash = row['source_hash']
+
+
+def test_same_code_keeps_best_reranked_image_and_fills_unique_product_slots(runtime, nearest_rows, monkeypatch):
+    rows = [add_concept(runtime, name, color) for name, color in
+            [('higher_vector', 'green'), ('best_appearance', 'blue'), ('other_product', 'yellow')]]
+    for row, code in zip(rows, ['WY 1244D', 'wy1244d', 'WY 4220X']):
+        confirm_product_code(runtime, row, code)
+    nearest_rows.extend([{**row, 'score': .95 - i * .05} for i, row in enumerate(rows)])
+    monkeypatch.setenv('MULTIMODAL_IMAGE_RERANK_ENABLED', 'true')
+    monkeypatch.setenv('MULTIMODAL_IMAGE_QUERY_MAX_RESULTS', '2')
+    monkeypatch.setattr(search.reranker, 'rerank', lambda *a: ('c02', 'c01', 'c03'))
+    result = search.search_image(1, request())
+    assert [m.title for m in result.matches] == ['best_appearance', 'other_product']
+    _, carousel = search.ImageSearchSession().presentation(result, 1)
+    assert len(carousel.products) == 2
+    assert carousel.products[0].asset_id == rows[1]['asset_id']
+    assert carousel.products[0].part_number == 'wy1244d'
+    assert '2 รายการ' in carousel.summary
+
+
+def test_same_display_name_without_verified_codes_keeps_separate_products(runtime, nearest_rows, monkeypatch):
+    rows = [add_concept(runtime, 'first', 'green'), add_concept(runtime, 'second', 'blue')]
+    nearest_rows.extend([{**row, 'title': 'Same display name'} for row in rows])
+    monkeypatch.setenv('MULTIMODAL_IMAGE_RERANK_ENABLED', 'true')
+    monkeypatch.setattr(search.reranker, 'rerank', lambda *a: ('c01', 'c02'))
+    assert len(search.search_image(1, request()).matches) == 2
+
+
+def test_vector_only_search_groups_codes_before_result_limit(runtime, nearest_rows, monkeypatch):
+    rows = [add_concept(runtime, name, color) for name, color in
+            [('closest', 'green'), ('duplicate', 'blue'), ('different', 'yellow')]]
+    for row, code in zip(rows, ['A100', 'A100', 'B200']):
+        confirm_product_code(runtime, row, code)
+    nearest_rows.extend([{**row, 'score': .9 - i * .01} for i, row in enumerate(rows)])
+    monkeypatch.setenv('MULTIMODAL_IMAGE_RERANK_ENABLED', 'false')
+    monkeypatch.setenv('MULTIMODAL_IMAGE_QUERY_MAX_RESULTS', '2')
+    result = search.search_image(1, request())
+    assert [m.title for m in result.matches] == ['closest', 'different']
+
+
+def test_same_code_in_independent_catalogs_does_not_merge_suppliers(runtime):
+    get_db, root = runtime
+    rows = [add_concept(runtime, 'supplier_one', 'green'), add_concept(runtime, 'supplier_two', 'blue')]
+    for row in rows:
+        confirm_product_code(runtime, row, 'A100')
+    with get_db() as db:
+        db.add(OKFBundle(id=2, name='supplier_two', display_name='Other supplier',
+                         owner_team_agent_id=1, storage_path=str(root)))
+        db.flush()
+        db.query(OKFConceptIndex).filter_by(bundle_id=1, concept_id=rows[1]['concept_id']).one().bundle_id = 2
+    rows[1]['bundle_id'] = 2
+    matches = [search.SearchMatch(search.KnowledgeCardRef(r['bundle_id'], r['concept_id'], r['source_hash'],
+               r['asset_id']), r['title'], r['resource'], '', r['score']) for r in rows]
+    assert len(search._unique_product_matches(matches, 1, 5)) == 2

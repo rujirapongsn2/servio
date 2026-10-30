@@ -105,6 +105,7 @@ class SearchMatch:
     score: float
     match_basis: Literal["visual", "pattern_and_color", "color_only", "pattern_only"] = "visual"
     comparison_note: str = ""
+    part_number: str | None = None
 
 
 @dataclass(frozen=True)
@@ -201,8 +202,65 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
         matches = [match for match in matches if match.score >= cutoff]
         if text_vector is not None:
             matches.sort(key=lambda match: (text_scores[match.reference.asset], match.score), reverse=True)
-        matches = matches[:limit]
+        matches = _unique_product_matches(matches, team_id, limit)
     return SearchResult("matched" if matches else "no_match", tuple(matches))
+
+
+def _unique_product_matches(matches: list[SearchMatch], team_id: int | None,
+                            limit: int) -> list[SearchMatch]:
+    """Keep the first (best-ranked) image for each verified catalog code."""
+    from app.knowledge_products import ProductMetadata, normalized
+    from app.okf_service import OKFService
+    from app.product_catalog_labels import catalog_labels
+    from pydantic import ValidationError
+
+    if not matches:
+        return []
+    service = OKFService()
+    codes = {}
+    with get_db() as db:
+        for match in matches:
+            ref = match.reference
+            bundle = db.get(OKFBundle, ref.bundle)
+            concept = db.query(OKFConceptIndex).filter_by(bundle_id=ref.bundle,
+                concept_id=ref.concept, content_hash=ref.source).first()
+            if bundle is None or concept is None:
+                continue
+            fm = service._concept_image_frontmatter(bundle, concept)
+            if not fm or fm.get("image_asset_id") != ref.asset or not fm.get("image_products"):
+                continue
+            try:
+                metadata = ProductMetadata.model_validate(fm["image_products"])
+            except ValidationError:
+                continue
+            if metadata.asset_id != ref.asset or len(metadata.products) != 1:
+                continue
+            product = metadata.products[0]
+            code = product.sku or product.model
+            if product.review_status == "confirmed" and code:
+                codes[ref.asset] = (code, ("bundle", ref.bundle))
+    missing = [m.reference.asset for m in matches if m.reference.asset not in codes]
+    for asset, label in (catalog_labels(missing, team_id) if missing else {}).items():
+        if code := label.get("part_number"):
+            # Different suppliers can reuse a code. Without a brand, keep bundle scope.
+            bundle_id = next(m.reference.bundle for m in matches if m.reference.asset == asset)
+            scope = ("brand", normalized(label["brand"])) if label.get("brand") else ("bundle", bundle_id)
+            codes[asset] = (code, scope)
+    selected = []
+    seen = set()
+    for match in matches:
+        identity = codes.get(match.reference.asset)
+        if identity:
+            code, scope = identity
+            key = (scope, "".join(normalized(code).split()))
+            if key in seen:
+                continue
+            seen.add(key)
+            match = replace(match, part_number=code)
+        selected.append(match)
+        if len(selected) == limit:
+            break
+    return selected
 
 
 def _known_tile_refs(team_id, rows):
@@ -217,6 +275,46 @@ def _known_tile_refs(team_id, rows):
     return result
 
 
+def _known_surface_refs(team_id, rows):
+    """Route catalog surface samples to independent visual verification."""
+    from app.knowledge_products import ProductMetadata, normalized
+    from app.okf_service import OKFService
+    from pydantic import ValidationError
+
+    result = _known_tile_refs(team_id, rows)
+    surface_categories = {"laminate", "laminate flooring", "flooring", "wood flooring",
+                          "wooden flooring", "surface", "material sample", "surface sample",
+                          "พื้นผิว", "พื้นไม้ลามิเนต", "ลามิเนต", "วัสดุปิดผิว"}
+    service = OKFService()
+    row_refs = {(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"]) for row in rows}
+    with get_db() as db:
+        for bundle_id in {row["bundle_id"] for row in rows}:
+            bundle = db.get(OKFBundle, bundle_id)
+            if bundle is None:
+                continue
+            for concept in db.query(OKFConceptIndex).filter_by(bundle_id=bundle_id).all():
+                fm = service._concept_image_frontmatter(bundle, concept)
+                if not fm or not fm.get("image_products"):
+                    continue
+                try:
+                    metadata = ProductMetadata.model_validate(fm["image_products"])
+                except ValidationError:
+                    continue
+                ref = (bundle_id, concept.concept_id, concept.content_hash, metadata.asset_id)
+                if metadata.asset_id != fm.get("image_asset_id") or ref not in row_refs or ref in result:
+                    continue
+                categories = {normalized(value) for product in metadata.products
+                              for value in (product.category, product.category_th) if value}
+                context = normalized(metadata.catalog_context or "")
+                surface_context = any(word in context for word in
+                                      ("laminate", "flooring", "ลามิเนต", "พื้นไม้", "วัสดุปิดผิว"))
+                if categories & surface_categories or surface_context:
+                    # Context only selects the comparison path. Verify each image independently;
+                    # a catalog label cannot turn furniture or a logo into a surface sample.
+                    result[ref] = None
+    return result
+
+
 def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") -> SearchResult:
     settings = reranker.RerankSettings.from_environment()
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
@@ -224,7 +322,7 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
     with get_db() as db:
         thresholds = image_policy.thresholds(db, current, "rerank")
     candidates = []
-    tile_refs = _known_tile_refs(team_id, rows)
+    surface_refs = _known_surface_refs(team_id, rows)
     matches = {}
     seen = set()
     exact = []
@@ -233,7 +331,7 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
         score = float(row["score"])
         if (row["bundle_id"] not in current or row["asset_id"] in seen
                 or not math.isfinite(score) or not -1 <= score <= 1
-                or (score < thresholds[row["bundle_id"]] and (row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"]) not in tile_refs)):
+                or (score < thresholds[row["bundle_id"]] and (row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"]) not in surface_refs)):
             continue
         ref = KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
         try:
@@ -252,20 +350,21 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
         if len(candidates) < settings.candidates:
             candidate_id = f"c{len(candidates) + 1:02d}"
             candidates.append(reranker.VisualCandidate(candidate_id, original, score, actual_hash,
-                                                       ref.source, match.title, tile_refs.get((ref.bundle, ref.concept, ref.source, ref.asset))))
+                                                       ref.source, match.title, surface_refs.get((ref.bundle, ref.concept, ref.source, ref.asset))))
             matches[candidate_id] = match
-    logging.getLogger(__name__).info("image_rerank rows=%s tile_refs=%s candidates=%s", len(rows), len(tile_refs), len(candidates))
+    logging.getLogger(__name__).info("image_rerank rows=%s surface_refs=%s candidates=%s", len(rows), len(surface_refs), len(candidates))
     if exact and not query:
-        selected = exact[:limit]
+        selected = exact
     elif candidates:
         try:
-            tile_candidates = tuple(item for item in candidates if (matches[item.id].reference.bundle,
-                matches[item.id].reference.concept, item.source_hash, item.asset_hash) in tile_refs)
+            surface_candidates = tuple(item for item in candidates if (matches[item.id].reference.bundle,
+                matches[item.id].reference.concept, item.source_hash, item.asset_hash) in surface_refs)
             surface = None
-            if tile_candidates:
+            if surface_candidates:
                 from app.tile_surface_search import compare_tiles
-                surface = compare_tiles(data, tile_candidates, settings, query)
-            if surface is not None and (surface.applicable or len(tile_candidates) == len(candidates)):
+                surface = compare_tiles(data, surface_candidates, settings, query)
+            if surface is not None and (surface.applicable or len(surface_candidates) == len(candidates)):
+                limit = min(limit, 3)
                 ranked = tuple(item.id for item in surface.matches)
                 for item in surface.matches:
                     matches[item.id] = replace(matches[item.id], match_basis=item.basis, comparison_note=item.note)
@@ -292,7 +391,8 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
             continue
         if hashlib.sha256(original).hexdigest() == ref.asset:
             valid.append(match)
-    return SearchResult("matched" if valid else "no_match", tuple(valid[:limit]))
+    valid = _unique_product_matches(valid, team_id, limit)
+    return SearchResult("matched" if valid else "no_match", tuple(valid))
 
 
 def resolve_inquiry(team_id: int | None, ref: KnowledgeCardRef) -> tuple[str, str]:
@@ -359,7 +459,7 @@ class ImageSearchSession:
             refs[card_id] = ref
             token = images._grant(ref.bundle, ref.concept, ref.asset, ref.source, team_id)
             products.append(KnowledgeCard(id=card_id, asset_id=ref.asset, title=labels.get(ref.asset, {}).get("title", match.title), source_label=match.source_label,
-                part_number=labels.get(ref.asset, {}).get("part_number"), brand=labels.get(ref.asset, {}).get("brand"),
+                part_number=labels.get(ref.asset, {}).get("part_number", match.part_number), brand=labels.get(ref.asset, {}).get("brand"),
                 description=match.comparison_note or match.description, image_url=f"/api/knowledge-images/{ref.asset}?token={token}"))
         self.refs[message_id] = (now, refs)
         while len(self.refs) > 20:
@@ -367,11 +467,11 @@ class ImageSearchSession:
         basis = result.matches[0].match_basis
         count = len(products)
         if basis == 'color_only':
-            summary = f"พบกระเบื้องโทนสีใกล้เคียง {count} รายการครับ ลายอาจต่างจากภาพ และยังไม่ยืนยันรุ่นหรือสต็อก"
+            summary = f"พบสินค้าโทนสีใกล้เคียง {count} รายการครับ ลายอาจต่างจากภาพ และยังไม่ยืนยันรุ่นหรือสต็อก"
         elif basis == 'pattern_only':
-            summary = f"พบกระเบื้องลายใกล้เคียง {count} รายการครับ โทนสีอาจต่างจากภาพ และยังไม่ยืนยันรุ่นหรือสต็อก"
+            summary = f"พบสินค้าลายใกล้เคียง {count} รายการครับ โทนสีอาจต่างจากภาพ และยังไม่ยืนยันรุ่นหรือสต็อก"
         else:
-            label = 'กระเบื้องลายและโทนสี' if basis == 'pattern_and_color' else 'สินค้า'
+            label = 'สินค้าลายและโทนสี' if basis == 'pattern_and_color' else 'สินค้า'
             summary = f"พบ{label}ใกล้เคียง {count} รายการครับ ยังไม่ยืนยันว่าเป็นรุ่นเดียวกันหรือมีสต็อก"
 
         return message_id, KnowledgeCarousel(summary=summary, products=products)

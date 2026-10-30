@@ -26,6 +26,11 @@ def test_only_matching_pattern_and_color_are_promoted_when_available():
     assert [(m.id, m.basis) for m in result] == [('c02', 'pattern_and_color')]
 
 
+def test_surface_ranking_retains_candidates_until_product_codes_are_grouped():
+    result = surface.choose_matches(ranking(*[('close', 'close', score) for score in (.9, .8, .7, .6)]))
+    assert [m.id for m in result] == ['c01', 'c02', 'c03', 'c04']
+
+
 def test_partial_matches_explicitly_preserve_their_limitations():
     result = surface.choose_matches(ranking(('different', 'close', .7), ('close', 'different', .9)))
     assert [(m.id, m.basis) for m in result] == [('c01', 'color_only')]
@@ -44,11 +49,13 @@ def test_preprocessing_keeps_original_bytes_and_trims_white_margin():
 @pytest.fixture
 def provider(monkeypatch):
     surface._queries.clear()
+    surface._catalogs.clear()
     config = {'catalog_id': 1, 'model_id': 'test', 'base_url': 'https://example.invalid', 'api_key': 'test'}
     monkeypatch.setattr(surface.vision, 'get_task_model', lambda _: config)
     calls = []
     replies = [{'is_surface': True, 'confidence': .95, 'pattern': 'stone_veined', 'colors': ['green']},
-               {'is_surface': True, 'confidence': .95, 'pattern': 'solid', 'colors': ['green']}]
+               {'candidates': [{'id': 'c01', 'is_surface': True, 'confidence': .95,
+                                'pattern': 'solid', 'colors': ['green']}]}]
     def request(config, prompt, images, **options):
         assert len(images) == 1, "Provider accepts a single image per request"
         calls.append((config, prompt, images, options))
@@ -73,7 +80,7 @@ def test_green_stone_can_return_color_only_tiles_without_claiming_same_model(pro
 
 def test_uncertain_catalog_surface_is_not_recommended(provider):
     _, replies = provider
-    replies[1]['confidence'] = .2
+    replies[1]['candidates'][0]['confidence'] = .2
     result = surface.compare_tiles(png(), (VisualCandidate('c01', png('yellow'), .9, 'hash', 'source', 'Tile'),), RerankSettings.from_environment())
     assert result.applicable and not result.matches
 
@@ -106,3 +113,37 @@ def test_mosaic_joints_do_not_turn_into_continuous_marble():
     plain.save(a, 'PNG'); mosaic.save(b, 'PNG')
     assert not surface.repeated_joints(a.getvalue())
     assert surface.repeated_joints(b.getvalue())
+
+
+def test_beige_wood_does_not_change_color_family_at_brightness_boundary():
+    assert surface.close_color(png((210, 185, 165)), png((170, 150, 135)))
+    assert not surface.close_color(png((210, 185, 165)), png((255, 115, 0)))
+    assert not surface.close_color(png((210, 185, 165)), png((100, 145, 120)))
+    assert not surface.close_color(png((210, 185, 165)), png((65, 50, 40)))
+
+
+def test_catalog_surface_observations_are_batched_cached_and_query_independent(provider):
+    calls, replies = provider
+    replies[:] = [{'candidates': [
+        {'id': 'c01', 'is_surface': True, 'confidence': .95, 'pattern': 'wood_grain'},
+        {'id': 'c02', 'is_surface': False, 'confidence': .99}]}]
+    config = surface.vision.get_task_model('image_qa')
+    items = (VisualCandidate('c01', png('brown'), .8, 'wood', 'source', 'Untrusted title'),
+             VisualCandidate('c02', png(), .9, 'sofa', 'source', 'Laminate'))
+    settings = RerankSettings.from_environment()
+    result = surface.classify_catalog_surfaces(config, items, settings)
+    assert result['c01'].is_surface and not result['c02'].is_surface
+    assert surface.classify_catalog_surfaces(config, items, settings) == result
+    assert len(calls) == 1
+    assert 'Untrusted title' not in calls[0][1]
+
+
+@pytest.mark.parametrize('ids', [['c01', 'c01'], ['c01', 'invented'], ['c01']])
+def test_catalog_surface_observations_require_every_actual_id(provider, ids):
+    _, replies = provider
+    replies[:] = [{'candidates': [{'id': value, 'is_surface': True} for value in ids]}]
+    items = (VisualCandidate('c01', png('brown'), .8, 'wood', 'source', 'A'),
+             VisualCandidate('c02', png(), .9, 'other', 'source', 'B'))
+    with pytest.raises(RerankUnavailable, match='identities'):
+        surface.classify_catalog_surfaces(surface.vision.get_task_model('image_qa'), items,
+                                          RerankSettings.from_environment())
