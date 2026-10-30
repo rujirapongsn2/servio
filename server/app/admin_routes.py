@@ -2837,6 +2837,12 @@ async def delete_voip_provider(
 
 
 # Channel Config endpoints
+@router.get("/channel-overview")
+async def get_channel_overview(current_user: str = Depends(get_current_user)):
+    from app.channel_overview import channel_overview
+    return await run_in_threadpool(channel_overview, current_user)
+
+
 @router.get("/channel-configs", response_model=List[ChannelConfigResponse])
 async def get_channel_configs(
     response: Response,

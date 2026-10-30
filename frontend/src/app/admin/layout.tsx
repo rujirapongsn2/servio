@@ -57,7 +57,7 @@ function AdminLayoutInner({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isWorkflow = /^\/admin\/teams\/\d+\/workflow$/.test(pathname);
-  const responsiveNavigation = isWorkflow || pathname === "/admin/settings" || pathname === "/admin/teams";
+  const responsiveNavigation = isWorkflow || pathname === "/admin/settings" || pathname === "/admin/teams" || pathname === "/admin/tools/channels";
 
   useEffect(() => {
     // Skip auth check for login page
