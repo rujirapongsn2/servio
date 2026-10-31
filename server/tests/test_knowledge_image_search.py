@@ -920,7 +920,7 @@ def test_surface_routing_requires_metadata_for_current_image(runtime):
     assert search._known_surface_refs(1, [row]) == {}
 
 
-def confirm_product_code(runtime, row, code):
+def confirm_product_code(runtime, row, code, **attributes):
     import yaml
     get_db, root = runtime
     path = root / (row['concept_id'] + '.md')
@@ -930,6 +930,7 @@ def confirm_product_code(runtime, row, code):
         'extracted_at': '2026-10-30T00:00:00Z', 'products': [{'name': 'Catalog product',
         'sku': code, 'model': code, 'category': 'office_chair',
         'evidence': 'Printed product code', 'review_status': 'confirmed'}]}
+    fm['image_products']['products'][0].update(attributes)
     markdown = '---\n' + yaml.safe_dump(fm) + '---' + body
     path.write_text(markdown)
     row['source_hash'] = hashlib.sha256(markdown.encode()).hexdigest()
@@ -989,3 +990,26 @@ def test_same_code_in_independent_catalogs_does_not_merge_suppliers(runtime):
     matches = [search.SearchMatch(search.KnowledgeCardRef(r['bundle_id'], r['concept_id'], r['source_hash'],
                r['asset_id']), r['title'], r['resource'], '', r['score']) for r in rows]
     assert len(search._unique_product_matches(matches, 1, 5)) == 2
+
+
+@pytest.mark.parametrize("review,expected", [("confirmed", "wood_grain"), ("unreviewed", None)])
+def test_surface_refinement_uses_confirmed_catalog_pattern(runtime, review, expected):
+    row = add_concept(runtime, "wood", "tan")
+    confirm_product_code(runtime, row, "WY1205D", category="laminate", surface_pattern="wood_grain", review_status=review)
+    ref = (row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"])
+    assert search._known_surface_refs(1, [row])[ref] == expected
+
+
+def test_inquiry_carousel_groups_verified_codes_and_preserves_first_ranked_photo(runtime):
+    from app.carousel_marker import build_carousel_message
+    rows = [add_concept(runtime, name, color) for name, color in
+            [("best_photo", "tan"), ("another_photo", "brown"), ("another_code", "gray")]]
+    for row, code in zip(rows, ["WY 1244D", "wy1244d", "WY 1205D"]):
+        confirm_product_code(runtime, row, code)
+    refs = [search.KnowledgeCardRef(row["bundle_id"], row["concept_id"], row["source_hash"], row["asset_id"]) for row in rows]
+    cards = [{"asset_id": row["asset_id"], "title": row["title"], "source_label": row["resource"],
+              "image_url": f"/api/knowledge-images/{row['asset_id']}?token=test"} for row in rows]
+    _, carousel, registered = build_carousel_message(cards, refs, "รายละเอียดสินค้า", 1)
+    assert [product["part_number"] for product in carousel["products"]] == ["WY 1244D", "WY 1205D"]
+    assert carousel["products"][0]["asset_id"] == rows[0]["asset_id"]
+    assert len(registered) == 2

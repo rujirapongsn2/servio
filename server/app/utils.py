@@ -15,6 +15,7 @@ from agents.voice import AudioInput, VoiceStreamEvent, VoiceStreamEventAudio
 from fastapi import WebSocket
 from openai.types.responses import ResponseTextDeltaEvent
 
+from app.a2ui_discovery import DiscoverySession, catalog_facets
 from app.analytics_service import AnalyticsService
 from app.product_presentations import parse_product_carousel, product_inquiry
 from app.knowledge_image_presentations import hydrate_knowledge_images, KnowledgeImageReferences
@@ -127,6 +128,7 @@ class WebsocketHelper:
         self._knowledge_image_refs = {}
         self._last_carousel_message_id = None
         self.image_search_session = ImageSearchSession()
+        self.discovery = DiscoverySession()
         self.team_agent_id = team_agent_id
         self.session_id = session_id
         self.voice_response_enabled = voice_response_enabled
@@ -146,6 +148,7 @@ class WebsocketHelper:
         self._knowledge_calls.clear()
         self._knowledge_image_refs.clear()
         self.image_search_session.reset()
+        self.discovery.reset()
 
     async def _image_search_manual(self, request: ImageSearchRequest) -> bool:
         from app.session_manager import session_manager
@@ -160,7 +163,7 @@ class WebsocketHelper:
             "code": "manual_mode", "message": "เจ้าหน้าที่กำลังดูแลการสนทนานี้", "retryable": False})
         return True
 
-    async def search_knowledge_image(self, request: ImageSearchRequest, generation: int):
+    async def search_knowledge_image(self, request: ImageSearchRequest, generation: int, surface_id: str | None = None):
         user_input = "ค้นหาสินค้าจากรูปภาพ" + (f"\n{request.query}" if request.query else "")
 
         def bounded_search():
@@ -183,22 +186,45 @@ class WebsocketHelper:
                 await self.websocket.send_json({"type": "knowledge.image.error", "request_id": request.request_id,
                     "code": "busy", "message": "กำลังค้นหารูปภาพ กรุณารอสักครู่", "retryable": True})
                 return
+            if surface_id and result.status == "unavailable":
+                raise ValueError("Search unavailable")
             message_id = None
             if result.status == "matched":
                 message_id, presentation = self.image_search_session.presentation(result, self.team_agent_id)
+                if surface_id:
+                    self.image_search_session.refs[surface_id] = self.image_search_session.refs.pop(message_id)
+                    message_id = surface_id
+                if surface_id:
+                    presentation.summary = f"พบสินค้าตามเงื่อนไข {len(presentation.products)} รายการครับ ยังไม่ยืนยันว่าเป็นรุ่นเดียวกันหรือมีสต็อก"
                 self.presentations[message_id] = presentation.model_dump()
                 while len(self.presentations) > 50:
                     del self.presentations[next(iter(self.presentations))]
-                self.history.extend([
-                    {"type": "message", "role": "user", "content": user_input},
-                    {"type": "message", "role": "assistant", "id": message_id, "content": [{"type": "output_text", "text": presentation.summary, "annotations": []}]},
-                ])
+                if not surface_id:
+                    self.history.extend([
+                        {"type": "message", "role": "user", "content": user_input},
+                        {"type": "message", "role": "assistant", "id": message_id, "content": [{"type": "output_text", "text": presentation.summary, "annotations": []}]},
+                    ])
             else:
                 content = "ไม่พบสินค้าที่ใกล้เคียง ลองรูปอื่น" if result.status == "no_match" else "การค้นหาด้วยรูปภาพยังไม่พร้อมใช้งาน"
-                self.history.extend([
-                    {"type": "message", "role": "user", "content": user_input},
-                    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": content, "annotations": []}]},
-                ])
+                if not surface_id:
+                    self.history.extend([
+                        {"type": "message", "role": "user", "content": user_input},
+                        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": content, "annotations": []}]},
+                    ])
+                else:
+                    self.presentations.pop(surface_id, None)
+                    self.image_search_session.refs.pop(surface_id, None)
+            if self.discovery.enabled and (surface_id or message_id):
+                facets = await asyncio.to_thread(catalog_facets,
+                    self.image_search_session.refs[message_id][1], self.team_agent_id) if result.status == "matched" else {}
+                if generation != self.image_search_session.generation:
+                    return
+                self.discovery.publish(surface_id or message_id, request,
+                    presentation if result.status == "matched" else None, refining=surface_id is not None, facets=facets)
+                if surface_id:
+                    for item in self.history:
+                        if item.get("id") == surface_id:
+                            item["content"] = [{"type": "output_text", "text": self.discovery.snapshots[surface_id][-1]["updateDataModel"]["value"]["summary"], "annotations": []}]
             from app.session_manager import session_manager
 
             summary = presentation.summary if result.status == "matched" else content
@@ -209,7 +235,7 @@ class WebsocketHelper:
             if generation != self.image_search_session.generation:
                 return
             await self.websocket.send_json(_sanitize_payload({"type": "history.updated", "reason": "knowledge.image.result", "request_id": request.request_id, "inputs": self.history,
-                "presentations": self.presentations, "agent_name": self.latest_agent.name}))
+                "a2ui": self.discovery.snapshots, "presentations": self.presentations, "agent_name": self.latest_agent.name}))
             await self.websocket.send_json({"type": "knowledge.image.result", "request_id": request.request_id,
                 "status": result.status, "message_id": message_id})
         except InvalidSearchImage as exc:
@@ -254,7 +280,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "presentations": self.presentations,
+                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                     "reason": "user.input",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
@@ -273,7 +299,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "presentations": self.presentations,
+                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                     "reason": "response.text.delta",
                     "inputs": self.history
                     + [
@@ -365,7 +391,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
-                        "presentations": self.presentations,
+                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                         "reason": "agent.updated",
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
@@ -414,7 +440,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
-                        "presentations": self.presentations,
+                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                         "reason": "response.input_item",
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
@@ -430,7 +456,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
-                        "presentations": self.presentations,
+                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                         "inputs": self.history,
                         "sync": True,
                         "agent_name": self.latest_agent.name,
@@ -473,7 +499,7 @@ class WebsocketHelper:
                     {
                         "type": "history.updated",
                         **({"request_id": video_presentation[0]} if video_presentation is not None else {}),
-                        "presentations": self.presentations,
+                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                         "inputs": self.history,
                         "reason": "response.done",
                         "agent_name": self.latest_agent.name,
@@ -500,7 +526,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "presentations": self.presentations,
+                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                     "reason": "assistant.message",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
@@ -528,7 +554,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "presentations": self.presentations,
+                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
                     "reason": "admin.message",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,

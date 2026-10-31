@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { parseProductPresentations, ProductPresentations } from "@/lib/product-presentations";
+import { DISCOVERY_CATALOG, parseDiscoverySnapshots, discoveryActionEnvelope, type DiscoverySurfaces, type DiscoveryAction } from "@/lib/a2ui-discovery";
 import { Message } from "@/lib/types";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "@/lib/utils";
 import { getWebsocketBaseUrl } from "@/lib/api";
@@ -57,10 +58,12 @@ export function useWebsocket({
   const [imageSearchState, setImageSearchState] = useState<ImageSearchState>({ kind: "idle" });
   const [imageComposerEpoch, setImageComposerEpoch] = useState(0);
   const imageRequest = useRef<string | null>(null);
+  const discoveryRequest = useRef<string | null>(null);
   const videoRequest = useRef<string | null>(null);
   const [videoUploadToken, setVideoUploadToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [history, setHistory] = useState<Message[]>([]);
+  const [a2uiSurfaces, setA2uiSurfaces] = useState<DiscoverySurfaces>({});
   const [presentations, setPresentations] = useState<ProductPresentations>({});
   const [productActionError, setProductActionError] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
@@ -81,6 +84,7 @@ export function useWebsocket({
     setConnection({ kind: "connecting" });
     let rejected = false;
     imageRequest.current = null;
+    discoveryRequest.current = null;
     setImageSearchAvailable(false);
     setVideoUploadToken(null);
     videoRequest.current = null;
@@ -88,6 +92,7 @@ export function useWebsocket({
     setImageComposerEpoch((value) => value + 1);
     setHistory([]);
     setPresentations({});
+    setA2uiSurfaces({});
     setProductActionError(null);
     setIsReady(false);
     setIsLoading(false);
@@ -101,6 +106,7 @@ export function useWebsocket({
     }, 30 * 60 * 1000);
     ws.addEventListener("open", () => {
       if (websocket.current !== ws) return;
+      ws.send(JSON.stringify({ type: "a2ui.capabilities", a2uiClientCapabilities: { supportedCatalogIds: [DISCOVERY_CATALOG] } }));
       setIsReady(true);
       setConnection({ kind: "open" });
     });
@@ -139,6 +145,11 @@ export function useWebsocket({
         if (!imageRequest.current || data.request_id !== imageRequest.current) return;
         imageRequest.current = null;
         setIsLoading(false);
+        if (discoveryRequest.current === data.request_id) {
+          discoveryRequest.current = null;
+          if (data.type === "knowledge.image.error" || data.status === "unavailable") setProductActionError(typeof data.message === "string" ? data.message : "ปรับผลค้นหาไม่สำเร็จ กรุณาลองอีกครั้ง");
+          return;
+        }
         if (data.type === "knowledge.image.error" || data.status === "unavailable") {
           setImageSearchState({ kind: "error", message: typeof data.message === "string" ? data.message : "การค้นหาด้วยรูปภาพยังไม่พร้อมใช้งาน", retryable: data.retryable !== false });
         } else if (data.status === "matched" || data.status === "no_match") {
@@ -147,6 +158,8 @@ export function useWebsocket({
         return;
       }
       if (data.type === "product.action.error") {
+        imageRequest.current = null;
+        discoveryRequest.current = null;
         setProductActionError(typeof data.message === "string" ? data.message : "ไม่สามารถสอบถามสินค้านี้ได้");
         setIsLoading(false);
         return;
@@ -180,11 +193,13 @@ export function useWebsocket({
         if (data.reason === "response.done" && typeof data.request_id === "string" && data.request_id !== videoRequest.current) return;
         if (data.reason === "knowledge.image.result" && (!imageRequest.current || data.request_id !== imageRequest.current)) return;
         if (["response.done", "assistant.message", "admin.message"].includes(data.reason) || data.inputs.length === 0) {
+          discoveryRequest.current = null;
           setIsLoading(false);
           videoRequest.current = null;
         }
         setHistory(data.inputs);
         setPresentations(parseProductPresentations(data.presentations));
+        if (data.a2ui !== undefined || data.inputs.length === 0) setA2uiSurfaces(parseDiscoverySnapshots(data.a2ui));
         if (data.agent_name) {
           setAgentName(data.agent_name);
         }
@@ -227,6 +242,19 @@ export function useWebsocket({
         inputs: newHistory,
       })
     );
+  }
+
+  function sendDiscoveryAction(surfaceId: string, action: DiscoveryAction): boolean {
+    const surface = a2uiSurfaces[surfaceId];
+    if (!surface?.active || websocket.current?.readyState !== WebSocket.OPEN || isLoading || imageRequest.current || videoRequest.current || discoveryRequest.current) return false;
+    if (action.name === "discovery.inquire" && !surface.products.some(product => product.id === action.context.card_id)) return false;
+    const envelope = discoveryActionEnvelope(surfaceId, action);
+    discoveryRequest.current = envelope.request_id;
+    if (action.name === "discovery.refine") imageRequest.current = envelope.request_id;
+    setProductActionError(null);
+    setIsLoading(true);
+    try { websocket.current.send(JSON.stringify(envelope)); return true; }
+    catch { imageRequest.current = null; discoveryRequest.current = null; setIsLoading(false); setProductActionError("ส่งรายการไม่สำเร็จ กรุณาลองอีกครั้ง"); return false; }
   }
 
   function sendProductInquiry(callId: string, productId: string) {
@@ -282,12 +310,14 @@ export function useWebsocket({
   }
 
   function resetHistory() {
+    discoveryRequest.current = null;
     videoRequest.current = null;
     setVideoUploadToken(null);
     imageRequest.current = null;
     setImageSearchState({ kind: "idle" });
     setImageComposerEpoch((value) => value + 1);
     setPresentations({});
+    setA2uiSurfaces({});
     setProductActionError(null);
     setHistory([]);
     setIsLoading(false);
@@ -337,6 +367,8 @@ export function useWebsocket({
     sendTextMessage,
     sendProductInquiry,
     presentations,
+    a2uiSurfaces,
+    sendDiscoveryAction,
     productActionError,
     sendAudioMessage,
     history,

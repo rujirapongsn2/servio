@@ -188,7 +188,24 @@ def repeated_joints(data: bytes) -> bool:
     return False
 
 
-def compare_tiles(query_image: bytes, candidates: tuple[vision.VisualCandidate, ...], settings: vision.RerankSettings, query: str = '') -> SurfaceResult:
+def refinement_accepts(refinement, same_pattern: bool, pattern: str, color_matches: bool,
+                       query_color: tuple, candidate_color: tuple) -> bool:
+    q_family, q_sat, q_value = query_color
+    family, saturation, value = candidate_color
+    warm = {'brown', 'orange', 'yellow'}
+    family_matches = family == q_family or (
+        family in warm and q_family in warm and max(saturation, q_sat) <= .45)
+    color_ok = (refinement.color == 'any' or
+                refinement.color == 'similar' and color_matches or
+                refinement.color == 'lighter' and family_matches and value >= q_value + .04 or
+                refinement.color == 'darker' and family_matches and value <= q_value - .04)
+    pattern_ok = (refinement.pattern == 'any' or
+                  refinement.pattern == 'similar' and same_pattern or
+                  refinement.pattern == pattern)
+    return bool(color_ok and pattern_ok)
+
+
+def compare_tiles(query_image: bytes, candidates: tuple[vision.VisualCandidate, ...], settings: vision.RerankSettings, query: str = '', *, refinement=None) -> SurfaceResult:
     normalized, _ = validated_image(query_image)
     with Image.open(io.BytesIO(normalized)) as image:
         if max(ImageStat.Stat(image).stddev) < 2:
@@ -217,17 +234,27 @@ def compare_tiles(query_image: bytes, candidates: tuple[vision.VisualCandidate, 
                         and query_joints == repeated_joints(item.image))
         color_matches = close_color(query_image, item.image)
         _family, saturation, value = dominant_color(item.image)
+        if refinement is not None and not refinement_accepts(refinement, same_pattern, pattern,
+                color_matches, (_query_family, query_sat, query_value), (_family, saturation, value)):
+            continue
         color_score = max(0, 1 - .6 * abs(value - query_value) / .35 - .4 * abs(saturation - query_sat) / .3) if color_matches else 0
         texture_score = float(np.dot(query_texture, texture_signature(item.image)))
         score = .5 * same_pattern + .3 * color_score + .2 * texture_score
         note = ('ลายและโทนสีใกล้เคียง' if color_matches and same_pattern else
                 'โทนสีใกล้เคียง ยังไม่ยืนยันว่าลายตรงกับภาพ' if color_matches else
                 'ลายใกล้เคียง แต่โทนสีต่างจากภาพ' if same_pattern else 'ลายและโทนสีต่างจากภาพ')
+        if refinement is not None and refinement.color in ('lighter', 'darker'):
+            note = ('โทนสีอ่อนกว่าภาพต้นฉบับ' if refinement.color == 'lighter' else 'โทนสีเข้มกว่าภาพต้นฉบับ') + (' · ลายใกล้เคียง' if same_pattern else ' · ลายต่างจากภาพ')
         entries.append(SurfaceCandidate(id=item.id, pattern_match='close' if same_pattern else 'different',
                        color_match='close' if color_matches else 'different', visual_similarity=min(1, score), note=note))
     vision._check_assignment(config)
     if not entries:
         return SurfaceResult(True)
+    if refinement is not None:
+        entries.sort(key=lambda item: item.visual_similarity, reverse=True)
+        return SurfaceResult(True, tuple(SurfaceMatch(item.id,
+            'pattern_and_color' if item.pattern_match == item.color_match == 'close' else
+            'pattern_only' if item.pattern_match == 'close' else 'color_only', item.note) for item in entries))
     matches = choose_matches(SurfaceRanking(candidates=entries))
     logging.getLogger(__name__).info('tile_comparison candidates=%s selected=%s basis=%s', len(candidates), len(matches), matches[0].basis if matches else 'insufficient_similarity')
     return SurfaceResult(True, matches)

@@ -48,10 +48,20 @@ def build_carousel_message(images, refs, summary_text, team_agent_id=None):
     import time
     import uuid
 
-    from app.knowledge_image_search import KnowledgeCard, KnowledgeCarousel
+    from app.knowledge_image_search import KnowledgeCard, KnowledgeCarousel, SearchMatch, _unique_product_matches
 
     if not images or len(images) != len(refs):
         return None
+
+    part_numbers = {}
+    if team_agent_id is not None:
+        matches = [SearchMatch(ref, image["title"], image["source_label"], "", 1 - index / 100)
+                   for index, (image, ref) in enumerate(zip(images, refs))]
+        selected = _unique_product_matches(matches, team_agent_id, 5)
+        by_reference = {ref: image for image, ref in zip(images, refs)}
+        images = [by_reference[match.reference] for match in selected]
+        refs = [match.reference for match in selected]
+        part_numbers = {match.reference: match.part_number for match in selected}
 
     from app.product_catalog_labels import catalog_labels
     labels = catalog_labels([image["asset_id"] for image in images], team_agent_id)
@@ -65,7 +75,7 @@ def build_carousel_message(images, refs, summary_text, team_agent_id=None):
                 id=card_id,
                 asset_id=image["asset_id"],
                 title=labels.get(image["asset_id"], {}).get("title", image["title"]),
-                part_number=labels.get(image["asset_id"], {}).get("part_number"),
+                part_number=labels.get(image["asset_id"], {}).get("part_number", part_numbers.get(ref)),
                 brand=labels.get(image["asset_id"], {}).get("brand"),
                 source_label=image["source_label"],
                 description="",

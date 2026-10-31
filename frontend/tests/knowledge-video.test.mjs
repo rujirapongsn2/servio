@@ -1,18 +1,17 @@
+import { localModule } from './helpers/local-module.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { createRequire } from 'node:module';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import ts from 'typescript';
-const dependency = createRequire(import.meta.url);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 function load(file, mocks = {}) {
   const filename = new URL(`../${file}`, import.meta.url);
   const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
-  vm.runInThisContext(`(function(require,exports){${code}\n})`, { filename: filename.pathname })(name => Object.hasOwn(mocks, name) ? mocks[name] : dependency(name), exports);
+  vm.runInThisContext(`(function(require,exports){${code}\n})`, { filename: filename.pathname })(name => Object.hasOwn(mocks, name) ? mocks[name] : localModule(name), exports);
   return exports;
 }
 const parser = load('src/lib/product-presentations.ts');
@@ -137,7 +136,7 @@ test('socket video requests are matched, do not send raw video, and reset revoke
     await act(async () => { tree = create(React.createElement(Probe)); });
     const socket = sockets[0];
     await act(async () => { socket.handlers.open(); refresh(); });
-    assert.equal(socket.sent.length, 0);
+    assert.deepEqual(socket.sent.map(message => message.type), ["a2ui.capabilities"]);
     await act(async () => socket.emit({ type: 'session.config', knowledge_video_enabled: true, video_upload_token: 'session' }));
     await act(async () => refresh());
     assert.equal(socket.sent.at(-1).type, 'knowledge.video.refresh');

@@ -35,12 +35,19 @@ class SearchImage(BaseModel):
     base64: str = Field(min_length=4, max_length=4 * ((images.MAX_BYTES + 2) // 3))
 
 
+class SurfaceRefinement(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    color: Literal["similar", "lighter", "darker", "any"] = "similar"
+    pattern: Literal["similar", "wood_grain", "stone_veined", "solid", "any"] = "similar"
+
+
 class ImageSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     type: Literal["knowledge.image.search"]
     request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     image: SearchImage
     query: str = Field(default="", max_length=2000)
+    refinement: SurfaceRefinement | None = None
 
     @field_validator("query")
     @classmethod
@@ -171,7 +178,11 @@ def search_image(team_id: int | None, request: ImageSearchRequest) -> SearchResu
         return SearchResult("unavailable")
     rows = _nearest(bundles, client.space, vector, text_vector) if text_vector is not None else _nearest(bundles, client.space, vector)
     if use_reranker:
+        if request.refinement is not None:
+            return _reranked_search(team_id, data, rows, request.query, request.refinement)
         return _reranked_search(team_id, data, rows, request.query) if request.query else _reranked_search(team_id, data, rows)
+    if request.refinement is not None:
+        return SearchResult("unavailable")
     with get_db() as db:
         thresholds = image_policy.thresholds(db, bundles, "similarity")
     score_gap = float(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_SCORE_GAP", "0.06"))
@@ -311,11 +322,14 @@ def _known_surface_refs(team_id, rows):
                 if categories & surface_categories or surface_context:
                     # Context only selects the comparison path. Verify each image independently;
                     # a catalog label cannot turn furniture or a logo into a surface sample.
-                    result[ref] = None
+                    confirmed_patterns = {product.surface_pattern for product in metadata.products
+                                          if product.review_status == "confirmed" and product.surface_pattern not in (None, "other")}
+                    result[ref] = next(iter(confirmed_patterns)) if len(confirmed_patterns) == 1 else None
     return result
 
 
-def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") -> SearchResult:
+def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "",
+                     refinement: SurfaceRefinement | None = None) -> SearchResult:
     settings = reranker.RerankSettings.from_environment()
     limit = min(5, max(1, int(os.getenv("MULTIMODAL_IMAGE_QUERY_MAX_RESULTS", "5"))))
     current = assigned_bundles(team_id)
@@ -353,7 +367,7 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
                                                        ref.source, match.title, surface_refs.get((ref.bundle, ref.concept, ref.source, ref.asset))))
             matches[candidate_id] = match
     logging.getLogger(__name__).info("image_rerank rows=%s surface_refs=%s candidates=%s", len(rows), len(surface_refs), len(candidates))
-    if exact and not query:
+    if exact and not query and refinement is None:
         selected = exact
     elif candidates:
         try:
@@ -362,7 +376,9 @@ def _reranked_search(team_id: int | None, data: bytes, rows, query: str = "") ->
             surface = None
             if surface_candidates:
                 from app.tile_surface_search import compare_tiles
-                surface = compare_tiles(data, surface_candidates, settings, query)
+                surface = compare_tiles(data, surface_candidates, settings, query, refinement=refinement) if refinement else compare_tiles(data, surface_candidates, settings, query)
+            if refinement is not None and (surface is None or not surface.applicable):
+                return SearchResult("no_match")
             if surface is not None and (surface.applicable or len(surface_candidates) == len(candidates)):
                 limit = min(limit, 3)
                 ranked = tuple(item.id for item in surface.matches)

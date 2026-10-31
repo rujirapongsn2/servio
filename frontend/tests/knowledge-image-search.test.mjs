@@ -1,23 +1,22 @@
+import { localModule } from './helpers/local-module.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import React from 'react';
 import TestRenderer from 'react-test-renderer';
 import ts from 'typescript';
 
 const { act, create } = TestRenderer;
-const requireDependency = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 function load(file, mocks = {}) {
   const filename = path.join(root, file);
   const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
-  const require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : requireDependency(name);
+  const require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : localModule(name);
   vm.runInThisContext(`(function(require,exports){${source}\n})`, { filename })(require, exports);
   return exports;
 }

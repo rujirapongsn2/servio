@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://servio.ai/a2ui/catalogs/product-discovery/v1",
+  "catalogId": "https://servio.ai/a2ui/catalogs/product-discovery/v1",
+  "title": "Servio Product Discovery Catalog",
+  "description": "A2UI v0.9.1 application catalog. ProductDiscovery owns local comparison selection; server actions receive only filters or a server-issued card ID.",
+  "$defs": {
+    "theme": {"type": "object", "additionalProperties": false},
+    "anyComponent": {"$ref": "#/$defs/ProductDiscovery"},
+    "ProductDiscovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "component", "data", "refineAction", "inquireAction"],
+      "properties": {
+        "id": {"const": "root"},
+        "component": {"const": "ProductDiscovery"},
+        "data": {
+          "type": "object", "additionalProperties": false,
+          "required": ["path"], "properties": {"path": {"const": "/discovery"}}
+        },
+        "refineAction": {"$ref": "#/$defs/refineAction"},
+        "inquireAction": {"$ref": "#/$defs/inquireAction"}
+      }
+    },
+    "refineAction": {
+      "type": "object", "additionalProperties": false, "required": ["event"],
+      "properties": {"event": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"const": "discovery.refine"}}}}
+    },
+    "inquireAction": {
+      "type": "object", "additionalProperties": false, "required": ["event"],
+      "properties": {"event": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"const": "discovery.inquire"}}}}
+    }
+  },
+  "components": {"ProductDiscovery": {"$ref": "#/$defs/ProductDiscovery"}},
+  "functions": []
+}

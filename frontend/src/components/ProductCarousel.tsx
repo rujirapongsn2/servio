@@ -13,10 +13,11 @@ function ProductImage({ product }: { product: CarouselProduct }) {
   </div>;
 }
 
-export function ProductCarousel({ presentation, onInquire, disabled }: {
+export function ProductCarousel({ presentation, onInquire, disabled, selection }: {
   presentation: ProductCarouselPresentation | KnowledgeProductCarouselPresentation;
   onInquire: (productId: string) => void;
   disabled: boolean;
+  selection?: { ids: string[]; onToggle: (id: string) => void };
 }) {
   const rail = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -59,6 +60,7 @@ export function ProductCarousel({ presentation, onInquire, disabled }: {
       {presentation.products.map((product) => <article key={product.id} className="w-[260px] max-w-[85%] shrink-0 snap-start flex flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
         <ProductImage product={product} />
         <div className="p-3 flex flex-col gap-2 flex-1 min-w-0">
+          {selection && <label className="flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" checked={selection.ids.includes(product.id)} disabled={!selection.ids.includes(product.id) && selection.ids.length >= 3} onChange={() => selection.onToggle(product.id)} aria-label={`เลือกเปรียบเทียบ ${product.title}`} />เปรียบเทียบ</label>}
           <h3 className="text-sm font-semibold break-words line-clamp-2">{product.title}</h3>
           {product.part_number && <div className="font-mono text-sm break-all">{"asset_id" in product ? `รหัส ${product.part_number}` : product.part_number}</div>}
           {product.brand && <div className="text-xs text-gray-500 break-words">{product.brand}</div>}
