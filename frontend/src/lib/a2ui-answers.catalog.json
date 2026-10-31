@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://servio.ai/a2ui/catalogs/answers/v1",
+  "catalogId": "https://servio.ai/a2ui/catalogs/answers/v1",
+  "title": "Servio Read-only Answers",
+  "$defs": {
+    "anyComponent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "component", "data"],
+      "properties": {
+        "id": {"const": "root"}, "component": {"const": "Answer"},
+        "data": {"type": "object", "additionalProperties": false, "required": ["path"], "properties": {"path": {"const": "/answer"}}}
+      }
+    },
+    "theme": {"type": "object", "additionalProperties": false}
+  },
+  "components": {"Answer": {"$ref": "#/$defs/anyComponent"}},
+  "functions": []
+}

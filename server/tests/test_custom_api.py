@@ -64,7 +64,7 @@ def test_actual_http_method_headers_query_and_json_body(echo_server, method):
     }
     query = 'ไทย "quoted"'
     result = invoke(config, query)
-    assert result == ('' if method == 'HEAD' else 'received')
+    assert (json.loads(result)['response'] if method == 'GET' else result) == ('' if method == 'HEAD' else 'received')
     request = received[0]
     assert request['method'] == method
     assert parse_qsl(urlsplit(request['path']).query) == [('fixed', 'original'), ('tag', 'one'), ('tag', query)]
@@ -161,7 +161,8 @@ def test_legacy_http_execution_is_unchanged(monkeypatch, method):
     monkeypatch.setattr('requests.' + method.lower(), respond)
     monkeypatch.setattr('requests.request', lambda *args, **kwargs: pytest.fail('Legacy used modern executor'))
     config = {'endpoint': 'https://example.com', 'method': method, 'auth_token': 'old', 'timeout_seconds': 23, 'payload_template': {'message': 'old', 'fixed': 4}}
-    assert invoke(config, 'new query') == 'legacy'
+    output = invoke(config, 'new query')
+    assert (json.loads(output)['response'] if method == 'GET' else output) == 'legacy'
     assert calls == [(('https://example.com',), {'headers': {'Content-Type': 'application/json', 'Authorization': 'Bearer old'}, 'timeout': 23, **({'json': {'message': 'new query', 'fixed': 4}} if method == 'POST' else {'params': {'query': 'new query'}})})]
     assert config['payload_template']['message'] == 'old'
 

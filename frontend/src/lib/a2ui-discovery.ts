@@ -1,7 +1,9 @@
+import { ANSWER_CATALOG, parseAnswerSnapshots, type AnswerSurface } from "./a2ui-answers";
 import catalog from "./a2ui-discovery.catalog.json";
 import { parseKnowledgeProductCarousel, type KnowledgeProduct } from "./product-presentations";
 
 export const DISCOVERY_CATALOG = catalog.catalogId;
+export const SUPPORTED_CATALOGS = [DISCOVERY_CATALOG, ANSWER_CATALOG];
 export const A2UI_VERSION = "v0.9.1";
 export const COLOR_OPTIONS = [
   { value: "similar", label: "สีใกล้เคียง" }, { value: "lighter", label: "สีอ่อนกว่า" },
@@ -17,11 +19,12 @@ export type DiscoveryFilters = {
   pattern: typeof PATTERN_OPTIONS[number]["value"];
 };
 export type DiscoverySurface = {
-  id: string; active: boolean; summary: string; queryImage: string;
+  kind: "discovery"; id: string; active: boolean; summary: string; queryImage: string;
   facets: Record<string, { color: string; pattern: string; category: string }>;
   products: KnowledgeProduct[]; filters: DiscoveryFilters;
 };
 export type DiscoverySurfaces = Record<string, DiscoverySurface>;
+export type A2uiSurfaces = Record<string, DiscoverySurface | AnswerSurface>;
 export type DiscoveryAction =
   | { name: "discovery.refine"; context: DiscoveryFilters }
   | { name: "discovery.inquire"; context: { card_id: string } };
@@ -40,7 +43,7 @@ export function patternValue(value: string): DiscoveryFilters["pattern"] | null 
 export function parseDiscoverySnapshots(value: unknown): DiscoverySurfaces {
   const surfaces: DiscoverySurfaces = Object.create(null);
   if (!object(value)) return surfaces;
-  for (const [id, messages] of Object.entries(value).slice(-20)) {
+  for (const [id, messages] of Object.entries(value).slice(-40)) {
     if (!/^msg_[a-f0-9]{32}$/.test(id) || !Array.isArray(messages) || messages.length !== 3) continue;
     const [create, components, update] = messages;
     if (![create, components, update].every(message => object(message) && message.version === A2UI_VERSION)) continue;
@@ -67,9 +70,13 @@ export function parseDiscoverySnapshots(value: unknown): DiscoverySurfaces {
         if (parsed?.products.some(product => product.id === cardId)) facets[cardId] = { color: facet.color, pattern: facet.pattern, category: facet.category };
       }
     }
-    surfaces[id] = { id, facets, active: data.active, summary: data.summary, queryImage: data.queryImage, filters: { color, pattern }, products: parsed?.products ?? [] };
+    surfaces[id] = { kind: "discovery", id, facets, active: data.active, summary: data.summary, queryImage: data.queryImage, filters: { color, pattern }, products: parsed?.products ?? [] };
   }
   return surfaces;
+}
+
+export function parseA2uiSnapshots(value: unknown): A2uiSurfaces {
+  return Object.assign(Object.create(null), parseAnswerSnapshots(value), parseDiscoverySnapshots(value));
 }
 
 export function discoveryActionEnvelope(surfaceId: string, action: DiscoveryAction) {

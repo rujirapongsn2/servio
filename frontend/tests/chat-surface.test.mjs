@@ -34,7 +34,7 @@ async function harness(props = {}, { framed = false, query = {}, saved = null, t
   if (!framed) globalThis.window.parent = globalThis.window;
   let socketMounts = 0, audioMounts = 0, audioEnabled, resetCount = 0, socketOptions;
   let reconnects = 0;
-  const state = { isReady: true, connection: { kind: 'open' }, reconnect: () => { reconnects++; }, sendAudioMessage() {}, sendTextMessage: (text) => sent.push(text), history: [], resetHistory: () => { resetCount++; }, presentations: {}, sendProductInquiry: (...args) => inquiries.push(['product', ...args]), sendKnowledgeInquiry: (...args) => inquiries.push(['knowledge', ...args]), imageSearchAvailable: true, imageSearchState: { kind: 'idle' }, imageComposerEpoch: 0, sendImageSearch: () => true, productActionError: null, isLoading: false, agentName: 'ฝ่ายบริการ', voiceResponseEnabled: true };
+  const state = { isReady: true, connection: { kind: 'open' }, reconnect: () => { reconnects++; }, sendAudioMessage() {}, sendTextMessage: (text) => sent.push(text), history: [], resetHistory: () => { resetCount++; }, presentations: {}, a2uiSurfaces: {}, sendDiscoveryAction: () => true, sendProductInquiry: (...args) => inquiries.push(['product', ...args]), sendKnowledgeInquiry: (...args) => inquiries.push(['knowledge', ...args]), imageSearchAvailable: true, imageSearchState: { kind: 'idle' }, imageComposerEpoch: 0, sendImageSearch: () => true, productActionError: null, isLoading: false, agentName: 'ฝ่ายบริการ', voiceResponseEnabled: true };
   const { default: WidgetContent } = load('src/components/WidgetContent.tsx', {
     './ChatSurface.module.css': { default: new Proxy({}, { get: (_, key) => String(key) }) },
     'next/image': { default: (props) => React.createElement('img', props) },
@@ -42,7 +42,7 @@ async function harness(props = {}, { framed = false, query = {}, saved = null, t
     '@/components/icons/WriteIcon': { default: () => null }, '@/components/icons/MicIcon': { default: () => null },
     '@/lib/chat-theme': chatTheme,
     '@/components/AudioChat': { default: (props) => React.createElement('audio-probe', props) },
-    '@/components/Composer': { Composer }, '@/components/VideoAttachmentComposer': { VideoAttachmentComposer: () => null }, '@/components/ImageSearchComposer': { ImageSearchComposer },
+    '@/components/Composer': { Composer }, '@/components/VideoAttachmentComposer': { VideoAttachmentComposer: ({ renderComposer }) => renderComposer(null) }, '@/components/ImageSearchComposer': { ImageSearchComposer },
     '@/components/ChatDialog': { ChatHistory: (props) => React.createElement('history-probe', props) },
     '@/hooks/useAudio': { useAudio: ({ enabled }) => { audioEnabled = enabled; React.useEffect(() => { audioMounts++; }, []); return { isReady: true, playAudio() {}, startRecording() {}, stopRecording() {}, frequencies: [] }; } },
     '@/hooks/useWebsocket': { useWebsocket: (options) => { socketOptions = options; React.useEffect(() => { socketMounts++; }, []); return state; } },
@@ -88,6 +88,7 @@ test('widget forwards inquiries, loading, readiness, errors, credentials and res
     assert.equal(h.renderer.root.findByType('section').props['data-variant'], 'widget');
     const history = h.renderer.root.findByType('history-probe').props;
     assert.equal(history.messages, h.state.history); assert.equal(history.presentations, h.state.presentations);
+    assert.equal(history.a2uiSurfaces, h.state.a2uiSurfaces); assert.equal(history.onDiscoveryAction, h.state.sendDiscoveryAction);
     assert.equal(history.isLoading, true); assert.equal(history.productActionsDisabled, true); assert.equal(history.productActionError, 'Unavailable');
     history.onProductInquiry('call-1', 'product-1'); history.onKnowledgeInquiry('message-1', 'card-1');
     assert.deepEqual(h.inquiries, [['product', 'call-1', 'product-1'], ['knowledge', 'message-1', 'card-1']]);

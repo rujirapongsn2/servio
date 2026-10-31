@@ -26,6 +26,9 @@ export default function Home() {
     history: messages,
     resetHistory,
     presentations,
+    a2uiSurfaces,
+    sendDiscoveryAction,
+    sendKnowledgeInquiry,
     sendProductInquiry,
     productActionError,
     isLoading,
@@ -52,7 +55,7 @@ export default function Home() {
       />
       <div className="flex-1 min-h-0 min-w-0 w-full max-w-5xl mx-auto px-4 py-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 h-full flex flex-col overflow-hidden">
-          <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} presentations={presentations} onProductInquiry={sendProductInquiry} productActionsDisabled={!websocketReady} productActionError={productActionError} />
+          <ChatHistory messages={messages} isLoading={isLoading} collapsed={collapsed} presentations={presentations} a2uiSurfaces={a2uiSurfaces} onDiscoveryAction={sendDiscoveryAction} onKnowledgeInquiry={sendKnowledgeInquiry} onProductInquiry={sendProductInquiry} productActionsDisabled={!websocketReady} productActionError={productActionError} />
         </div>
       </div>
       <div className="w-full max-w-5xl mx-auto px-4 pb-6">

@@ -1,4 +1,4 @@
-"""Tak's bounded A2UI v0.9.1 catalog and server-owned image search surfaces."""
+"""Servio's bounded A2UI v0.9.1 catalog and server-owned image search surfaces."""
 from __future__ import annotations
 
 import base64
@@ -57,7 +57,7 @@ def enabled_for_team(team_id: int | None) -> bool:
     from app.orm_models import TeamAgent
     with get_db() as db:
         team = db.get(TeamAgent, team_id) if team_id else None
-        return bool(team and team.status == "active" and team.name.strip().casefold() == "tak")
+        return bool(team and team.status == "active")
 
 
 @dataclass
@@ -123,16 +123,22 @@ def catalog_facets(refs: dict, team_id: int) -> dict:
     from app.orm_models import OKFBundle, OKFConceptIndex
     from app.okf_service import OKFService
     from app.knowledge_products import ProductMetadata
-    from app.knowledge_image_search import assigned_bundles
+    from app.knowledge_image_search import assigned_bundles, _known_surface_refs
     from pydantic import ValidationError
     patterns = {"wood_grain": "ลายไม้", "stone_veined": "ลายหินเส้น", "solid": "สีพื้น",
                 "stone_speckled": "ลายหินเม็ด", "geometric": "ลายเรขาคณิต", "mixed": "ลายผสม"}
     result = {}
     allowed = assigned_bundles(team_id)
+    eligible = _known_surface_refs(team_id, [
+        {"bundle_id": ref.bundle, "concept_id": ref.concept, "source_hash": ref.source, "asset_id": ref.asset}
+        for ref in refs.values() if ref.bundle in allowed
+    ])
+    if not eligible:
+        return {}
     service = OKFService()
     with get_db() as db:
         for card_id, ref in refs.items():
-            if ref.bundle not in allowed:
+            if (ref.bundle, ref.concept, ref.source, ref.asset) not in eligible:
                 continue
             bundle = db.get(OKFBundle, ref.bundle)
             concept = db.query(OKFConceptIndex).filter_by(bundle_id=ref.bundle,

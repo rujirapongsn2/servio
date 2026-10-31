@@ -313,6 +313,7 @@ def socket_runtime(monkeypatch):
         track_message = lambda *args, **kwargs: None
 
     monkeypatch.setattr(utils, "AnalyticsService", Analytics)
+    monkeypatch.setattr("app.video_attachments.reset_session", lambda _: None)
     monkeypatch.setattr(database, "validate_api_key", lambda *args, **kwargs: {"team_agent_id": 1})
     monkeypatch.setattr(database, "increment_api_key_usage", lambda *_: None)
     monkeypatch.setattr(database, "get_team_agent_by_id", lambda *_: {"name": "Test"})

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { localModule } from './helpers/local-module.mjs';
 import React, { act } from 'react';
 import { create } from 'react-test-renderer';
 
@@ -14,7 +15,7 @@ function load(path, mocks = {}) {
   const require = name => {
     if (name in mocks) return mocks[name];
     if (name === 'react') return React;
-    throw new Error('Missing '+name);
+    return localModule(name, new URL('../'+path, import.meta.url).pathname);
   };
   vm.runInThisContext(`(function(require,exports){${code}\n})`)(require,exports);
   return exports;

@@ -353,9 +353,11 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(None)):
                     from app.a2ui_discovery import CATALOG_ID, enabled_for_team
                     capabilities = message.get("a2uiClientCapabilities", {})
                     supported = capabilities.get("supportedCatalogIds") if isinstance(capabilities, dict) else None
-                    connection.discovery.enabled = bool(isinstance(supported, list) and len(supported) <= 10
-                        and CATALOG_ID in supported
-                        and await asyncio.to_thread(enabled_for_team, team_agent_id))
+                    from app.a2ui_answers import CATALOG_ID as ANSWER_CATALOG_ID
+                    negotiated = isinstance(supported, list) and len(supported) <= 10
+                    eligible = await asyncio.to_thread(enabled_for_team, team_agent_id) if negotiated else False
+                    connection.discovery.enabled = bool(eligible and CATALOG_ID in supported)
+                    connection.answers.enabled = bool(eligible and ANSWER_CATALOG_ID in supported)
                 elif message.get("type") == "a2ui.action":
                     from app.a2ui_discovery import ActionRequest
                     try:

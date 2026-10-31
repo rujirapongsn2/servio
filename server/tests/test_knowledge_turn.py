@@ -69,7 +69,7 @@ def test_failed_search_can_be_retried_within_the_same_turn(runtime, monkeypatch)
     async def run():
         context = RunContextWrapper(context=None)
         assert 'Error searching' in await tool.on_invoke_tool(context, '{"query":"refund"}')
-        assert await tool.on_invoke_tool(context, '{"query":"refund"}') == 'Recovered product evidence'
+        assert json.loads(await tool.on_invoke_tool(context, '{"query":"refund"}'))["response"] == 'Recovered product evidence'
     asyncio.run(run())
     assert attempts == ['refund', 'refund']
 

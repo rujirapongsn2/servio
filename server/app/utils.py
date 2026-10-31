@@ -16,6 +16,7 @@ from fastapi import WebSocket
 from openai.types.responses import ResponseTextDeltaEvent
 
 from app.a2ui_discovery import DiscoverySession, catalog_facets
+from app.a2ui_answers import AnswerSession
 from app.analytics_service import AnalyticsService
 from app.product_presentations import parse_product_carousel, product_inquiry
 from app.knowledge_image_presentations import hydrate_knowledge_images, KnowledgeImageReferences
@@ -129,6 +130,8 @@ class WebsocketHelper:
         self._last_carousel_message_id = None
         self.image_search_session = ImageSearchSession()
         self.discovery = DiscoverySession()
+        self.answers = AnswerSession()
+        self._read_calls = {}
         self.team_agent_id = team_agent_id
         self.session_id = session_id
         self.voice_response_enabled = voice_response_enabled
@@ -149,6 +152,8 @@ class WebsocketHelper:
         self._knowledge_image_refs.clear()
         self.image_search_session.reset()
         self.discovery.reset()
+        self.answers.reset()
+        self._read_calls.clear()
 
     async def _image_search_manual(self, request: ImageSearchRequest) -> bool:
         from app.session_manager import session_manager
@@ -219,8 +224,10 @@ class WebsocketHelper:
                     self.image_search_session.refs[message_id][1], self.team_agent_id) if result.status == "matched" else {}
                 if generation != self.image_search_session.generation:
                     return
-                self.discovery.publish(surface_id or message_id, request,
-                    presentation if result.status == "matched" else None, refining=surface_id is not None, facets=facets)
+                # Refinement controls belong to supported surface samples, not every image library.
+                if surface_id or facets:
+                    self.discovery.publish(surface_id or message_id, request,
+                        presentation if result.status == "matched" else None, refining=surface_id is not None, facets=facets)
                 if surface_id:
                     for item in self.history:
                         if item.get("id") == surface_id:
@@ -235,7 +242,7 @@ class WebsocketHelper:
             if generation != self.image_search_session.generation:
                 return
             await self.websocket.send_json(_sanitize_payload({"type": "history.updated", "reason": "knowledge.image.result", "request_id": request.request_id, "inputs": self.history,
-                "a2ui": self.discovery.snapshots, "presentations": self.presentations, "agent_name": self.latest_agent.name}))
+                "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations, "agent_name": self.latest_agent.name}))
             await self.websocket.send_json({"type": "knowledge.image.result", "request_id": request.request_id,
                 "status": result.status, "message_id": message_id})
         except InvalidSearchImage as exc:
@@ -280,7 +287,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                    "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                     "reason": "user.input",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
@@ -299,7 +306,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                    "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                     "reason": "response.text.delta",
                     "inputs": self.history
                     + [
@@ -391,7 +398,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
-                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                        "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                         "reason": "agent.updated",
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
@@ -408,12 +415,19 @@ class WebsocketHelper:
             self.history.append(item)
             if item.get("type") == "function_call":
                 for tool in event.item.agent.tools:
+                    if getattr(tool, "name", None) != item.get("name"):
+                        continue
+                    if getattr(tool, "_servio_read_results", False):
+                        self._read_calls[item["call_id"]] = tool.name
                     bundle_id = getattr(tool, "_servio_knowledge_bundle_id", None)
-                    if getattr(tool, "name", None) == item.get("name") and bundle_id:
+                    if bundle_id:
                         self._knowledge_calls[item["call_id"]] = bundle_id
-                        break
+                    break
             if item.get("type") == "function_call_output":
                 call_id = item.get("call_id")
+                label = self._read_calls.pop(call_id, None)
+                if label is not None:
+                    self.answers.capture(call_id, label, item.get("output"))
                 bundle_id = self._knowledge_calls.pop(call_id, None)
                 carousel = parse_product_carousel(item.get("output"))
                 if carousel is None and bundle_id is not None:
@@ -440,7 +454,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
-                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                        "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                         "reason": "response.input_item",
                         "inputs": self.history,
                         "agent_name": self.latest_agent.name,
@@ -456,7 +470,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
-                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                        "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                         "inputs": self.history,
                         "sync": True,
                         "agent_name": self.latest_agent.name,
@@ -494,12 +508,13 @@ class WebsocketHelper:
                         while len(self.presentations) > 50:
                             del self.presentations[next(iter(self.presentations))]
                         break
+            self.answers.publish(self.history, skip_ids=set(self.presentations) | set(self.discovery.snapshots))
             await self.websocket.send_text(
             json.dumps(_sanitize_payload(
                     {
                         "type": "history.updated",
                         **({"request_id": video_presentation[0]} if video_presentation is not None else {}),
-                        "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                        "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                         "inputs": self.history,
                         "reason": "response.done",
                         "agent_name": self.latest_agent.name,
@@ -526,7 +541,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                    "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                     "reason": "assistant.message",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,
@@ -554,7 +569,7 @@ class WebsocketHelper:
             json.dumps(_sanitize_payload(
                 {
                     "type": "history.updated",
-                    "a2ui": self.discovery.snapshots, "presentations": self.presentations,
+                    "a2ui": {**self.answers.snapshots, **self.discovery.snapshots}, "presentations": self.presentations,
                     "reason": "admin.message",
                     "inputs": self.history,
                     "agent_name": self.latest_agent.name,

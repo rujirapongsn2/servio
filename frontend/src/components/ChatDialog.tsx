@@ -8,8 +8,9 @@ import { MessageBubble } from "@/components/MessageBubble";
 import { KnowledgeVideos } from "@/components/KnowledgeVideos";
 import { KnowledgeAudio } from "@/components/KnowledgeAudio";
 import { KnowledgeImages } from "@/components/KnowledgeImages";
+import { AnswerSurface } from "@/components/AnswerSurface";
 import { ProductDiscovery } from "@/components/ProductDiscovery";
-import type { DiscoverySurfaces, DiscoveryAction } from "@/lib/a2ui-discovery";
+import type { A2uiSurfaces, DiscoveryAction } from "@/lib/a2ui-discovery";
 import { ProductCarousel } from "@/components/ProductCarousel";
 import { ProductPresentations, type KnowledgeVideo } from "@/lib/product-presentations";
 import { answerLandedAfter } from "@/lib/chat-flow";
@@ -21,7 +22,7 @@ interface ChatDialogProps {
   isLoading: boolean;
   collapsed?: boolean;
   presentations?: ProductPresentations;
-  a2uiSurfaces?: DiscoverySurfaces;
+  a2uiSurfaces?: A2uiSurfaces;
   onDiscoveryAction?: (surfaceId: string, action: DiscoveryAction) => boolean;
   onProductInquiry?: (callId: string, productId: string) => void;
   onKnowledgeInquiry?: (messageId: string, cardId: string) => void;
@@ -117,7 +118,8 @@ export function ChatHistory({ locale = "th", messages, isLoading, collapsed = fa
           if (message.type === "message" && message.role === "user") productResponse = false;
           if (message.type === "message" && message.role === "assistant" && "id" in message && typeof message.id === "string") {
             const discovery = a2uiSurfaces[message.id];
-            if (discovery && onDiscoveryAction) return <ProductDiscovery key={message.id} surface={discovery} disabled={productActionsDisabled || isLoading} onAction={onDiscoveryAction} />;
+            if (discovery?.kind === "answer" && !productResponse) return <AnswerSurface key={message.id} surface={discovery} locale={locale} />;
+            if (discovery?.kind === "discovery" && onDiscoveryAction) return <ProductDiscovery key={message.id} surface={discovery} disabled={productActionsDisabled || isLoading} onAction={onDiscoveryAction} />;
             const presentation = presentations[message.id];
 
             if (presentation?.type === "knowledge_product_carousel") {

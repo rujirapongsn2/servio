@@ -243,6 +243,10 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
             if carousel is not None:
                 return carousel.model_dump_json(exclude_none=True)
 
+            if str(method).upper() in ("GET", "HEAD"):
+                from app.a2ui_answers import read_result
+                return read_result(_extract_preferred_text(data) or json.dumps(data, ensure_ascii=False), data)
+
             # Extract answer from response (handle Tavily-style responses)
             if isinstance(data, dict) and "answer" in data and "results" in data:
                 # Tavily-style response with answer and results
@@ -278,7 +282,9 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
     dynamic_tool_func.__doc__ = description
 
     # Apply the decorator
-    return function_tool(dynamic_tool_func)
+    tool = function_tool(dynamic_tool_func)
+    tool._servio_read_results = isinstance(method, str) and method.upper() in ("GET", "HEAD")
+    return tool
 
 
 def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
@@ -308,7 +314,8 @@ def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
             if sources:
                 response_text += "\n\nSources:\n" + "\n".join(f"- {source}" for source in sources)
 
-            return response_text
+            from app.a2ui_answers import read_result, Source
+            return read_result(response_text, sources=[Source(title=source[:300], excerpt="") for source in sources if isinstance(source, str) and source.strip()][:8])
 
         except Exception as e:
             return f"Error searching documents: {str(e)}"
@@ -318,7 +325,9 @@ def create_gemini_file_search_tool(tool_name: str, config: Dict[str, Any]):
     dynamic_gemini_tool.__doc__ = description
 
     # Apply the decorator
-    return function_tool(dynamic_gemini_tool)
+    tool = function_tool(dynamic_gemini_tool)
+    tool._servio_read_results = True
+    return tool
 
 
 def create_okf_knowledge_graph_tool(
@@ -382,7 +391,8 @@ def create_okf_knowledge_graph_tool(
                 return json.dumps({key: result[key] for key in ("type", "version", "response", "images")}, ensure_ascii=False)
             if result.get("type") == "knowledge_video_refs":
                 return json.dumps({key: result[key] for key in ("type", "version", "response", "videos")}, ensure_ascii=False)
-            return result.get("response", "No matching OKF concepts found.")
+            from app.a2ui_answers import knowledge_result
+            return knowledge_result(result)
         except Exception as e:
             return f"Error searching OKF knowledge: {str(e)}"
 
@@ -455,6 +465,7 @@ def create_okf_knowledge_graph_tool(
             selected_function = queryable_okf_tool
 
     tool = function_tool(selected_function)
+    tool._servio_read_results = True
     tool._servio_knowledge_bundle_id = bundle_id
     tool._servio_image_filenames = image_filenames
     return reuse_knowledge_searches(tool, (tool_name, bundle_id, runtime_team_agent_id, limit, expand_links))
@@ -530,7 +541,9 @@ def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
     mcp_tool_call.__name__ = tool_name
     mcp_tool_call.__doc__ = description
 
-    return function_tool(mcp_tool_call)
+    tool = function_tool(mcp_tool_call)
+    tool._servio_read_results = True
+    return tool
 
 
 async def _call_mcp_server(
@@ -614,7 +627,20 @@ async def _call_mcp_server(
                         return carousel.model_dump_json(exclude_none=True)
                     if isinstance(result.structuredContent, dict) and result.structuredContent.get("type") == "product_carousel":
                         return "MCP Error: Invalid product carousel structuredContent"
-                    return text or result.model_dump_json(by_alias=True, exclude_none=True)
+                    annotations = target_tool.annotations
+                    if annotations is not None and annotations.readOnlyHint is True and annotations.destructiveHint is not True:
+                        from app.a2ui_answers import read_result
+                        data = result.structuredContent
+                        if data is None:
+                            try:
+                                data = json.loads(text)
+                            except (ValueError, TypeError):
+                                pass
+                        return read_result(text or json.dumps(data, ensure_ascii=False), data)
+                    fallback = text or result.model_dump_json(by_alias=True, exclude_none=True)
+                    # Remote text cannot impersonate the local read-result adapter.
+                    from app.a2ui_answers import parse_read_result
+                    return "Tool response: " + fallback if parse_read_result(fallback) else fallback
     except httpx.HTTPError as exc:
         return f"HTTP Error calling MCP server: {exc}"
     except Exception as exc:

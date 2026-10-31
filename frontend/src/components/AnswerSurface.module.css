@@ -1,0 +1,16 @@
+.answer { min-width: 0; max-width: 100%; display: grid; gap: .5rem; }
+.details { min-width: 0; border: 1px solid #dbe4ec; border-radius: .75rem; background: rgba(255,255,255,.8); font-size: .875rem; color: #263746; }
+.details summary { cursor: pointer; padding: .65rem .85rem; font-weight: 600; }
+.details summary:focus-visible, .scroll:focus-visible { outline: 2px solid #2381b5; outline-offset: 2px; }
+.scroll { max-height: 22rem; overflow: auto; padding: 0 .85rem .75rem; }
+.scroll table { width: 100%; border-collapse: collapse; text-align: left; }
+.scroll th, .scroll td { padding: .5rem; border-bottom: 1px solid #e2e8f0; min-width: 6rem; max-width: 18rem; overflow-wrap: anywhere; vertical-align: top; }
+.fields { margin: 0; }
+.fields > div { display: grid; grid-template-columns: minmax(5rem, 1fr) minmax(0, 2fr); gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #e2e8f0; }
+.fields dt { font-weight: 600; overflow-wrap: anywhere; }
+.fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sources { margin: 0; padding: 0 1rem .75rem 2rem; max-height: 22rem; overflow: auto; }
+.sources li { padding: .4rem 0; overflow-wrap: anywhere; }
+.sources p { margin: .35rem 0 0; white-space: pre-wrap; line-height: 1.6; }
+.notice { padding: 0 .85rem .75rem; margin: 0; color: #657384; }
+@media (prefers-color-scheme: dark) { .details { background: #1f2937; color: #e5e7eb; border-color: #4b5563; } }

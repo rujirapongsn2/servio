@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { parseProductPresentations, ProductPresentations } from "@/lib/product-presentations";
-import { DISCOVERY_CATALOG, parseDiscoverySnapshots, discoveryActionEnvelope, type DiscoverySurfaces, type DiscoveryAction } from "@/lib/a2ui-discovery";
+import { SUPPORTED_CATALOGS, parseA2uiSnapshots, discoveryActionEnvelope, type A2uiSurfaces, type DiscoveryAction } from "@/lib/a2ui-discovery";
 import { Message } from "@/lib/types";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "@/lib/utils";
 import { getWebsocketBaseUrl } from "@/lib/api";
@@ -63,7 +63,7 @@ export function useWebsocket({
   const [videoUploadToken, setVideoUploadToken] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [history, setHistory] = useState<Message[]>([]);
-  const [a2uiSurfaces, setA2uiSurfaces] = useState<DiscoverySurfaces>({});
+  const [a2uiSurfaces, setA2uiSurfaces] = useState<A2uiSurfaces>({});
   const [presentations, setPresentations] = useState<ProductPresentations>({});
   const [productActionError, setProductActionError] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
@@ -106,7 +106,7 @@ export function useWebsocket({
     }, 30 * 60 * 1000);
     ws.addEventListener("open", () => {
       if (websocket.current !== ws) return;
-      ws.send(JSON.stringify({ type: "a2ui.capabilities", a2uiClientCapabilities: { supportedCatalogIds: [DISCOVERY_CATALOG] } }));
+      ws.send(JSON.stringify({ type: "a2ui.capabilities", a2uiClientCapabilities: { supportedCatalogIds: SUPPORTED_CATALOGS } }));
       setIsReady(true);
       setConnection({ kind: "open" });
     });
@@ -199,7 +199,7 @@ export function useWebsocket({
         }
         setHistory(data.inputs);
         setPresentations(parseProductPresentations(data.presentations));
-        if (data.a2ui !== undefined || data.inputs.length === 0) setA2uiSurfaces(parseDiscoverySnapshots(data.a2ui));
+        if (data.a2ui !== undefined || data.inputs.length === 0) setA2uiSurfaces(parseA2uiSnapshots(data.a2ui));
         if (data.agent_name) {
           setAgentName(data.agent_name);
         }
@@ -246,7 +246,7 @@ export function useWebsocket({
 
   function sendDiscoveryAction(surfaceId: string, action: DiscoveryAction): boolean {
     const surface = a2uiSurfaces[surfaceId];
-    if (!surface?.active || websocket.current?.readyState !== WebSocket.OPEN || isLoading || imageRequest.current || videoRequest.current || discoveryRequest.current) return false;
+    if (!surface || surface.kind !== "discovery" || !surface.active || websocket.current?.readyState !== WebSocket.OPEN || isLoading || imageRequest.current || videoRequest.current || discoveryRequest.current) return false;
     if (action.name === "discovery.inquire" && !surface.products.some(product => product.id === action.context.card_id)) return false;
     const envelope = discoveryActionEnvelope(surfaceId, action);
     discoveryRequest.current = envelope.request_id;
