@@ -175,3 +175,41 @@ def test_production_workflow_is_main_only_and_waits_for_validation():
     for step in (*workflow['jobs']['validate']['steps'], *job['steps']):
         if 'uses' in step:
             assert len(step['uses'].split('@')[1]) == 40
+
+
+@pytest.mark.parametrize('status,body,success', [(200,{'status':'healthy'},True),(403,{},False),(200,{'status':'unhealthy'},False)])
+def test_health_uses_standard_http_client_and_rejects_bad_results(host, monkeypatch, status, body, success):
+    import httpx
+    instance, _, _ = host
+    response = httpx.Response(status, json=body)
+    seen = []
+    def get(url, **kwargs):
+        seen.append((url, kwargs)); return response
+    monkeypatch.setattr(deploy.httpx, 'get', get)
+    if success:
+        deploy.Deployment.health(instance, 'backend', 'https://example.test')
+    else:
+        with pytest.raises(deploy.DeploymentError):
+            deploy.Deployment.health(instance, 'backend', 'https://example.test')
+    assert seen == [('https://example.test/api/health', {'timeout':5, 'follow_redirects':False})]
+
+
+def test_start_retries_httpx_connection_errors_until_service_is_ready(host, monkeypatch):
+    import httpx
+    instance, _, _ = host
+    instance.release = Path('/new')
+    descriptor={'port':18076,'command':['fake-service'],'cwd':'/new/server','source':'/new'}
+    class Process:
+        pid=123
+        def poll(self): return None
+        def terminate(self): pytest.fail('Healthy service must stay running')
+    monkeypatch.setattr(deploy.subprocess,'Popen',lambda *args,**kwargs:Process())
+    monkeypatch.setattr(deploy.time,'sleep',lambda *_:None)
+    monkeypatch.setattr(instance,'listeners',lambda *_:[])
+    attempts=[]
+    def health(*_):
+        attempts.append(True)
+        if len(attempts)<3:raise httpx.ConnectError('Not ready')
+    monkeypatch.setattr(instance,'health',health)
+    result=deploy.Deployment.start(instance,'backend',descriptor,True)
+    assert result['pid']==123 and len(attempts)==3

@@ -14,7 +14,8 @@ import signal
 import subprocess
 import tarfile
 import time
-from urllib.request import urlopen
+
+import httpx
 
 from dotenv import dotenv_values
 from sqlalchemy.engine import make_url
@@ -161,7 +162,7 @@ class Deployment:
                 try:
                     self.health(kind, f'http://127.0.0.1:{port}')
                     return {**descriptor, 'pid': process.pid}
-                except (OSError, ValueError, DeploymentError):
+                except (OSError, httpx.HTTPError, ValueError, DeploymentError):
                     time.sleep(.25)
             raise DeploymentError(f'{kind} did not become healthy')
         except BaseException:
@@ -192,11 +193,11 @@ class Deployment:
 
     def health(self, kind, base):
         path = '/api/health' if kind == 'backend' else '/admin'
-        with urlopen(base + path, timeout=5) as response:
-            if response.status != 200:
-                raise DeploymentError(f'{kind} health check failed')
-            if kind == 'backend' and json.load(response).get('status') != 'healthy':
-                raise DeploymentError('Backend reported unhealthy')
+        response = httpx.get(base + path, timeout=5, follow_redirects=False)
+        if response.status_code != 200:
+            raise DeploymentError(f'{kind} health check returned HTTP {response.status_code}')
+        if kind == 'backend' and response.json().get('status') != 'healthy':
+            raise DeploymentError('Backend reported unhealthy')
 
     def verify(self, components, public=False):
         for kind in components:
@@ -206,9 +207,12 @@ class Deployment:
             base = self.config['public_url'] if public else f"http://127.0.0.1:{self.config['ports']['frontend']}"
             manifest = json.loads((self.release / 'frontend/.next/app-build-manifest.json').read_text())
             assets = manifest['pages']['/admin/teams/[id]/workflow/page']
-            for asset in assets:
-                with urlopen(base + '/_next/' + asset, timeout=20) as response:
-                    if response.read() != (self.release / 'frontend/.next' / asset).read_bytes():
+            with httpx.Client(timeout=20, follow_redirects=False) as client:
+                for asset in assets:
+                    response = client.get(base + '/_next/' + asset)
+                    if response.status_code != 200:
+                        raise DeploymentError(f'Workflow asset request returned HTTP {response.status_code}')
+                    if response.content != (self.release / 'frontend/.next' / asset).read_bytes():
                         raise DeploymentError('Served workflow assets do not match release')
 
     def backup(self):
@@ -231,13 +235,16 @@ class Deployment:
 
     def promote(self, previous, components):
         stopped, live = [], dict(previous['components'])
+        phase = 'switch'
         atomic_json(self.journal, {'status': 'switching', 'sha': self.sha, 'previous': previous})
         try:
             for kind in components:
                 self.stop(kind, previous['components'][kind]); stopped.append(kind)
                 live[kind] = self.start(kind, self.descriptor(kind, self.config['ports'][kind]))
                 self.started[kind] = live[kind]
+            phase = 'local_verification'
             self.verify(components)
+            phase = 'public_verification'
             self.verify(components, public=True)
             current = {'components': live, 'last_run': os.getenv('GITHUB_RUN_ID'), 'updated_at': time.time()}
             atomic_json(self.state_path, current)
@@ -253,10 +260,12 @@ class Deployment:
                     rollback_errors.append(kind)
             atomic_json(self.state_path, {**previous, 'components': live})
             atomic_json(self.journal, {'status': 'rollback_failed' if rollback_errors else 'rolled_back',
-                                      'sha': self.sha, 'failed_components': rollback_errors, 'previous': previous})
+                                      'sha': self.sha, 'failed_components': rollback_errors, 'previous': previous,
+                                      'failure_phase': phase, 'failure_type': type(failure).__name__,
+                                      'failure': str(failure) if isinstance(failure, DeploymentError) else 'External check failed'})
             if rollback_errors:
                 raise DeploymentError('Rollback requires operator attention: ' + ', '.join(rollback_errors)) from None
-            raise DeploymentError('Release failed verification; previous services restored') from failure
+            raise DeploymentError(f'Release failed during {phase}; previous services restored') from failure
 
     def deploy(self, component, dry_run):
         freeze = self.config.get('dry_run_only', False)
