@@ -175,7 +175,10 @@ class Deployment:
 
     def stop(self, kind, descriptor):
         pid, port = descriptor['pid'], descriptor['port']
-        if self.listeners(port) != [str(pid)]:
+        listeners = self.listeners(port)
+        if not listeners:
+            return
+        if listeners != [str(pid)]:
             raise DeploymentError(f'{kind} listener changed; refusing to stop another process')
         command = subprocess.check_output(['ps', '-p', str(pid), '-o', 'command='], text=True)
         cwd = subprocess.check_output(['lsof', '-a', '-p', str(pid), '-d', 'cwd', '-Fn'], text=True)
@@ -313,7 +316,9 @@ def main():
         signal.signal(signum, interrupted)
     lock_path = Path(config['state_file']).with_suffix('.lock')
     with lock_path.open('w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Wait for a brief startup recovery; the runtime monitor skips while a
+        # deployment owns this same lock.
+        fcntl.flock(lock, fcntl.LOCK_EX)
         result = Deployment(config, args.source, args.sha).deploy(args.component, args.dry_run == 'true')
     print(json.dumps(result))
     if summary := os.getenv('GITHUB_STEP_SUMMARY'):

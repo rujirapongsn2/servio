@@ -55,7 +55,7 @@ jobs:
       - name: Backend regression with isolated DB and fake services
         run: |
           server/.venv/bin/python -m pytest -q \
-            server/tests/test_deploy_production.py \
+            server/tests/test_deploy_production.py server/tests/test_host_startup.py \
             server/tests/test_private_channel_parity.py server/tests/test_workflow_preview.py \
             server/tests/test_workflow_creation.py server/tests/test_team_workflow.py \
             server/tests/test_workflow_membership.py server/tests/test_knowledge_runtime_scope.py \

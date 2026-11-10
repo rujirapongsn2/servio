@@ -213,3 +213,10 @@ def test_start_retries_httpx_connection_errors_until_service_is_ready(host, monk
     monkeypatch.setattr(instance,'health',health)
     result=deploy.Deployment.start(instance,'backend',descriptor,True)
     assert result['pid']==123 and len(attempts)==3
+
+
+def test_deploy_can_start_after_boot_when_old_pid_no_longer_listens(host, monkeypatch):
+    instance, previous, _ = host
+    monkeypatch.setattr(instance, 'listeners', lambda *_: [])
+    monkeypatch.setattr(deploy.os, 'kill', lambda *_: pytest.fail('No process may be killed'))
+    deploy.Deployment.stop(instance, 'backend', previous['components']['backend'])
