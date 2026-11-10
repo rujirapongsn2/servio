@@ -162,11 +162,11 @@ test('Workflow switches between design and private chat without saving drafts or
   const env = setup(t); const renderer = await env.mount();
   await change(renderer, 'workflow-agent-name', 'Draft support');
   await act(async () => button(renderer, 'Try draft').props.onClick());
-  assert.equal(renderer.root.findByProps({ 'aria-label': 'Private workflow preview' }).props.hidden, false);
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Playground' }).props.hidden, false);
   await change(renderer, 'preview-message-1', 'Remember this team question');
   await act(async () => button(renderer, 'Design').props.onClick());
   assert.equal(renderer.root.findByProps({ id: 'workflow-agent-name' }).props.value, 'Draft support');
-  await act(async () => button(renderer, 'Private chat').props.onClick());
+  await act(async () => button(renderer, 'Playground').props.onClick());
   assert.equal(renderer.root.findByProps({ id: 'preview-message-1' }).props.value, 'Remember this team question');
   await change(renderer, 'preview-target-1', '1');
   assert.equal(renderer.root.findByProps({ id: 'preview-message-1' }).props.value, '');

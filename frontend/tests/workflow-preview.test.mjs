@@ -244,7 +244,7 @@ test('locale switch preserves a live private conversation and composer without a
   await ui.switchLocale('th');
   assert.equal(ui.renderer.root.findByType('textarea').props.value, 'Unsent next question');
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Answer stays intact/);
-  assert.equal(ui.renderer.root.findByProps({ 'aria-label': 'ประวัติการทดลองสนทนา' }).props['aria-busy'], false);
+  assert.equal(ui.renderer.root.findByProps({ 'aria-label': 'ประวัติสนทนา Playground' }).props['aria-busy'], false);
   assert.equal(calls.length, before);
   assert.equal(calls.filter(call => call.method === 'DELETE').length, 0);
   assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 1);
