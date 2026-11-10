@@ -84,5 +84,15 @@ export default function CustomApiRequestEditor({ value, onChange }: { value: Req
         <div><label htmlFor={`${id}-timeout`} className="block text-sm mb-1">Timeout (seconds)</label><input id={`${id}-timeout`} className={inputClass} type="number" required min={0} step="any" value={value.timeout_seconds} onChange={e => update({ timeout_seconds: e.target.value })} /></div>
       </div>
     </details>
+    <details className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      <summary className="cursor-pointer text-sm font-medium">Tool input and result contract</summary>
+      <div className="mt-3 space-y-3">
+        <div><label htmlFor={`${id}-input-schema`} className="mb-1 block text-sm">Input JSON Schema</label>
+          <textarea id={`${id}-input-schema`} rows={6} spellCheck={false} className={inputClass + ' max-h-80 resize-y font-mono'} value={value.inputSchemaText ?? ''} onChange={event => update({ inputSchemaText: event.target.value })} />
+          <p className="mt-1 text-xs text-gray-500">Bind fields with {"{{args.field}}"}. Empty keeps the existing query input.</p></div>
+        <div><label htmlFor={`${id}-result-contract`} className="mb-1 block text-sm">Result contract JSON</label>
+          <textarea id={`${id}-result-contract`} rows={4} spellCheck={false} className={inputClass + ' max-h-64 resize-y font-mono'} value={value.resultContractText ?? ''} onChange={event => update({ resultContractText: event.target.value })} /></div>
+      </div>
+    </details>
   </div>;
 }

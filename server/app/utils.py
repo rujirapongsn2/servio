@@ -84,8 +84,9 @@ def is_new_text_message(data):
 
 
 def process_inputs(data, connection) -> str:
-    connection.history = data["inputs"][:-1]
-    return data["inputs"][-1]["content"]
+    # The server owns tool evidence/history. Clients submit only the latest user input.
+    from app.chat_inputs import ChatInput
+    return ChatInput(message=data["inputs"][-1]["content"]).message
 
 
 def is_new_audio_chunk(data):
@@ -98,13 +99,33 @@ def is_audio_complete(data):
 
 def extract_audio_chunk(data):
     decoded_bytes = base64.b64decode(data["delta"])
-    audio_int16 = np.frombuffer(decoded_bytes, dtype=np.int16)
-    audio_data = audio_int16.astype(np.float32) / 32768.0
-    return audio_data
+    from app.chat_media import pcm16_float32
+    return pcm16_float32(decoded_bytes)
 
 
 def concat_audio_chunks(chunks) -> AudioInput:
     return AudioInput(np.concatenate(chunks))
+
+
+class EphemeralAnalytics:
+    """Private transport uses the channel presenter without creating customer records."""
+    def start_conversation(self, *args, **kwargs): return None
+    def track_message(self, *args, **kwargs): pass
+    def track_tool_call(self, *args, **kwargs): pass
+    def track_handoff(self, *args, **kwargs): pass
+    async def end_conversation(self, *args, **kwargs): pass
+
+
+class SecretSafeTransport:
+    def __init__(self, transport, secrets):
+        self.transport, self.secrets = transport, secrets
+    def __getattr__(self, name): return getattr(self.transport, name)
+    async def send_text(self, value):
+        from app.tool_execution import redact
+        await self.transport.send_text(redact(value, self.secrets()))
+    async def send_json(self, value):
+        from app.tool_execution import redact
+        await self.transport.send_json(redact(value, self.secrets()))
 
 
 class WebsocketHelper:
@@ -119,8 +140,10 @@ class WebsocketHelper:
         channel_type: Optional[str] = None,
         channel_user_id: Optional[str] = None,
         api_key_id: Optional[int] = None,
+        persist_analytics: bool = True,
     ):
-        self.websocket = websocket
+        from app.agent_execution import runtime_secrets
+        self.websocket = SecretSafeTransport(websocket, lambda: runtime_secrets(initial_agent) | runtime_secrets(self.latest_agent))
         self.history = history or []
         self.latest_agent = initial_agent
         self.partial_response = ""
@@ -137,7 +160,7 @@ class WebsocketHelper:
         self.voice_response_enabled = voice_response_enabled
 
         # Initialize analytics tracking
-        self.analytics = AnalyticsService()
+        self.analytics = AnalyticsService() if persist_analytics else EphemeralAnalytics()
         self.conversation_id = self.analytics.start_conversation(
             session_id,
             team_agent_id=team_agent_id,
@@ -268,6 +291,7 @@ class WebsocketHelper:
         return None
 
     async def show_user_input(self, user_input: str):
+        from app.chat_inputs import display_text
         self.history.append(
             {
                 "type": "message",
@@ -279,7 +303,7 @@ class WebsocketHelper:
         # Track user message in analytics
         self.analytics.track_message(
             role="user",
-            content=user_input,
+            content=display_text(user_input),
             agent_name=None
         )
 
@@ -488,7 +512,9 @@ class WebsocketHelper:
 
             self.partial_response = ""
             self.latest_agent = output.last_agent
-            self.history = [item for item in output.to_input_list() if knowledge_context is None or item != knowledge_context]
+            from app.tool_execution import redact
+            from app.agent_execution import runtime_secrets
+            self.history = redact([item for item in output.to_input_list() if knowledge_context is None or item != knowledge_context], runtime_secrets(self.latest_agent))
             # The SDK rebuilds history from its own input list, so re-apply the
             # carousel marker contract to the final assistant message.
             for item in reversed(self.history):

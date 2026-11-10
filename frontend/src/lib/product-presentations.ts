@@ -205,7 +205,7 @@ function optionalMediaTime(value: unknown): value is number | null {
   return value === null || frameNumber(value);
 }
 export function signedVideoUrl(value: unknown): value is string {
-  return text(value, 4096) && /^\/api\/(?:knowledge-video\/[a-f0-9]{64}|video-attachments\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/media)\?token=[A-Za-z0-9_.-]+(?:&frame=[a-f0-9]{64})?$/.test(value);
+  return text(value, 4096) && /^\/api\/(?:knowledge-video\/[a-f0-9]{64}|video-attachments\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/media|admin\/private-chat-media\/[a-f0-9-]{36}\/[a-f0-9]{64})\?token=[A-Za-z0-9_.-]+(?:&frame=[a-f0-9]{64})?$/.test(value);
 }
 export function parseKnowledgeVideo(value: unknown): KnowledgeVideoPresentation | null {
   if (!isObject(value) || value.type !== "knowledge_video" || value.version !== 1 || typeof value.response !== "string" || value.response.length > 64000 || !Array.isArray(value.videos) || value.videos.length < 1 || value.videos.length > 3 || JSON.stringify(value).length > 512000) return null;

@@ -161,6 +161,8 @@ def create_datetime_tool(tool_name: str, config: Dict[str, Any]):
 
 def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
     """Create a custom API tool from configuration"""
+    from app.custom_api import validate_api_extensions, api_result
+    validate_api_extensions(config)
     api_endpoint = config.get("endpoint", "")
     auth_token = config.get("auth_token", "")
     method = config.get("method", "POST")
@@ -190,13 +192,13 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
         return None
 
     # Create the function dynamically
-    def dynamic_tool_func(query: str):
+    def dynamic_tool_func(query: str, arguments=None):
         """Dynamic API tool"""
         try:
             log_tool_call(tool_name, {"query": query})
             if "request" in config:
                 from app.custom_api import execute_custom_api_request
-                response = execute_custom_api_request(config, query)
+                response = execute_custom_api_request(config, query, arguments)
             else:
                 headers = {
                     "Content-Type": "application/json",
@@ -238,6 +240,9 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
                     return response.text
                 raise
 
+            contracted = api_result(config, data)
+            if contracted is not None:
+                return json.dumps(contracted, ensure_ascii=False)
             from app.product_presentations import parse_product_carousel
             carousel = parse_product_carousel(data)
             if carousel is not None:
@@ -275,15 +280,37 @@ def create_custom_api_tool(tool_name: str, config: Dict[str, Any]):
         except Exception as e:
             if "request" in config:
                 return f"Error calling {tool_name}: Custom API request failed. Check configuration and service availability."
-            return f"Error calling {tool_name}: {str(e)}"
+            return f"Error calling {tool_name}: API request failed. The action may have taken effect; do not retry automatically."
 
     # Set the function name and docstring BEFORE applying decorator
     dynamic_tool_func.__name__ = tool_name
     dynamic_tool_func.__doc__ = description
 
     # Apply the decorator
-    tool = function_tool(dynamic_tool_func)
+    schema = config.get('input_schema')
+    if schema is not None:
+        from agents import FunctionTool
+        from jsonschema import Draft202012Validator
+        async def structured_invoke(context, raw):
+            try:
+                arguments = json.loads(raw)
+                Draft202012Validator(schema).validate(arguments)
+            except Exception:
+                return json.dumps({'type': 'service_result', 'status': 'invalid_input',
+                    'message': 'Arguments do not match the declared input schema. Ask for the missing or corrected value.',
+                    'verified_record': False, 'automatic_retry_allowed': False})
+            query = str(arguments.get('query', next(iter(arguments.values())) if len(arguments) == 1 else ''))
+            return dynamic_tool_func(query, arguments)
+        tool = FunctionTool(name=tool_name, description=description, params_json_schema=schema,
+                            on_invoke_tool=structured_invoke, strict_json_schema=False)
+    else:
+        # Preserve the legacy query-only schema and transport contract.
+        def query_only(query: str):
+            return dynamic_tool_func(query)
+        query_only.__name__, query_only.__doc__ = tool_name, description
+        tool = function_tool(query_only)
     tool._servio_read_results = isinstance(method, str) and method.upper() in ("GET", "HEAD")
+    tool._servio_may_write = str(method).upper() not in ('GET', 'HEAD', 'OPTIONS')
     return tool
 
 
@@ -543,6 +570,7 @@ def create_mcp_tool(tool_name: str, config: Dict[str, Any]):
 
     tool = function_tool(mcp_tool_call)
     tool._servio_read_results = True
+    tool._servio_may_write = True
     return tool
 
 
@@ -767,7 +795,8 @@ def build_agent_from_db(
 
     # Inject tool awareness into instructions so the LLM knows
     # the exact tool names it can call (avoids mismatched names in user-written instructions)
-    instructions = agent_data["instructions"] or ""
+    from app.agent_execution import TOOL_EVIDENCE_POLICY
+    instructions = (agent_data["instructions"] or "") + TOOL_EVIDENCE_POLICY
     current_time_context = datetime.now().astimezone()
     instructions += (
         f"\n\n**Current Time Context:**"
@@ -831,7 +860,8 @@ def build_agent_from_db(
         tools=tools,
         handoffs=handoffs,
     )
-
+    from app.tool_execution import protect_tools
+    protect_tools([agent], [agent_data])
     return agent
 
 
@@ -915,15 +945,13 @@ def get_runtime_starting_agent(
         try:
             agent = build_agent_from_db(
                 a, all_agents=None, runtime_team_agent_id=runtime_team_agent_id,
-                strict_tools=captured_agents is not None,
+                strict_tools=True,
             )
             all_agents[a["id"]] = agent
-        except Exception as e:
-            if captured_agents is not None:
-                raise
-            # If a DB tool misconfig fails (e.g., MCP offline), skip but keep triage usable
-            print(f"[Agent Build Error] id={a.get('id')} name='{a.get('name')}' error={e}")
-            continue
+        except Exception:
+            # A configured agent must not disappear from routing on either
+            # transport. Report unavailable configuration without credentials.
+            raise ValueError(f"Agent {a.get('id')} could not be prepared") from None
 
     # Second pass: resolve sub-agent to sub-agent handoffs and inject handoff instructions
     for a in db_agents_data:
@@ -1020,12 +1048,18 @@ def get_runtime_starting_agent(
                 OpenAIChatCompletionsModel(model=override, openai_client=routing_model._client)
                 if isinstance(routing_model, OpenAIChatCompletionsModel) else override
             )
-        return Agent(
+        coordinator = Agent(
             name="Coordinator Agent",
             model=routing_model,
             instructions=coordinator_instructions,
             handoffs=db_agents,
         )
+        from app.runtime_access import validate_runtime_access
+        if team_agent_id is not None:
+            coordinator._servio_check = lambda: validate_runtime_access(runtime_team_agent_id, db_agents_data)
+            for member in db_agents:
+                member._servio_check = coordinator._servio_check
+        return coordinator
 
     # Enrich instructions with dynamic agent list and routing hints
     extra = "\n\nAdditional agents available for transfer:"

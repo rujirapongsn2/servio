@@ -236,3 +236,23 @@ test('initial body and imported requests select the relevant panel and clear com
   }
   await act(async () => renderer.unmount());
 });
+
+test('structured input and business result contracts survive create and edit', async () => {
+  const schema = { type: 'object', properties: { identifier: { type: 'string' } }, required: ['identifier'], additionalProperties: false };
+  const contract = { status_path: 'code', success_values: [0], not_found_values: [4] };
+  const page = await pageHarness();
+  const draft = { ...api.parseCurl('curl https://example.com'), inputSchemaText: JSON.stringify(schema), resultContractText: JSON.stringify(contract) };
+  await act(async () => page.renderer.root.findByType(Editor).props.onChange(draft));
+  await page.submit();
+  assert.deepEqual(page.saved[0].config.input_schema, schema);
+  assert.deepEqual(page.saved[0].config.result_contract, contract);
+  const config = page.saved[0].config;
+  await act(async () => page.renderer.unmount());
+  const edit = await pageHarness({ edit: true, config });
+  await edit.submit(); assert.deepEqual(edit.saved[0].config, config);
+  await act(async () => edit.renderer.root.findByType(Editor).props.onChange({ ...edit.renderer.root.findByType(Editor).props.value, method: 'POST' }));
+  await edit.submit(); assert.deepEqual(edit.saved[1].config.input_schema, schema);
+  await act(async () => edit.renderer.unmount());
+  assert.throws(() => api.apiExtensions({ ...draft, inputSchemaText: '{' }));
+  assert.throws(() => api.apiExtensions({ ...draft, resultContractText: '[]' }));
+});

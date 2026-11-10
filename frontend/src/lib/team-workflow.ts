@@ -127,6 +127,7 @@ export async function workflowRequest(path: string, init?: RequestInit): Promise
     ...init,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("adminToken")}`, ...init?.headers },
     cache: "no-store",
+    credentials: "include",
   });
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) {

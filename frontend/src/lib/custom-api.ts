@@ -2,7 +2,7 @@
 export type Parameter = { name: string; value: string };
 export type RequestBody = { kind: 'none' } | { kind: 'json'; value: unknown } | { kind: 'text'; value: string } | { kind: 'form'; fields: Parameter[] };
 export type CustomApiRequest = { version: 1; headers: Parameter[]; query: Parameter[]; body: RequestBody };
-export type RequestDraft = { endpoint: string; method: string; auth_token: string; timeout_seconds: string; headers: Parameter[]; query: Parameter[]; bodyKind: RequestBody['kind']; bodyText: string; fields: Parameter[] };
+export type RequestDraft = { endpoint: string; method: string; auth_token: string; timeout_seconds: string; headers: Parameter[]; query: Parameter[]; bodyKind: RequestBody['kind']; bodyText: string; fields: Parameter[]; inputSchemaText?: string; resultContractText?: string };
 export const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const fail = (message = 'Unsupported cURL syntax or option. Use a single HTTP request with literal values.'): never => { throw new Error(message); };
 const rows = (value: unknown): Parameter[] => {
@@ -75,7 +75,22 @@ export function requestDraft(config: Record<string, unknown> = {}): RequestDraft
       draft.bodyText = JSON.stringify(object, null, 2);
     }
   }
+  if (config.input_schema !== undefined) draft.inputSchemaText = JSON.stringify(config.input_schema, null, 2);
+  if (config.result_contract !== undefined) draft.resultContractText = JSON.stringify(config.result_contract, null, 2);
   return draft;
+}
+
+export function apiExtensions(draft: RequestDraft): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const fields: [string, string | undefined][] = [["input_schema", draft.inputSchemaText], ["result_contract", draft.resultContractText]];
+  for (const [key, text] of fields) {
+    if (!text?.trim()) continue;
+    let value: unknown;
+    try { value = JSON.parse(text); } catch { throw new Error(`${key} must contain valid JSON`); }
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${key} must be a JSON object`);
+    result[key] = value;
+  }
+  return result;
 }
 
 /** Shell lexing only: no execution, expansion, network access, storage or logging. */

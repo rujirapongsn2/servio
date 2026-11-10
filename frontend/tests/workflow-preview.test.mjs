@@ -23,7 +23,10 @@ function load(file, mocks = {}) {
   return exports;
 }
 const presentations = load('src/lib/product-presentations.ts');
-const helpers = load('src/lib/workflow-preview.ts', { '@/lib/product-presentations': presentations });
+const answers = load('src/lib/a2ui-answers.ts', { './a2ui-answers.catalog.json': { default: JSON.parse(fs.readFileSync(path.join(root, 'src/lib/a2ui-answers.catalog.json'), 'utf8')) } });
+const a2ui = load('src/lib/a2ui-discovery.ts', { './a2ui-answers': answers, './product-presentations': presentations, './a2ui-discovery.catalog.json': { default: JSON.parse(fs.readFileSync(path.join(root, 'src/lib/a2ui-discovery.catalog.json'), 'utf8')) } });
+const inputs = load('src/lib/chat-inputs.ts');
+const helpers = load('src/lib/workflow-preview.ts', { '@/lib/product-presentations': presentations, '@/lib/a2ui-discovery': a2ui, '@/lib/chat-inputs': inputs });
 const workflowApi = load('src/lib/team-workflow.ts');
 const agent = { id: 1, name: 'Support', instructions: 'Help', model: 'model', llm_provider_id: null, tool_ids: [1], handoff_agent_ids: [], shared: false, updated_at: 'today' };
 const workflow = { team_id: 1, team_name: 'Team', can_edit: true, fallback_agent_id: 1, agents: [agent, { ...agent, id: 2, name: 'Sales' }], tools: [], providers: [] };
@@ -41,6 +44,9 @@ async function setup(t, request, extra = {}, strict = false, switchable = false)
     '@/lib/markdown': { normalizeMarkdownForChat: value => value },
     '@/components/KnowledgeImages': { KnowledgeImages: props => React.createElement('images-test', props) },
     '@/components/KnowledgeVideos': { KnowledgeVideos: () => null }, '@/components/KnowledgeAudio': { KnowledgeAudio: props => React.createElement('audio-test', props) },
+    '@/components/AnswerSurface': { AnswerSurface: props => React.createElement('answer-test', props) },
+    '@/components/ProductDiscovery': { ProductDiscovery: props => React.createElement('discovery-test', props) },
+    '@/lib/a2ui-discovery': a2ui, '@/lib/api': { buildApiUrl: value => value },
     '@/components/ProductCarousel': { ProductCarousel: props => React.createElement('carousel-test', props) },
   }).default;
   const props = { teamId: 1, workflow, drafts: {}, targetAgentId: null, visible: true, onTargetChange() {}, onEditAgent() {}, onOpenKnowledge() {}, ...extra };
@@ -264,7 +270,7 @@ test('real-tool consent is required per session; cancel sends no request', async
   assert.doesNotMatch(text(ui.renderer.toJSON()), /read-only/);
 });
 
-test('failed tool status retires the session without silently repeating the operation', async t => {
+test('tool failure does not retire the session or automatically resend the operation', async t => {
   const calls = [];
   const ui = await setup(t, async (url, init) => {
     calls.push(url);
@@ -273,6 +279,29 @@ test('failed tool status retires the session without silently repeating the oper
   await ui.compose('Run operation'); await ui.send();
   assert.match(text(ui.renderer.toJSON()), /Could not verify/);
   assert.match(text(ui.renderer.toJSON()), /failed/);
-  await ui.compose('Run again'); await ui.send();
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 2); // no automatic retry
+  await ui.compose('Hello after failure'); await ui.send();
+  assert.equal(calls.length, 3); // same session remains usable
+});
+
+test('attachment-only requests send encoded media and spoken-output choice once', async t => {
+  const previous = global.FileReader;
+  global.FileReader = class { readAsDataURL(file) { this.result = `data:${file.type};base64,ZmFrZQ==`; this.onload(); } };
+  t.after(() => { global.FileReader = previous; });
+  const calls = []; const pending = deferred();
+  const ui = await setup(t, async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/messages')) return pending.promise;
+    return session('media-session');
+  });
+  await act(async () => ui.renderer.root.findByProps({ type: 'file' }).props.onChange({ target: { files: [{ name: 'voice.wav', type: 'audio/wav', size: 4 }] } }));
+  await act(async () => ui.renderer.root.findAllByProps({ type: 'checkbox' })[0].props.onChange({ target: { checked: true } }));
+  await ui.send(); await ui.send();
+  const payload = JSON.parse(calls.find(call => call.url.endsWith('/messages')).init.body);
+  assert.deepEqual(payload.attachments, [{ kind: 'audio', name: 'voice.wav', mime: 'audio/wav', base64: 'ZmFrZQ==' }]);
+  assert.equal(payload.speak, true); assert.equal(payload.message, '');
+  assert.match(payload.request_id, /^[a-f0-9-]+$/);
+  assert.equal(calls.filter(call => call.url.endsWith('/messages')).length, 1);
+  await act(async () => pending.resolve(reply('Transcribed media response')));
+  assert.match(text(ui.renderer.toJSON()), /Transcribed media response/);
 });

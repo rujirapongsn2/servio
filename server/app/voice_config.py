@@ -12,18 +12,25 @@ def create_voice_client() -> AsyncOpenAI:
     )
 
 
-def create_voice_pipeline(workflow, *, transform_data) -> VoicePipeline:
+def voice_model_provider():
     overrides = setting("VOICE_BASE_URL") or setting("VOICE_API_KEY")
-    provider = (
+    return (
         OpenAIVoiceModelProvider(openai_client=create_voice_client())
         if overrides else OpenAIVoiceModelProvider()
     )
+
+
+def create_voice_pipeline(workflow, *, transform_data) -> VoicePipeline:
+    provider = voice_model_provider()
     return VoicePipeline(
         workflow=workflow,
         stt_model=setting("VOICE_STT_MODEL", "gpt-4o-transcribe"),
         tts_model=setting("VOICE_TTS_MODEL", "gpt-4o-mini-tts"),
         config=VoicePipelineConfig(
             model_provider=provider,
+            tracing_disabled=True,
+            trace_include_sensitive_data=False,
+            trace_include_sensitive_audio_data=False,
             tts_settings=TTSModelSettings(
                 voice=setting("VOICE_TTS_VOICE", "ash"),
                 buffer_size=512,

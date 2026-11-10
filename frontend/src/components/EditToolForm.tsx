@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { IconPicker } from "@/components/IconPicker";
 import { getApiBaseUrl } from "@/lib/api";
 import CustomApiRequestEditor from "@/components/CustomApiRequestEditor";
-import { requestDraft, serializeRequest } from "@/lib/custom-api";
+import { requestDraft, serializeRequest, apiExtensions } from "@/lib/custom-api";
 
 export default function EditToolForm({ toolId, teamId, onSaved, onCancel, onBusyChange }: { toolId: number; teamId: number | null; onSaved: () => void | Promise<void>; onCancel: () => void; onBusyChange?: (busy: boolean) => void }) {
   const apiBaseUrl = getApiBaseUrl();
@@ -118,7 +118,8 @@ export default function EditToolForm({ toolId, teamId, onSaved, onCancel, onBusy
         config = { ...originalConfig };
         if (formData.description !== (originalConfig.description ?? "")) config.description = formData.description;
         if (requestChanged) {
-          config = { ...config, endpoint: customRequest.endpoint, method: customRequest.method, auth_token: customRequest.auth_token, timeout_seconds: Number(customRequest.timeout_seconds), request: serializeRequest(customRequest) };
+          delete config.input_schema; delete config.result_contract;
+          config = { ...config, ...apiExtensions(customRequest), endpoint: customRequest.endpoint, method: customRequest.method, auth_token: customRequest.auth_token, timeout_seconds: Number(customRequest.timeout_seconds), request: serializeRequest(customRequest) };
         }
       } else if (toolType === "mcp_streamable_http") {
         config.transport = formData.transport;

@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from agents import Runner
+from app.agent_execution import execution_scope, run_agent
 from app.agent_config import get_runtime_starting_agent
 from app.utils import is_text_output
 
@@ -56,6 +57,11 @@ async def handle_message(
 
     Returns the agent's text response.
     """
+    from app.chat_inputs import ChatInput
+    try:
+        text = ChatInput(message=text).message
+    except ValueError:
+        return "ข้อความไม่ถูกต้องหรือยาวเกินขนาดที่ระบบรองรับ"
     conversation = get_or_create_conversation(channel_type, user_id, team_agent_id)
 
     # Add user message to history
@@ -63,29 +69,19 @@ async def handle_message(
 
     # Get the latest agent (may have been reassigned via handoffs)
     key = _conversation_key(channel_type, user_id, team_agent_id)
-    agent = _conversations[key].get("agent", get_runtime_starting_agent(team_agent_id))
+    agent = _conversations[key]["agent"]
 
     # Run agent
     try:
-        output = Runner.run_streamed(agent, conversation)
-
-        response_parts: list[str] = []
-        async for event in output.stream_events():
-            if is_text_output(event):
-                response_parts.append(event.data.delta)
-
-        full_response = "".join(response_parts)
-
-        # Track the latest agent in case of handoffs
-        if output.last_agent:
-            _conversations[key]["agent"] = output.last_agent
-
-        # Add assistant response to history
-        if full_response.strip():
-            conversation.append({"role": "assistant", "content": full_response})
-
-        return full_response.strip()
+        with execution_scope(agent):
+            output = await run_agent(agent, conversation)
+        _conversations[key]["agent"] = output.last_agent
+        # Retain tool calls, outputs and handoffs as well as assistant prose.
+        from app.tool_execution import redact
+        from app.agent_execution import runtime_secrets
+        conversation[:] = redact(output.to_input_list(), runtime_secrets(agent))
+        return redact(str(output.final_output or "").strip(), runtime_secrets(agent))
 
     except Exception:
-        logger.exception("Agent run failed for %s user %s", channel_type, user_id)
+        logger.warning("Agent run failed for %s", channel_type)
         return "ขออภัย ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง"

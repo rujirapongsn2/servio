@@ -10,6 +10,7 @@ import os
 import time
 import uuid
 from collections import OrderedDict
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -23,6 +24,8 @@ from app import knowledge_image_policy as image_policy
 from app import local_image_rag as images
 from app.db_config import get_db
 from app.orm_models import AgentTool, OKFBundle, OKFConceptIndex, TeamAgent, TeamAgentMember, TeamToolAssignment, Tool
+
+runtime_bundle_scope = ContextVar('runtime_image_bundle_scope', default=None)
 
 
 class InvalidSearchImage(ValueError):
@@ -124,6 +127,9 @@ class SearchResult:
 def assigned_bundles(team_id: int | None) -> set[int]:
     if team_id is None or not images.enabled():
         return set()
+    scoped = runtime_bundle_scope.get()
+    if scoped is not None:
+        return scoped(team_id)
     from app.okf_service import _bundle_available_to_team
     with get_db() as db:
         team = db.query(TeamAgent).filter_by(id=team_id, status="active").first()

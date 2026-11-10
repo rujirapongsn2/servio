@@ -129,7 +129,7 @@ def test_membership_provider_expiry_and_request_limits(workspace, monkeypatch):
     assert create(client, {"drafts": [draft(instructions="x" * 32001)]}).status_code == 422
     result = create(client).json()
     assert send(client, result["id"], " " * 10).status_code == 422
-    assert send(client, result["id"], "x" * 8001).status_code == 422
+    assert send(client, result["id"], "x" * (preview.MAX_MESSAGE_CHARS + 1)).status_code == 422
     session = preview._sessions[result["id"]]
     session.expires_at = 0
     assert send(client, result["id"]).status_code == 404
@@ -143,16 +143,14 @@ def test_membership_provider_expiry_and_request_limits(workspace, monkeypatch):
     assert send(client, result["id"]).status_code == 409
 
 
-def test_busy_and_turn_limits_and_errors_hide_secrets(workspace, monkeypatch):
+def test_busy_budget_and_errors_hide_secrets(workspace, monkeypatch):
     client, _ = workspace
     result = create(client).json()
     session = preview._sessions[result["id"]]
     session.busy = True
     assert send(client, result["id"]).status_code == 409
     session.busy = False
-    session.turns = preview.MAX_TURNS
-    assert send(client, result["id"]).status_code == 409
-    session.turns = 0
+    session.turns = 100  # No preview-only message cap.
     def fail(*args, **kwargs):
         raise RuntimeError("credentials super-secret")
     monkeypatch.setattr(preview.Runner, "run", fail)
@@ -295,7 +293,7 @@ def test_real_sdk_routing_handoffs_and_tool_arguments_use_channel_factories(work
 
 
 @pytest.mark.parametrize('failure', ['exception', 'error_result', 'no_call', 'revoked', 'changed', 'role_revoked', 'membership_revoked'])
-def test_tool_failure_no_evidence_and_revocation_cannot_produce_guessed_facts(workspace, monkeypatch, failure):
+def test_tool_failure_recovers_and_no_call_answers_are_not_replaced(workspace, monkeypatch, failure):
     from agents import RunContextWrapper
     from app import agent_config
     client, get_db = workspace
@@ -321,7 +319,7 @@ def test_tool_failure_no_evidence_and_revocation_cannot_produce_guessed_facts(wo
         if failure != 'no_call':
             tool = next(tool for tool in agent.tools if tool.name == 'OwnTool')
             await tool.on_invoke_tool(RunContextWrapper(context=None), '{"query":"VIN"}')
-        return SimpleNamespace(new_items=[], final_output='Toyota Hilux Vigo', last_agent=agent, to_input_list=lambda: history)
+        return SimpleNamespace(new_items=[], final_output='Hello' if failure == 'no_call' else 'Tool unavailable; please clarify', last_agent=agent, to_input_list=lambda: history)
     monkeypatch.setattr(preview.Runner, 'run', run)
     response = send(client, result['id'])
     assert 'must-not-leak' not in response.text and 'Hilux' not in response.text
@@ -329,10 +327,11 @@ def test_tool_failure_no_evidence_and_revocation_cannot_produce_guessed_facts(wo
         assert response.status_code in (403, 409) and not invoked
     else:
         assert response.status_code == 200
-        assert response.json()['status'] == ('unverified' if failure == 'no_call' else 'tool_failed')
+        assert response.json()['status'] == 'completed'
+        assert response.json()['response'] == ('Hello' if failure == 'no_call' else 'Tool unavailable; please clarify')
         if failure != 'no_call':
             assert response.json()['tool_calls'][0]['status'] == 'failed'
-            assert send(client, result['id']).status_code == 404
+            assert send(client, result['id']).status_code == 200
 
 
 def test_unknown_runtime_type_fails_explicitly_instead_of_silently_dropping_tool(workspace):
@@ -356,12 +355,12 @@ def test_disabled_mcp_is_a_failed_tool_not_a_successful_answer(workspace, monkey
     async def run(agent, history, **kwargs):
         tool = next(tool for tool in agent.tools if tool.name != 'DateTimeTool')
         await tool.on_invoke_tool(RunContextWrapper(context=None), '{"query":"VIN"}')
-        pytest.fail('A disabled MCP must terminate the run')
+        return SimpleNamespace(new_items=[], last_agent=agent, final_output='Tool unavailable', to_input_list=lambda: history)
     monkeypatch.setattr(preview.Runner, 'run', run)
     result = create(client, {'target_agent_id': 1}).json()
     response = send(client, result['id'])
     assert response.status_code == 200
-    assert response.json()['status'] == 'tool_failed'
+    assert response.json()['status'] == 'completed'
     assert 'never-show' not in response.text
 
 
@@ -378,10 +377,11 @@ def test_parallel_function_calls_stop_after_first_failure_without_second_write(w
     async def run(agent, history, **kwargs):
         tool = next(tool for tool in agent.tools if tool.name == 'OwnTool')
         await asyncio.gather(*(tool.on_invoke_tool(RunContextWrapper(context=None), '{"query":"write"}') for _ in range(2)))
+        return SimpleNamespace(new_items=[], last_agent=agent, final_output='Tool unavailable', to_input_list=lambda: history)
     monkeypatch.setattr(preview.Runner, 'run', run)
     result = create(client, {'target_agent_id': 1}).json()
     response = send(client, result['id'])
-    assert response.json()['status'] == 'tool_failed'
+    assert response.json()['status'] == 'completed'
     assert len(writes) == 1
 
 
@@ -417,6 +417,7 @@ def test_private_even_between_team_admins_and_history_budget(workspace, monkeypa
     monkeypatch.setattr(preview, "MAX_HISTORY_BYTES", 1)
     assert send(client, result["id"]).status_code == 409
     assert preview._sessions[result["id"]].history == []
+    monkeypatch.setattr(preview, "MAX_REQUEST_BYTES", 1000)
     assert client.post("/api/admin/team-agents/1/workflow/previews", content='{"junk":"' + "x" * 160_000 + '"}', headers={**headers(), "Content-Type": "application/json"}).status_code == 413
 
 
@@ -441,8 +442,9 @@ def test_presentations_and_last_agent_are_retained(workspace, monkeypatch):
     def hydrate(value, team, bundle):
         hydrated.append((value, team, bundle))
         return presentation
-    monkeypatch.setattr(images, "hydrate_knowledge_images", hydrate)
-    monkeypatch.setattr(media, "hydrate_knowledge_media", lambda *args: None)
+    import app.utils as utils
+    monkeypatch.setattr(utils, "hydrate_knowledge_images", hydrate)
+    monkeypatch.setattr(utils, "hydrate_knowledge_media", lambda *args: None)
     async def run(agent, history, **kwargs):
         return SimpleNamespace(new_items=items, last_agent=specialist, final_output="Bed", to_input_list=lambda: history + [{"role": "assistant", "content": "Bed"}])
     monkeypatch.setattr(preview.Runner, "run", run)
@@ -506,7 +508,8 @@ def test_timed_out_retrieval_keeps_capacity_until_thread_finishes(workspace, mon
                 await asyncio.sleep(0)
         assert preview._active_runs == 0
         assert not preview._sessions[first].busy
-        assert preview._sessions[first].history == []
+        assert preview._sessions[first].history[-1]["content"] == "late"
+        assert preview._sessions[first].last_reply["response"] == "late"
     asyncio.run(exercise())
 
 

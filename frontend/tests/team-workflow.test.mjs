@@ -15,7 +15,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { act, create } = TestRenderer;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 function modules(mocks = {}) {
-  mocks = { '@/lib/admin-locale': adminLocale, ...mocks };
+  mocks = { '@/lib/admin-locale': adminLocale,
+    '@/components/AnswerSurface': { AnswerSurface: () => null },
+    '@/components/ProductDiscovery': { ProductDiscovery: () => null }, ...mocks };
   const cache = new Map();
   function load(relative) {
     const filename = path.join(root, relative);
@@ -28,6 +30,8 @@ function modules(mocks = {}) {
     function localRequire(name) {
       if (Object.hasOwn(mocks, name)) return mocks[name];
       if (name.endsWith('.css')) return {};
+      if (name.endsWith('.json') && name.startsWith('.')) return { default: JSON.parse(fs.readFileSync(path.resolve(path.dirname(filename), name), 'utf8')) };
+      if (name.startsWith('.') && fs.existsSync(path.resolve(path.dirname(filename), `${name}.ts`))) return load(path.relative(root, path.resolve(path.dirname(filename), `${name}.ts`)));
       if (name.startsWith('@/')) {
         const stem = `src/${name.slice(2)}`;
         return load(fs.existsSync(path.join(root, `${stem}.tsx`)) ? `${stem}.tsx` : `${stem}.ts`);

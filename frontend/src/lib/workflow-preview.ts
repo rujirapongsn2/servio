@@ -1,5 +1,11 @@
 import { parseProductPresentations, type ProductPresentations } from "@/lib/product-presentations";
 import type { TeamWorkflow, WorkflowAgentDraft } from "@/lib/team-workflow";
+import { parseA2uiSnapshots, type A2uiSurfaces } from "@/lib/a2ui-discovery";
+import { signedVideoUrl } from "@/lib/product-presentations";
+
+import type { PreviewAttachment } from "@/lib/chat-inputs";
+export { readPreviewAttachment } from "@/lib/chat-inputs";
+export type { PreviewAttachment } from "@/lib/chat-inputs";
 
 export type PreviewTarget = number | null;
 export type PreviewSession = {
@@ -11,24 +17,32 @@ export type PreviewSession = {
 };
 export type PreviewReply = {
   status: "completed" | "unverified" | "tool_failed";
+  surfaces: A2uiSurfaces;
+  audioUrl: string | null;
+  mediaError: string | null;
+  requestId: string | null;
   response: string;
   agentName: string;
   presentations: ProductPresentations;
   toolCalls: unknown[];
   citations: unknown[];
 };
-export type PreviewMessage = { kind: "user"; content: string } | { kind: "assistant"; reply: PreviewReply };
+export type PreviewMessage = { kind: "user"; content: string; attachments?: PreviewAttachment[] } | { kind: "assistant"; reply: PreviewReply };
 export type PreviewConversation = {
   session: PreviewSession | null;
   signature: string | null;
   messages: PreviewMessage[];
   composer: string;
   error: string | null;
-  phase: "idle" | "busy" | "expired";
+  phase: "idle" | "busy" | "pending" | "expired";
+  attachments: PreviewAttachment[];
+  speak: boolean;
+  imageSearch: boolean;
+  pendingRequestId: string | null;
 };
 
 export function createPreviewConversation(): PreviewConversation {
-  return { session: null, signature: null, messages: [], composer: "", error: null, phase: "idle" };
+  return { session: null, signature: null, messages: [], composer: "", error: null, phase: "idle", attachments: [], speak: false, imageSearch: true, pendingRequestId: null };
 }
 export function previewTargetKey(teamId: number, target: PreviewTarget): string {
   return `${teamId}:${target === null ? "team" : target}`;
@@ -63,8 +77,12 @@ export function parsePreviewReply(value: unknown): PreviewReply {
   if (!isRecord(value) || typeof value.response !== "string" || typeof value.agent_name !== "string" ||
     !Array.isArray(value.tool_calls) || !Array.isArray(value.citations) ||
     !(value.status === undefined || value.status === "completed" || value.status === "unverified" || value.status === "tool_failed")) throw new Error("Invalid preview response. Restart before sending again.");
-  return { status: value.status ?? "completed", response: value.response, agentName: value.agent_name, presentations: parseProductPresentations(value.presentations), toolCalls: value.tool_calls, citations: value.citations };
+  return { status: value.status ?? "completed", response: value.response, agentName: value.agent_name, presentations: parseProductPresentations(value.presentations), toolCalls: value.tool_calls, citations: value.citations,
+    surfaces: parseA2uiSnapshots(value.a2ui), audioUrl: signedVideoUrl(value.audio_url) ? value.audio_url : null,
+    mediaError: typeof value.media_error === "string" ? value.media_error : null,
+    requestId: typeof value.request_id === "string" ? value.request_id : null };
 }
+
 export function previewError(error: unknown): { message: string; expired: boolean } {
   const message = error instanceof Error ? error.message : "Preview failed. Try again.";
   const expired = /expir|not found|no longer|invalid preview|restart/i.test(message);

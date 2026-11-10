@@ -5,6 +5,7 @@ import { SUPPORTED_CATALOGS, parseA2uiSnapshots, discoveryActionEnvelope, type A
 import { Message } from "@/lib/types";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "@/lib/utils";
 import { getWebsocketBaseUrl } from "@/lib/api";
+import type { PreviewAttachment } from "@/lib/chat-inputs";
 
 export type ImageSearchState =
   | { kind: "idle" }
@@ -353,6 +354,13 @@ export function useWebsocket({
     );
   }
 
+  function sendAttachments(message: string, attachments: PreviewAttachment[], speak = false): boolean {
+    if (!websocket.current || websocket.current.readyState !== WebSocket.OPEN || isLoading) return false;
+    websocket.current.send(JSON.stringify({ type: "chat.input", message, attachments, speak, request_id: crypto.randomUUID() }));
+    setIsLoading(true);
+    return true;
+  }
+
   return {
     isReady,
     connection,
@@ -365,6 +373,7 @@ export function useWebsocket({
     sendImageSearch,
     sendKnowledgeInquiry,
     sendTextMessage,
+    sendAttachments,
     sendProductInquiry,
     presentations,
     a2uiSurfaces,

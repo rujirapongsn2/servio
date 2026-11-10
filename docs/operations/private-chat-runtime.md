@@ -1,79 +1,110 @@
-# Private Chat runtime and release checks
+# Private Chat runtime parity
 
-## Root cause
+Private Chat tests an authorized team without a Channel or Channel API key. It runs saved configuration or a captured draft. Customer conversations remain separate.
 
-`workflow_preview._build` previously removed all tools except DateTime, WebSearch and a restricted local knowledge configuration before calling `get_runtime_starting_agent`. Custom API and MCP never reached the common runtime factory. The UI's “tools unavailable in preview” message reflected that allowlist, rather than team permissions or service health. Its English note also incorrectly described the session as read-only for the new desired behavior.
+## Root causes in 87021bc
 
-Both Channel entry paths (`server.py` Web Chat and `app/messaging/handler.py`) resolve the team with `get_runtime_starting_agent`. Private Chat already used that resolver with captured team/agent settings. It now passes the complete authorized snapshot to that resolver, without a tool-type allowlist. All tool types supported by the common factory remain supported; there is no EPC-specific code.
+The shared agent factory did not provide execution parity. `preview_tools.protect_tools` added Private-only evidence instructions, and `workflow_preview._run` replaced replies when an integration agent had no successful tool call in the current turn. Greetings, clarification, and answers based on earlier results could become `unverified`. A failed tool retired the session. Private-only message, turn, and timeout rules further restricted testing.
 
-The supplied live Channel result for VIN `MR053BK4007006295` was not independently queried. Regression tests return `TOYOTA CAMRY/HYBRID (ASIA)` from fake services and prove that the real Agent SDK passes the VIN through the common Custom API/MCP adapters, with routing and handoffs. No real EPC, MCP or model request was sent.
+The messaging handler retained assistant prose but discarded SDK tool calls and outputs. Its follow-up context therefore differed from Web Chat and Private Chat. Private input accepted text only, and it did not use the Web Chat presentation renderer.
 
-## Behavior and boundaries
+The historical failed Private EPC session's arguments are unavailable. This change does not claim that the earlier failure was caused by VIN formatting.
 
-- Starting a session requires `confirm_real_tools: true`. Missing/false confirmation returns HTTP 428; nonboolean confirmation is rejected. The UI warns that API/MCP actions may change data, send messages or incur charges before its first session request. Cancel sends nothing. A new target/restarted session requires confirmation again.
-- Existing team-admin requirements and owner-only private sessions remain. Membership, tool grants and provider validity are checked before creation and each message. Function tools recheck these immediately before each invocation; SDK hooks also check routing/handoffs. A grant withdrawal denies execution. Tool/provider config changes require a fresh session instead of continuing with old credentials.
-- Private Chat uses the same factory/configuration, request templates, argument mapping, credentials and result adapters as Channel. Unsupported assigned configurations fail session preparation explicitly, rather than silently dropping a tool. Environment-wide MCP safe mode still applies and is reported as a failed call.
-- Function tool activity exposes tool name and `running`/`succeeded`/`failed` status, not raw arguments, credentials, headers or remote error bodies. Returned configured secrets and credential-labelled JSON fields are redacted before reaching the model/UI. Context-scoped log-record redaction masks configured credential values, including URL encodings, and suppresses third-party exception tracebacks during private runs. Agent SDK tracing is disabled.
-- Tool failures stop the run. The response contains `status: tool_failed`, safe activity and a warning that the operation may already have occurred. The session retires and the client does not automatically resend. Queued function calls are serialized and cannot execute after the first failure. Timeout likewise warns to inspect external systems before starting again; it cannot undo an API write.
-- Instructions require evidence for external facts. If the final agent has Custom API/MCP tools but no successful nonbuiltin tool result in the current turn, the response is replaced with `status: unverified` and a “cannot verify” message. The speculative model answer is not stored in conversation history. This conservative rule can also withhold general conversation/clarification from an integration-enabled agent when it makes no tool call; it favors preventing an unsupported VIN/model answer.
+## Execution comparison
 
-## Necessary differences from Channel
+| Concern | Shared behavior after this change | Necessary difference |
+| --- | --- | --- |
+| Factory, model, provider, settings | `agent_config.get_runtime_starting_agent`, including strict tool construction and provider settings | Private can select one member or capture drafts. Channel uses saved settings. |
+| Instructions and context | Same factory instructions and `agent_execution.TOOL_EVIDENCE_POLICY`; shared knowledge context builder | Draft instructions can intentionally differ. |
+| Tool request and result | Same tool schemas, credentials, request templates, adapters, validation, and `tool_execution` guards | Private requires explicit real-action consent before session creation. |
+| Routing and handoff | Same coordinator, fallback, members, and SDK handoffs | Direct-member testing bypasses initial coordinator routing by design. |
+| SDK execution | Shared hooks, tracing policy, run budget, authorization, and history checks | Private and messaging collect a result. Web Chat streams SDK events. |
+| History | Full SDK messages, tool calls, results, and handoffs | Private history is owned by its admin session. Web Chat maintains customer analytics. |
+| Retrieval | Same assigned tools and knowledge adapters | Draft image search derives authorized bundles from the captured draft. Knowledge contents are current. |
+| Presentations | Same Web Chat hydration, citations, media, products, and A2UI renderers | An HTTP reply contains only current-turn surfaces. The presenter retains prior surfaces for actions. |
+| Tool failure | Safe error returned to the model, activity status, retained conversation, no blanket answer replacement | Transport errors use HTTP status or WebSocket events. |
+| Recovery | Failed writes are not automatically repeated within a run, even with changed arguments | Private HTTP wait expiry retains ongoing work and offers status recovery without resending. |
+| Persistence | Shared execution checks | Private sessions and private media are ephemeral. Messaging and Web Chat retain their existing channel-specific lifecycle. |
 
-Private Chat keeps captured agent settings, unsaved drafts, separate direct-agent/team targets and expiring in-memory history. It does not save a Channel conversation or publish draft settings. It retains the last handed-off agent between turns. Presentation hydration remains team-scoped.
+The SDK requests are compared after removing only streaming fields and the dynamic server clock. Tests inspect serialized OpenAI-compatible requests, actual loopback API requests, and fake MCP calls. They do not compare only final model prose.
 
-The existing limits remain: 30-minute sessions, 24 messages, 12 SDK turns per message, 90-second response timeout, bounded history and concurrency. Private Chat returns a completed reply rather than streaming Channel events. Tool actions are real despite these private conversation/settings semantics.
+## Inputs and outputs
 
-Hosted provider tools such as WebSearch execute inside the provider. Their authorization is checked before the provider request/agent transition; the application cannot interpose a function wrapper between internal provider actions. Function tools get the additional per-invocation checks. Function activity is shown locally; hosted activity is not expanded into the same detailed local event records. Revocation cannot cancel a request already accepted by an external service.
+| Input or output | Private Chat implementation | Verification |
+| --- | --- | --- |
+| Text | Shared agent runner and full history | Real authenticated HTTP and WebSocket entry points; browser |
+| JPG, PNG | Shared MIME validation and native image model input; catalog search uses the existing image-search pipeline | HTTP and WebSocket request comparison; draft bundle and no-match regression |
+| Audio | WAV, MP3, OGG, WebM, and M4A uploads; shared STT provider and model settings | Real ffmpeg decode, SDK STT WAV requests, native Channel voice path with fake provider |
+| Spoken output | Shared TTS provider, model, and voice; private WAV player | Fake TTS and authenticated media retrieval tests |
+| Files | UTF-8 TXT, CSV, JSON, Markdown, and unencrypted text-layer PDF | TXT fixture through HTTP and WebSocket; same outgoing model content. PDF-specific extraction is not covered by that paired test. |
+| Video | MP4, MOV, WebM; full existing Channel sampled-frame processor and evidence cards | Private HTTP and actual Channel upload, job, and inquiry paths with fake processor |
+| Knowledge citations and tables | Shared `AnswerSession` and `AnswerSurface` | Paired entry-point tests; browser source expansion |
+| Product and media presentations | Shared presenter, signed assets, product inquiry, A2UI actions | Paired presenter tests; product browser rendering |
 
-Failure detection covers exceptions, the shared factories' failure messages, common JSON error envelopes and MCP `isError` results. Arbitrary APIs may return HTTP 200 with domain-specific failure text that needs an adapter-specific contract. A successful call is evidence that a result was received, not a proof that every model sentence is semantically supported or that a remote service is correct. No real service availability or live EPC credentials were tested.
+The existing Channel image-search, native voice, and video-upload protocols remain supported. The WebSocket also accepts `chat.input` with shared attachments. Its generic file API does not add a new file picker to the existing customer Widget UI.
 
-## Files
+Video evidence remains sampled frames. This patch does not add continuous video understanding or audio-track transcription. Files with no text layer require page images. Office formats and arbitrary raw binary files are not added. Model and service configuration still determine supported inference capabilities.
 
-- `server/app/workflow_preview.py`: consent, full runtime, repeated authorization/config checks, status/evidence handling.
-- `server/app/preview_tools.py`: guarded invocations, serialization, failure recognition, credential/result/log redaction and access hooks.
-- `server/app/agent_config.py`: strict construction for captured runtimes and safe provider-configuration errors. Ordinary Channel construction retains its existing default behavior.
-- `frontend/src/components/WorkflowPreviewChat.tsx`: session confirmation and failure retirement.
-- `frontend/src/lib/workflow-preview.ts`: validated response status.
-- `frontend/src/lib/admin-copy.ts`: Thai/English real-action warning and confirmation.
-- `server/tests/test_workflow_preview.py`, `frontend/tests/workflow-preview.test.mjs`: authorization, consent, real SDK with fake model/transports, failure, secrets and session regressions.
+## Authorization and secrets
 
-## Reproduce on dev
+Private creation requires team-admin access and `confirm_real_tools: true`. Canceling the UI confirmation sends no session or tool request. The UI states that tools can change external data.
 
-Verified on 2026-11-10:
+Every private request verifies its owner and team. Execution hooks and tool guards recheck team membership, tool grants, captured configuration, and provider credentials. Drafts cannot grant access to another team's tools or knowledge. Channel checks its API key and team, and uses the same runtime grant checks. Configuration changes require a new runtime session.
 
-| Check | Result |
+Private media requires a signed asset token and the matching session-scoped HttpOnly cookie. The endpoint checks session ownership and current access. A copied token alone, another user, or an expired session cannot read the asset. Private media does not use customer upload storage or analytics.
+
+Tool activity includes names and status, not credentials or raw outbound requests. Shared guards redact configured secrets and credential-labelled JSON fields before results reach the model. Transport and history redaction protect rendered output. SDK tracing is disabled. The messaging error logger does not print external exceptions outside the redaction scope.
+
+Web Chat accepts only a new user message, not a replacement transcript containing fabricated tool evidence. Empty history reset remains supported.
+
+## Budgets and lifecycle
+
+`agent_execution.py` owns shared defaults:
+
+| Environment variable | Default |
 | --- | --- |
-| Six affected backend suites listed below | 147 passed |
-| Three affected frontend suites listed below | 85 passed |
-| TypeScript check | Passed |
-| Separate Next.js build and workflow release check | Passed |
-| Separate backend Docker image build | Passed; not started/deployed |
-| `git diff --check` | Passed |
+| `AGENT_MAX_TURNS` | 30 SDK iterations per run |
+| `AGENT_MAX_HISTORY_BYTES` | 80 MiB |
+| `AGENT_MAX_MESSAGE_CHARS` | 32,000 |
+| `AGENT_MAX_ACTIVE_RUNS` | 4 per worker |
+| `AGENT_SESSION_IDLE_SECONDS` | 7,200 for ephemeral Private sessions |
+| `AGENT_RUN_TIMEOUT_SECONDS` | 180-second Private HTTP wait budget |
 
-Frontend behavior was verified through React component tests and a compiled build, not a manual browser session. The backend build emits the pre-existing Dockerfile `FROM`/`as` casing warning. An initial sandbox run could not bind the loopback echo server; the repeated run with local-network permission passed all 147 tests. No external service was used to resolve that test restriction.
+The HTTP wait budget is not a cancellation deadline. Work continues after HTTP 504. The session remains busy until completion, and GET session status returns the eventual reply with its request ID. The UI checks status instead of replaying a potentially mutating request. WebSocket streaming has no equivalent HTTP response wait. Provider and tool timeouts remain configured at their shared adapters.
 
-No `.env` is loaded for these commands. Application initialization is patched by the isolated SQLite fixtures. Integration/model transports in Private Chat tests are blocked unless explicitly replaced with fakes. The Custom API suite also uses its own loopback-only HTTP echo server.
+Private has no 24-user-turn cap. Cache protections remain: four sessions per user, 100 per worker, eight attachments, 50 MiB combined attachment request, 10 MiB per image, and 10 minutes of audio. Closing a session does not undo external actions. A failed write blocks another invocation of that tool in the same model run. A later user-requested operation remains possible.
 
-```sh
-DATABASE_URL=sqlite:////tmp/servio-preview-unused.sqlite PYTHONPATH=server \
-server/.venv/bin/python -m pytest \
-  server/tests/test_workflow_preview.py server/tests/test_workflow_creation.py \
-  server/tests/test_team_workflow.py server/tests/test_knowledge_runtime_scope.py \
-  server/tests/test_mcp_product_presentations.py server/tests/test_custom_api.py -q
+Private sessions require worker affinity because state is in memory. Restarting a backend worker clears its private history and media. Shared durable private sessions are outside this patch.
 
-cd frontend
-node --test tests/workflow-preview.test.mjs tests/team-workflow.test.mjs tests/workflow-resource-creation.test.mjs
-npx tsc --noEmit
-NEXT_DIST_DIR=.next-private-chat-dev npm run build
-```
+## EPC contracts
 
-Use a separate frontend output directory and restore generated tsconfig changes. The backend development image is built with `docker build -t servio-private-chat-dev:20261110 -f server/Dockerfile server`; this does not deploy or start it.
+Custom API keeps legacy `query` behavior unless the administrator opts into `input_schema` on a versioned request. Structured parameters bind explicit `{{args.field}}` placeholders. JSON Schema validates arguments before HTTP.
 
-## Future deployment — not executed
+An optional `result_contract` maps a configured status path to success, not-found, invalid-input, or service-error, including HTTP 200 responses. The tool result and activity expose that business outcome. Unknown outcomes do not become verified success. These contracts are editable in the collapsed advanced section of the Custom API editor.
 
-1. Review the release diff. This patch also includes the previous builtin-tool repair; `agent_config.py` contains changes from both tasks. The unrelated pre-existing `nginx/tls-front.conf` is excluded. Committing these changes does not authorize deployment.
-2. Preserve the currently deployed application image tags and configuration using the normal release process. No schema or data migration is required for Private Chat. The builtin repair has its own separate maintenance runbook.
-3. Run the dev checks above. In a separately authorized release window, build/release backend and frontend together through the normal deployment process (`./services.sh rebuild backend`, then `./services.sh rebuild frontend` on the verified deployment target). These commands restart services; they were not run here.
-4. Refresh admin pages and start new Private Chat sessions. Old clients must not bypass the new confirmation contract. Restarting workers clears old in-memory sessions.
-5. First use a controlled fake/sandbox integration: cancel confirmation (no call), confirm (one call), verify arguments/results/activity, test routing/handoff, revoke a grant and simulate failure. Verify that credentials are absent from UI/logs and failures never show a guessed vehicle model. A real EPC test is a separate authorized operation, not part of these automated checks.
-6. If checks fail, restore the previous backend/frontend images together and restart the normal services. In-memory sessions must restart. Deployment rollback cannot undo external tool actions; inspect the external system and follow its recovery procedure. Retain sanitized evidence and do not replay timed-out writes automatically.
+No VIN, vehicle name, or EPC-specific mapping is hardcoded in application code. Tests use the supplied VIN and a fake vehicle response. The fake assigns code 2004 to invalid input to reproduce the reported distinction. This is not evidence of the real provider's definition of 2004. Existing EPC configuration is not rewritten automatically and must be reviewed against its actual API contract before release.
+
+## Verification on 2026-11-10
+
+All service calls use fakes and an isolated SQLite database. No Production connection, real EPC request, real model request, commit, push, or deployment was performed.
+
+The final affected backend run passed 232 tests. The paired entry-point suite accounts for 15 tests, including parametrized cases. The frontend regression run passed 291 tests with `node --test --test-concurrency=1 tests/*.test.mjs`. One parallel rerun failed inside Node IPC deserialization, without a test assertion failure. The serial rerun passed. TypeScript, the separate Next.js build, the workflow release check, and the separately tagged backend Docker build passed. Backend tests report existing FastAPI lifespan and `audioop` deprecations. The Docker build reports the existing `FROM`/`as` casing warning.
+
+The regression commands and release steps are in [Deploy Private Chat parity](private-chat-deploy.md).
+
+## Changed files by responsibility
+
+- `server/app/agent_execution.py`, `tool_execution.py`, and `runtime_access.py` own execution budgets, evidence policy, tool recovery, redaction, and grant checks. `preview_tools.py` retains compatibility imports.
+- `server/app/agent_config.py` and `custom_api.py` own shared construction and optional request/result contracts. `server/pyproject.toml` and `uv.lock` declare JSON Schema validation.
+- `server/app/workflow_preview.py`, `chat_inputs.py`, `chat_media.py`, and `chat_presentations.py` implement private transport, shared attachments, scoped media, and shared presentations. `knowledge_image_search.py` accepts authorized draft bundle scope.
+- `server/server.py`, `app/utils.py`, `app/voice_config.py`, and `app/messaging/handler.py` use shared execution, media, history, and transport protection.
+- `frontend/src/components/WorkflowPreviewChat.tsx`, `src/lib/workflow-preview.ts`, `src/lib/chat-inputs.ts`, `src/hooks/useWebsocket.ts`, `src/lib/product-presentations.ts`, `src/lib/team-workflow.ts`, and `src/lib/admin-copy.ts` implement private attachments, shared surfaces, consent, and pending-result recovery.
+- `frontend/src/components/CreateToolForm.tsx`, `EditToolForm.tsx`, `CustomApiRequestEditor.tsx`, and `src/lib/custom-api.ts` expose and preserve optional contracts.
+- `server/tests/parity_fakes.py`, `test_private_channel_parity.py`, and `test_workflow_preview.py` cover backend behavior. `frontend/tests/workflow-preview.test.mjs`, `custom-api.test.mjs`, and `team-workflow.test.mjs` cover UI behavior and compatibility.
+- This reference, `private-chat-deploy.md`, and `docs/workflow-deployment.md` replace obsolete preview restrictions.
+
+Browser testing used a disposable profile at localhost with fake accounts and services. It covered consent cancellation, team routing, greetings, clarification, EPC response, previous-result follow-up, source expansion, product cards, and desktop and mobile layouts. Browser screenshots exposed and led to fixes for cumulative answers and dark-mode contrast.
+
+Browser file upload was blocked by PinchTab's disabled upload endpoint. The browser check therefore does not establish file-picker or audio/video playback correctness. Automated tests exercise those backend paths with real encoded fixtures and fake inference services. Browser upload and playback remain a release acceptance check.
+
+This patch cannot prove that arbitrary model prose always follows evidence. The shared policy, structured results, and tests remove the preview-only blanket rule without claiming a general factuality guarantee.

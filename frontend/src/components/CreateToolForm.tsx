@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { IconPicker } from "@/components/IconPicker";
 import { getApiBaseUrl } from "@/lib/api";
 import CustomApiRequestEditor from "@/components/CustomApiRequestEditor";
-import { requestDraft, serializeRequest, validateEndpoint } from "@/lib/custom-api";
+import { requestDraft, serializeRequest, validateEndpoint, apiExtensions } from "@/lib/custom-api";
 import { parseCreatedTool, toolCreationRequest, type CreatedTool, type ToolCreationContext } from "@/lib/tool-creation";
 
 export interface CreateToolFormProps {
@@ -44,7 +44,7 @@ export default function CreateToolForm({ context, onCreated, onCancel, onBusyCha
     try {
       let config;
       if (toolType === "custom_api") {
-        config = { type: toolType, description: formData.description, endpoint: customRequest.endpoint, method: customRequest.method, auth_token: customRequest.auth_token, timeout_seconds: Number(customRequest.timeout_seconds), request: serializeRequest(customRequest) };
+        config = { type: toolType, description: formData.description, endpoint: customRequest.endpoint, method: customRequest.method, auth_token: customRequest.auth_token, timeout_seconds: Number(customRequest.timeout_seconds), request: serializeRequest(customRequest), ...apiExtensions(customRequest) };
       } else {
         validateEndpoint(formData.endpoint);
         const timeout = Number(formData.timeout_seconds);

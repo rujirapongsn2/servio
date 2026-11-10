@@ -36,9 +36,9 @@ Workflow keeps **Design**, **Private chat**, and **Channels** in the same team w
 
 Each team or direct Agent target retains its own conversation and unsent message while switching views. Restart captures the current Agent settings. Knowledge contents remain current rather than frozen with those settings. Opening Knowledge returns to the same conversation after the editor closes.
 
-Preview permits built-in date and web search tools and Local Knowledge. Custom APIs, MCP, and other tools are unavailable in preview because their effects cannot be inferred safely. The interface lists blocked tools.
+Private Chat uses all tools authorized for the team through the shared runtime, including Custom API and MCP. Starting a session requires confirmation that tools can act on external systems. Tool failure remains in conversation context and does not retire the session. Greetings, clarification, and answers based on earlier results do not require a new tool call.
 
-The authenticated routes under `/api/admin/team-agents/{team_id}/workflow/previews` create, message, and delete private sessions. Access is checked against the owning user and team on every request. Sessions expire after 30 minutes and hold at most 24 user turns. A process allows four sessions per user, 100 sessions overall, and four active runs. A request deadline expires the session but retains capacity until underlying work finishes. Closing a busy session retires it without canceling retrieval threads.
+The authenticated routes under `/api/admin/team-agents/{team_id}/workflow/previews` create, message, inspect, and delete private sessions. Shared runtime budgets replace the 24-turn cap. An HTTP wait timeout leaves work running and allows status recovery without replaying a write. See [Private Chat runtime parity](operations/private-chat-runtime.md) for formats, permissions, remaining differences, and test evidence.
 
 Sessions live in backend memory. A backend restart clears them. Multiple backend workers require session affinity or a shared session implementation before private chat can span workers. No database migration or new environment variable is required.
 
