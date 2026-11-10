@@ -4,7 +4,7 @@ import { useAdminLocale } from "@/lib/admin-locale";
 import { useEffect, useState } from "react";
 import { BookOpen, Bot, Expand, GitBranch, LockKeyhole, Plus, Save, Star, Wrench, X, Play, Sparkles, Trash2 } from "lucide-react";
 import { parseDefaultChatModels, parseModelIds } from "@/lib/provider-models";
-import { isKnowledgeTool, workflowRequest, type TeamWorkflow, type WorkflowAgentDraft } from "@/lib/team-workflow";
+import { isKnowledgeTool, isWorkflowToolSelected, selectWorkflowTool, workflowRequest, type TeamWorkflow, type WorkflowAgentDraft } from "@/lib/team-workflow";
 import type { WorkflowEditor } from "@/lib/workflow-authoring";
 
 type Section = "agent" | "tools" | "knowledge" | "handoffs";
@@ -192,8 +192,8 @@ export default function WorkflowAgentInspector({ workflow, editor, dirty, saving
           {(section === "tools" || section === "knowledge") && <>
             <div className="flex justify-end"><button type="button" data-admin-write="true" onClick={section === "knowledge" ? onCreateKnowledge : onCreateTool} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm text-sky-700 hover:bg-sky-50"><Plus className="h-4 w-4" />{section === "knowledge" ? copy.createKnowledge : copy.createTool}</button></div>
             {workflow.tools.filter((tool) => isKnowledgeTool(tool) === (section === "knowledge")).map((tool) => <label key={tool.id} className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm">
-              <input className="mt-1" type="checkbox" checked={draft.tool_ids.includes(tool.id)} disabled={tool.name === "DateTimeTool"}
-                data-admin-write="true" onChange={(event) => onChange({ ...draft, tool_ids: event.target.checked ? [...draft.tool_ids, tool.id] : draft.tool_ids.filter((id) => id !== tool.id) })} />
+              <input className="mt-1" type="checkbox" checked={isWorkflowToolSelected(tool, draft.tool_ids) || (tool.type === "builtin" && tool.name === "DateTimeTool")} disabled={tool.type === "builtin" && tool.name === "DateTimeTool"}
+                data-admin-write="true" onChange={(event) => onChange({ ...draft, tool_ids: selectWorkflowTool(tool, draft.tool_ids, event.target.checked) })} />
               <span className="min-w-0 break-words">{tool.name}</span>
             </label>)}
             {!workflow.tools.some((tool) => isKnowledgeTool(tool) === (section === "knowledge")) && <p className="py-6 text-center text-sm text-slate-500">{section === "knowledge" ? copy.noKnowledge : copy.noTools}</p>}

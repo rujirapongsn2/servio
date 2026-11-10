@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import json
 import time
 from uuid import uuid4
+from typing import Callable
 
 from agents import Runner, RunConfig
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app import database, default_chat_models
 from app.auth import get_current_user
 from app.orm_models import LLMProvider, Tool
+from app.preview_tools import (AccessHooks, ToolExecutionFailed, activity, execution_lock, protect_tools,
+                               redact, install_log_redaction, log_secrets, FAILED_REPLY, NO_EVIDENCE_REPLY)
 
 TTL_SECONDS = 1800
 MAX_SESSIONS = 100
@@ -64,6 +67,7 @@ class CreatePreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target_agent_id: int | None = Field(default=None, gt=0)
     drafts: list[DraftOverride] = Field(default_factory=list, max_length=32)
+    confirm_real_tools: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def bounded_snapshot(self):
@@ -97,6 +101,8 @@ class PreviewSession:
     expires_at: float
     blocked_tools: list[str]
     has_drafts: bool
+    check_access: Callable[[], None]
+    secrets: set[str] = field(default_factory=set)
     history: list = field(default_factory=list)
     turns: int = 0
     busy: bool = False
@@ -124,14 +130,6 @@ def _session(user, team_id, preview_id):
     return session
 
 
-def _readonly_tool(tool):
-    if tool["name"] in {"DateTimeTool", "WebSearchTool"}:
-        return True
-    config = json.loads(tool.get("config") or "{}")
-    return (tool.get("type") == "okf_knowledge_graph" and config.get("type") == "okf_knowledge_graph"
-            and isinstance(config.get("okf_bundle_id"), int))
-
-
 def _validate_access(team_id, agents):
     current_members = {member["agent_id"] for member in (database.get_team_agent_by_id(team_id) or {}).get("members", [])}
     if not {agent["id"] for agent in agents}.issubset(current_members):
@@ -141,6 +139,10 @@ def _validate_access(team_id, agents):
             for tool in agent["tools"]:
                 if not database._tool_available_to_team(db, tool["id"], team_id):
                     raise HTTPException(403, "A preview tool is no longer available to this team.")
+                current = db.get(Tool, tool['id'])
+                if (not current or current.name != tool['name'] or current.type != tool['type']
+                        or (current.config or {}) != json.loads(tool.get('config') or '{}')):
+                    raise HTTPException(409, "Tool configuration changed. Start a new preview.")
             provider = agent.get("llm_provider")
             if provider:
                 current = db.get(LLMProvider, provider["id"])
@@ -195,44 +197,25 @@ def _capture(team_id, request, saved_agents=None):
     return team, agents
 
 
-def _build(team_id, team, agents, target_agent_id):
+def _build(team_id, team, agents, target_agent_id, check):
     from app.agent_config import get_runtime_starting_agent
-    safe_agents = deepcopy(agents)
-    blocked = set()
-    for agent in safe_agents:
-        allowed = []
-        for tool in agent["tools"]:
-            if _readonly_tool(tool):
-                allowed.append(tool)
-            else:
-                blocked.add(tool["name"])
-        agent["tools"] = allowed
-    coordinator = get_runtime_starting_agent(team_id, captured_team=team, captured_agents=safe_agents)
+    coordinator = get_runtime_starting_agent(team_id, captured_team=team, captured_agents=agents)
     runtime_agents = list(coordinator.handoffs)
-    for agent in runtime_agents:
-        for tool in agent.tools:
-            if not hasattr(tool, "on_invoke_tool"):
-                continue
-            invoke = tool.on_invoke_tool
-            async def safe_invoke(context, arguments, invoke=invoke):
-                try:
-                    value = await invoke(context, arguments)
-                    return "Knowledge search is temporarily unavailable." if isinstance(value, str) and value.startswith("Error searching OKF knowledge:") else value
-                except Exception:
-                    return "Preview tool is temporarily unavailable."
-            tool.on_invoke_tool = safe_invoke
+    secrets = protect_tools([coordinator, *runtime_agents], agents, check)
     if target_agent_id is not None:
-        target = next((runtime for captured, runtime in zip(safe_agents, runtime_agents)
+        target = next((runtime for captured, runtime in zip(agents, runtime_agents)
                        if captured["id"] == target_agent_id), None)
         if target is None:
             raise HTTPException(503, "Preview agent could not be prepared.")
         coordinator = target
-    return coordinator, sorted(blocked)
+    return coordinator, secrets
 
 
 @router.post("/team-agents/{team_id}/workflow/previews")
 async def create_preview(team_id: int, request: CreatePreview, current_user: str = Depends(get_current_user)):
     _require_admin(current_user, team_id)
+    if request.confirm_real_tools is not True:
+        raise HTTPException(428, "Confirm that Private Chat can execute real tools and change external data before starting a session.")
     _prune()
     if len(_sessions) >= MAX_SESSIONS or sum(session.owner == current_user for session in _sessions.values()) >= MAX_USER_SESSIONS:
         raise HTTPException(429, "Close an existing preview before starting another.")
@@ -242,29 +225,45 @@ async def create_preview(team_id: int, request: CreatePreview, current_user: str
             raise HTTPException(400, "Save the agent in this team before previewing it.")
         await default_chat_models.validate_selection(item.draft.model, item.draft.llm_provider_id, saved[item.agent_id])
     team, agents = _capture(team_id, request, list(saved.values()))
+    def check():
+        _require_admin(current_user, team_id)
+        _validate_access(team_id, agents)
     try:
-        agent, blocked = _build(team_id, team, agents, request.target_agent_id)
+        agent, secrets = _build(team_id, team, agents, request.target_agent_id, check)
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(503, "Preview could not be prepared. Check agent configuration.")
     preview_id = str(uuid4())
     _sessions[preview_id] = PreviewSession(current_user, team_id, request.target_agent_id, agents, agent,
-                                          time.monotonic() + TTL_SECONDS, blocked, bool(request.drafts))
+                                          time.monotonic() + TTL_SECONDS, [], bool(request.drafts), check, secrets)
     return {"id": preview_id, "target_agent_id": request.target_agent_id, "has_drafts": bool(request.drafts),
-            "blocked_tools": blocked, "expires_in_seconds": TTL_SECONDS}
+            "blocked_tools": [], "expires_in_seconds": TTL_SECONDS, "real_tools_confirmed": True}
 
 
 async def _run(session, message):
-    from app.agent_config import start_tool_logging, get_tool_log, get_tool_citations
+    from app.agent_config import start_tool_logging, get_tool_citations
     from app.knowledge_image_presentations import hydrate_knowledge_images
     from app.knowledge_audio_presentations import hydrate_knowledge_media
     from app.local_video_rag import hydrate_knowledge_videos
     from app.product_presentations import parse_product_carousel
 
     history = deepcopy(session.history) + [{"role": "user", "content": message}]
+    install_log_redaction()
+    log_secrets.set(session.secrets)
     start_tool_logging()
-    output = await Runner.run(session.agent, history, max_turns=12, run_config=RunConfig(tracing_disabled=True))
+    events = []
+    activity.set(events)
+    execution_lock.set(asyncio.Lock())
+    try:
+        output = await Runner.run(session.agent, history, max_turns=12,
+                                  hooks=AccessHooks(session.check_access),
+                                  run_config=RunConfig(tracing_disabled=True))
+    except ToolExecutionFailed:
+        # Discard speculative model output and partial tool history. Never retry a write.
+        session.expires_at = time.monotonic()
+        return {"response": FAILED_REPLY, "agent_name": session.agent.name,
+                "presentations": {}, "tool_calls": events, "citations": [], "status": "tool_failed"}
     calls, presentations = {}, {}
     for run_item in output.new_items:
         item = run_item.to_input_item()
@@ -288,8 +287,18 @@ async def _run(session, message):
         raise HTTPException(409, "Preview conversation is full. Start a new preview.")
     session.history, session.agent = new_history, output.last_agent
     session.turns += 1
-    return {"response": str(output.final_output or "No response"), "agent_name": output.last_agent.name,
-            "presentations": presentations, "tool_calls": get_tool_log(), "citations": get_tool_citations()}
+    integration_names = {tool['name'] for agent in session.agents for tool in agent['tools']
+                         if tool['type'] in ('custom_api', 'mcp_streamable_http')}
+    has_integrations = any(getattr(tool, 'name', None) in integration_names for tool in output.last_agent.tools)
+    evidence_names = {tool['name'] for agent in session.agents for tool in agent['tools'] if tool['type'] != 'builtin'}
+    unverified = has_integrations and not any(event['name'] in evidence_names and event['status'] == 'succeeded' for event in events)
+    response = NO_EVIDENCE_REPLY if unverified else str(output.final_output or "No response")
+    if unverified:
+        session.history = history + [{"role": "assistant", "content": response}]
+        presentations = {}
+    return redact({"response": response, "agent_name": output.last_agent.name,
+            "presentations": presentations, "tool_calls": events, "citations": get_tool_citations() if not unverified else [],
+            "status": "unverified" if unverified else "completed"}, session.secrets)
 
 
 @router.post("/team-agents/{team_id}/workflow/previews/{preview_id}/messages")
@@ -324,7 +333,7 @@ async def send_preview_message(team_id: int, preview_id: str, request: PreviewMe
         raise
     except asyncio.TimeoutError:
         session.expires_at = time.monotonic()
-        raise HTTPException(504, "Preview expired after taking too long. Restart the preview.")
+        raise HTTPException(504, "Preview expired after taking too long. Tool actions may already have occurred. Check external systems before starting again.")
     except Exception:
         raise HTTPException(503, "Preview could not complete. Try again or start a new preview.")
     finally:

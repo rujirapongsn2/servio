@@ -94,6 +94,7 @@ export default function WorkflowPreviewChat({ teamId, workflow, drafts, targetAg
   async function send(message = current.composer) {
     const content = message.trim();
     if (!content || current.phase === "busy" || expired || targetRemoved) return;
+    if (!current.session && !window.confirm(copy.confirmRealTools)) return;
     current.phase = "busy";
     current.error = null;
     const requestSignature = signature;
@@ -102,7 +103,7 @@ export default function WorkflowPreviewChat({ teamId, workflow, drafts, targetAg
     const isCurrent = () => conversations.current.get(key) === current;
     try {
       if (!current.session) {
-        const session = parsePreviewSession(await workflowRequest(base, { method: "POST", body: JSON.stringify({ target_agent_id: targetAgentId, drafts: requestDrafts }) }));
+        const session = parsePreviewSession(await workflowRequest(base, { method: "POST", body: JSON.stringify({ target_agent_id: targetAgentId, drafts: requestDrafts, confirm_real_tools: true }) }));
         if (!isCurrent()) { void removeSession(session.id); return; }
         current.session = session;
         current.signature = requestSignature;
@@ -114,7 +115,7 @@ export default function WorkflowPreviewChat({ teamId, workflow, drafts, targetAg
       const reply = parsePreviewReply(await workflowRequest(`${base}/${encodeURIComponent(current.session.id)}/messages`, { method: "POST", body: JSON.stringify({ message: content }) }));
       if (!isCurrent()) return;
       current.messages.push({ kind: "assistant", reply });
-      current.phase = "idle";
+      current.phase = reply.status === "tool_failed" ? "expired" : "idle";
     } catch (error) {
       if (!isCurrent()) return;
       const failure = previewError(error);

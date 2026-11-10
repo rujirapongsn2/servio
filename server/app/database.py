@@ -518,10 +518,8 @@ def create_agent(
 ) -> int:
     """Create a new agent"""
     with get_db() as db:
-        datetime_tool = db.query(Tool).filter_by(name="DateTimeTool").first()
-        effective_tool_ids = list(dict.fromkeys(tool_ids))
-        if datetime_tool and datetime_tool.id not in effective_tool_ids:
-            effective_tool_ids.append(datetime_tool.id)
+        from app.builtin_tools import normalize_agent_tool_ids
+        effective_tool_ids = normalize_agent_tool_ids(db, tool_ids, team_agent_id)
 
         if team_agent_id is not None:
             if not db.query(TeamAgent).filter_by(id=team_agent_id).with_for_update().first():
@@ -601,10 +599,8 @@ def update_agent(
             return False
         if db.query(TeamAgentMember).filter_by(agent_id=agent_id).count() > 1:
             raise ValueError("Shared agents are read-only. Remove sharing before editing this agent.")
-        datetime_tool = db.query(Tool).filter_by(name="DateTimeTool").first()
-        effective_tool_ids = list(dict.fromkeys(tool_ids))
-        if datetime_tool and datetime_tool.id not in effective_tool_ids:
-            effective_tool_ids.append(datetime_tool.id)
+        from app.builtin_tools import normalize_agent_tool_ids
+        effective_tool_ids = normalize_agent_tool_ids(db, tool_ids, team_agent_id)
         if team_agent_id is not None:
             membership = db.query(TeamAgentMember).filter_by(
                 team_agent_id=team_agent_id,
@@ -703,6 +699,15 @@ def assign_tool_to_agent(
 
         if db.query(TeamAgentMember).filter_by(agent_id=agent_id).count() > 1:
             return False
+        from app.builtin_tools import BUILTINS, normalize_agent_tool_ids
+        if tool.type == "builtin" and tool.name in BUILTINS:
+            current_ids = [row.tool_id for row in db.query(AgentTool).filter_by(agent_id=agent_id)]
+            normalized = normalize_agent_tool_ids(db, [*current_ids, tool_id], team_agent_id)
+            if set(current_ids) != set(normalized):
+                db.query(AgentTool).filter_by(agent_id=agent_id).delete(synchronize_session=False)
+                db.add_all([AgentTool(agent_id=agent_id, tool_id=ident) for ident in normalized])
+                agent.updated_at = datetime.utcnow()
+            return True
         existing = db.query(AgentTool).filter_by(agent_id=agent_id, tool_id=tool_id).first()
         if existing:
             return True
@@ -820,6 +825,9 @@ def create_custom_tool(
 ) -> int:
     """Create a custom API tool or MCP tool, optionally owned by a team"""
     with get_db() as db:
+        from app.builtin_tools import BUILTINS
+        if name in BUILTINS:
+            raise ValueError("Builtin tool names are reserved")
         # Determine tool type from config
         tool_type = config.get("type", "custom_api")
         # Determine visibility: explicit > team-ownership > global fallback
@@ -857,6 +865,9 @@ def update_custom_tool(
     """Update a custom API tool, MCP tool, or Gemini File Search tool.
     When team_agent_id is provided, only allows update if the team owns the tool.
     """
+    from app.builtin_tools import BUILTINS
+    if name in BUILTINS:
+        raise ValueError("Builtin tool names are reserved")
     with get_db() as db:
         query = db.query(Tool).filter(
             Tool.id == tool_id,

@@ -10,6 +10,7 @@ export type PreviewSession = {
   expiresAt: number;
 };
 export type PreviewReply = {
+  status: "completed" | "unverified" | "tool_failed";
   response: string;
   agentName: string;
   presentations: ProductPresentations;
@@ -60,8 +61,9 @@ export function parsePreviewSession(value: unknown, now = Date.now()): PreviewSe
 }
 export function parsePreviewReply(value: unknown): PreviewReply {
   if (!isRecord(value) || typeof value.response !== "string" || typeof value.agent_name !== "string" ||
-    !Array.isArray(value.tool_calls) || !Array.isArray(value.citations)) throw new Error("Invalid preview response. Restart before sending again.");
-  return { response: value.response, agentName: value.agent_name, presentations: parseProductPresentations(value.presentations), toolCalls: value.tool_calls, citations: value.citations };
+    !Array.isArray(value.tool_calls) || !Array.isArray(value.citations) ||
+    !(value.status === undefined || value.status === "completed" || value.status === "unverified" || value.status === "tool_failed")) throw new Error("Invalid preview response. Restart before sending again.");
+  return { status: value.status ?? "completed", response: value.response, agentName: value.agent_name, presentations: parseProductPresentations(value.presentations), toolCalls: value.tool_calls, citations: value.citations };
 }
 export function previewError(error: unknown): { message: string; expired: boolean } {
   const message = error instanceof Error ? error.message : "Preview failed. Try again.";

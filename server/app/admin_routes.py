@@ -582,7 +582,10 @@ async def get_team_workflow(team_id: int, current_user: str = Depends(get_curren
     from app.team_workflow import get_snapshot
 
     require_team_access(current_user, team_id, "viewer")
-    snapshot = get_snapshot(team_id)
+    try:
+        snapshot = get_snapshot(team_id)
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Team Agent not found")
     snapshot["can_edit"] = database.has_team_access(current_user, team_id, "admin")

@@ -60,6 +60,20 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_database():
+    from app.builtin_tools import STARTUP_LOCK
+    if engine.dialect.name != "postgresql":
+        return _initialize_database()
+    # Serialize schema setup as well as seeds across worker processes.
+    with engine.connect() as gate:
+        gate.execute(text("SELECT pg_advisory_lock(:key)"), {"key": STARTUP_LOCK})
+        try:
+            return _initialize_database()
+        finally:
+            gate.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": STARTUP_LOCK})
+            gate.commit()
+
+
+def _initialize_database():
     """
     Initialize database schema and default data.
 
@@ -242,6 +256,9 @@ def init_database():
 
     # Insert default data and run migration
     with get_db() as db:
+        from app.builtin_tools import lock_registry, sequential_registry, ensure_builtin_tools
+        lock_registry(db)
+        sequential_registry(db)
         # Insert default admin if not exists
         admin_exists = db.query(Admin).filter_by(username="admin").first()
         if not admin_exists:
@@ -309,12 +326,10 @@ def init_database():
             tools = db.query(Tool).all()
             for tool in tools:
                 if tool.owner_team_agent_id is None:
-                    if tool.type == "builtin":
-                        tool.visibility = "global"
-                    else:
+                    if tool.type != "builtin":
                         tool.owner_team_agent_id = default_team.id
                         tool.visibility = "team"
-            logger.info(f"Assigned {len(tools)} existing tools to Default Team (builtins set to global)")
+            logger.info(f"Backfilled ownership for {len(tools)} existing tools without changing builtin scope")
 
             # Backfill channel configs to Default Team
             channels = db.query(ChannelConfig).filter(ChannelConfig.team_agent_id.is_(None)).all()
@@ -353,13 +368,9 @@ def init_database():
         default_admin = db.query(Admin).filter_by(username="admin").first() or db.query(Admin).order_by(Admin.id).first()
         for tool in tools:
             if tool.type == "builtin":
-                if tool.owner_team_agent_id is None and default_team:
-                    tool.owner_team_agent_id = default_team.id
-                    changed_tools += 1
-                if tool.visibility != "global":
-                    tool.visibility = "global"
-                    changed_tools += 1
-            elif tool.owner_team_agent_id is None:
+                # Existing visibility, ownership and grants belong to the operator.
+                continue
+            if tool.owner_team_agent_id is None:
                 tool.owner_team_agent_id = default_team.id
                 tool.visibility = "team"
                 changed_tools += 1
@@ -395,33 +406,8 @@ def init_database():
             if admins and teams:
                 logger.info(f"Created owner memberships for {len(admins)} admin(s) across {len(teams)} team(s)")
 
-        # Insert builtin tools if not exists
-        builtin_tools = [
-            {
-                "name": "DateTimeTool",
-                "type": "builtin",
-                "config": {"description": "Get current server date and time with timezone"}
-            },
-            {
-                "name": "WebSearchTool",
-                "type": "builtin",
-                "config": {"description": "Search the web for information"}
-            },
-        ]
-
-        default_admin = db.query(Admin).filter_by(username="admin").first() or db.query(Admin).order_by(Admin.id).first()
-
-        for tool_data in builtin_tools:
-            exists = db.query(Tool).filter_by(name=tool_data["name"]).first()
-            if not exists:
-                tool = Tool(
-                    **tool_data,
-                    owner_team_agent_id=default_team.id if default_team else None,
-                    visibility="global",
-                    created_by_admin_id=default_admin.id if default_admin else None,
-                )
-                db.add(tool)
-                logger.info(f"Builtin tool '{tool_data['name']}' created")
+        ensure_builtin_tools(db, default_team.id if default_team else None,
+                             default_admin.id if default_admin else None)
 
         # Insert default custom tools
         custom_tools = [

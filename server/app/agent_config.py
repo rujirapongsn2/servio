@@ -710,6 +710,7 @@ def build_agent_from_db(
     all_agents: Dict[int, Agent] = None,
     *,
     runtime_team_agent_id: Optional[int] = None,
+    strict_tools: bool = False,
 ) -> Agent:
     """Build an Agent instance from database configuration"""
     if runtime_team_agent_id is None:
@@ -718,13 +719,16 @@ def build_agent_from_db(
         runtime_team_agent_id = database.get_default_team_id()
     # Get tools
     tools = []
-    for tool_data in agent_data.get("tools", []):
+    from app.builtin_tools import runtime_tools
+    for tool_data in runtime_tools(agent_data.get("tools", [])):
         tool_config = json.loads(tool_data["config"]) if tool_data.get("config") else {}
         tool = get_tool_by_name(
             tool_data["name"], tool_config, runtime_team_agent_id=runtime_team_agent_id
         )
         if tool:
             tools.append(tool)
+        elif strict_tools:
+            raise ValueError('An assigned tool cannot be constructed by this runtime')
     # DateTimeTool is always available by default for every runtime agent.
     if not any(getattr(t, "name", "") == "DateTimeTool" for t in tools):
         default_datetime_tool = get_tool_by_name("DateTimeTool", {"description": "Get current server date/time"})
@@ -756,7 +760,9 @@ def build_agent_from_db(
                 openai_client=client
             )
         except Exception as e:
-            print(f"Error configuring LLM provider for agent {agent_data['name']}: {e}")
+            print(f"Error configuring LLM provider for agent id={agent_data.get('id')}")
+            if strict_tools:
+                raise ValueError('LLM provider could not be configured') from None
             # Fallback to default model string
 
     # Inject tool awareness into instructions so the LLM knows
@@ -908,7 +914,8 @@ def get_runtime_starting_agent(
     for a in db_agents_data:
         try:
             agent = build_agent_from_db(
-                a, all_agents=None, runtime_team_agent_id=runtime_team_agent_id
+                a, all_agents=None, runtime_team_agent_id=runtime_team_agent_id,
+                strict_tools=captured_agents is not None,
             )
             all_agents[a["id"]] = agent
         except Exception as e:

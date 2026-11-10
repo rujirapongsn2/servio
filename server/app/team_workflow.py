@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app import database
+from app.builtin_tools import aliases, normalize_agent_tool_ids, sequential_registry
 from app.model_settings import default_agent_model
 from app.models import CreateWorkflowAgentRequest, CreateWorkflowToolRequest, UpdateWorkflowAgentRequest, UpdateWorkflowMembersRequest, DeleteWorkflowAgentRequest
 from app.orm_models import Admin, TeamToolAssignment, WorkflowCreationReceipt, Agent, AgentHandoff, AgentTool, LLMProvider, OKFBundle, TeamAgent, TeamAgentMember, TeamUserMembership, Tool
@@ -30,7 +31,9 @@ def get_snapshot(team_id: int) -> dict[str, Any] | None:
         agents = db.query(Agent).options(selectinload(Agent.tools), selectinload(Agent.handoff_to)).filter(Agent.id.in_(member_ids)).all()
         by_id = {agent.id: agent for agent in agents}
         counts = dict(db.query(TeamAgentMember.agent_id, func.count()).filter(TeamAgentMember.agent_id.in_(member_ids)).group_by(TeamAgentMember.agent_id).all())
-        tools = [tool for tool in db.query(Tool).order_by(Tool.name).all() if database._tool_available_to_team(db, tool.id, team_id)]
+        tools = [tool for tool in sequential_registry(db) if database._tool_available_to_team(db, tool.id, team_id)]
+        mapping = aliases(tools)
+        visible_tools = [tool for tool in tools if mapping.get(tool.id, tool.id) == tool.id]
         knowledge_tools = [tool for tool in tools if tool.type == "okf_knowledge_graph"
                            and isinstance(tool.config, dict) and isinstance(tool.config.get("okf_bundle_id"), int)]
         bundle_ids = {tool.config["okf_bundle_id"] for tool in knowledge_tools}
@@ -44,12 +47,14 @@ def get_snapshot(team_id: int) -> dict[str, Any] | None:
             "agents": [{
                 "id": agent.id, "name": agent.name, "instructions": agent.instructions,
                 "model": agent.model, "llm_provider_id": agent.llm_provider_id,
-                "tool_ids": [tool.id for tool in agent.tools],
+                "tool_ids": sorted({mapping.get(tool.id, tool.id) for tool in agent.tools}),
                 "handoff_agent_ids": [target.id for target in agent.handoff_to if target.id in member_ids],
                 "shared": counts[agent.id] > 1,
                 "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
             } for member in members if (agent := by_id.get(member.agent_id))],
-            "tools": [{"id": tool.id, "name": display_names.get(tool.id, tool.name), "type": tool.type} for tool in tools],
+            "tools": [{"id": tool.id, "name": display_names.get(tool.id, tool.name), "type": tool.type,
+                       **({"alias_ids": sorted(ident for ident, canonical in mapping.items() if canonical == tool.id)}
+                          if tool.id in mapping else {})} for tool in visible_tools],
             "providers": [{"id": provider.id, "name": provider.name} for provider in db.query(LLMProvider).order_by(LLMProvider.name)],
         }
 
@@ -100,12 +105,7 @@ def _validate_agent(db, team_id, request, member_ids, agent_id=None):
     handoff_ids = set(request.handoff_agent_ids)
     if agent_id in handoff_ids or not handoff_ids.issubset(member_ids):
         raise ValueError("Handoffs must target another agent in this team")
-    tool_ids = set(request.tool_ids)
-    datetime_tool = db.query(Tool).filter_by(name="DateTimeTool").first()
-    if datetime_tool and database._tool_available_to_team(db, datetime_tool.id, team_id):
-        tool_ids.add(datetime_tool.id)
-    if any(not database._tool_available_to_team(db, tool_id, team_id) for tool_id in tool_ids):
-        raise ValueError("One or more tools are not available to this Team Agent")
+    tool_ids = normalize_agent_tool_ids(db, request.tool_ids, team_id)
     return name, model, tool_ids, handoff_ids
 
 
@@ -215,6 +215,9 @@ def create_workflow_tool(team_id: int, request: CreateWorkflowToolRequest, curre
         name = request.name.strip()
         if not name:
             raise ValueError("Tool name must not be empty")
+        from app.builtin_tools import BUILTINS
+        if name in BUILTINS:
+            raise ValueError("Builtin tool names are reserved")
         kind = _validate_tool_config(request.config)
         if db.query(Tool).filter_by(name=name).first():
             raise WorkflowConflict("A tool with this name already exists")

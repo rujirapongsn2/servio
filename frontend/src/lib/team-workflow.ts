@@ -14,6 +14,7 @@ export interface WorkflowTool {
   id: number;
   name: string;
   type: string;
+  alias_ids?: number[];
 }
 
 export interface TeamWorkflow {
@@ -63,7 +64,8 @@ function isNamedId(value: unknown): value is { id: number; name: string } {
 }
 
 function isTool(value: unknown): value is WorkflowTool {
-  return isRecord(value) && isNamedId(value) && "type" in value && typeof value.type === "string";
+  return isRecord(value) && isNamedId(value) && "type" in value && typeof value.type === "string"
+    && (!("alias_ids" in value) || value.alias_ids === undefined || (isIds(value.alias_ids) && value.alias_ids.includes(value.id)));
 }
 
 export function parseTeamWorkflow(value: unknown): TeamWorkflow {
@@ -132,4 +134,13 @@ export async function workflowRequest(path: string, init?: RequestInit): Promise
     throw new Error(detail);
   }
   return data;
+}
+
+export function isWorkflowToolSelected(tool: WorkflowTool, ids: number[]): boolean {
+  return ids.some(id => id === tool.id || tool.alias_ids?.includes(id));
+}
+
+export function selectWorkflowTool(tool: WorkflowTool, ids: number[], selected: boolean): number[] {
+  const remaining = ids.filter(id => id !== tool.id && !tool.alias_ids?.includes(id));
+  return selected ? [...remaining, tool.id] : remaining;
 }

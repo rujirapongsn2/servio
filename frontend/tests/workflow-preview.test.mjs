@@ -243,3 +243,36 @@ test('locale switch preserves a live private conversation and composer without a
   assert.equal(calls.filter(call => call.method === 'DELETE').length, 0);
   assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 1);
 });
+
+test('real-tool consent is required per session; cancel sends no request', async t => {
+  const calls = []; const confirmations = [];
+  const ui = await setup(t, async (url, init) => {
+    calls.push({ url, init });
+    return url.endsWith('/messages') ? reply('Verified result') : session('confirmed');
+  });
+  global.window.confirm = message => { confirmations.push(message); return false; };
+  await ui.compose('Look up VIN'); await ui.send();
+  assert.equal(calls.length, 0);
+  assert.equal(ui.renderer.root.findByType('textarea').props.value, 'Look up VIN');
+  assert.match(confirmations[0], /real tools.*change external data/i);
+  global.window.confirm = () => true;
+  await ui.send();
+  assert.equal(JSON.parse(calls[0].init.body).confirm_real_tools, true);
+  global.window.confirm = () => { throw new Error('must not confirm again within session'); };
+  await ui.compose('Next'); await ui.send();
+  assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 1);
+  assert.doesNotMatch(text(ui.renderer.toJSON()), /read-only/);
+});
+
+test('failed tool status retires the session without silently repeating the operation', async t => {
+  const calls = [];
+  const ui = await setup(t, async (url, init) => {
+    calls.push(url);
+    return url.endsWith('/messages') ? { ...reply('Could not verify; check before retrying'), status: 'tool_failed', tool_calls: [{ name: 'API', status: 'failed' }] } : session('failed');
+  });
+  await ui.compose('Run operation'); await ui.send();
+  assert.match(text(ui.renderer.toJSON()), /Could not verify/);
+  assert.match(text(ui.renderer.toJSON()), /failed/);
+  await ui.compose('Run again'); await ui.send();
+  assert.equal(calls.length, 2);
+});

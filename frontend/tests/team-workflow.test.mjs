@@ -1046,3 +1046,31 @@ test('team views share newest-first sorting, search and workflow navigation', as
   assert.deepEqual(tree.root.findAllByType('h3').map(node => text(node)), ['Zulu']);
   assert.deepEqual(env.context.teams, [oldTeam, newTeam]);
 });
+
+
+test('builtin aliases keep restored draft selections and clear every alias on deselection', () => {
+  const api = modules()('src/lib/team-workflow.ts');
+  const tool = { id: 2, name: 'WebSearchTool', type: 'builtin', alias_ids: [2, 267] };
+  assert.equal(api.isWorkflowToolSelected(tool, [267, 45]), true);
+  assert.deepEqual(api.selectWorkflowTool(tool, [2, 267, 45], false), [45]);
+  assert.deepEqual(api.selectWorkflowTool(tool, [267, 45], true), [45, 2]);
+  const data = snapshot(); data.tools.push(tool);
+  assert.doesNotThrow(() => api.parseTeamWorkflow(data));
+  data.tools.at(-1).alias_ids = [999];
+  assert.throws(() => api.parseTeamWorkflow(data), /Invalid workflow/);
+});
+
+
+test('builtin alias checkbox reflects selection and deselects the stored duplicate ID', async (t) => {
+  const data = snapshot();
+  data.tools.push({id: 3, name: 'WebSearchTool', type: 'builtin', alias_ids: [3, 267]});
+  data.agents[0].tool_ids = [1, 267];
+  const env = setup(t, data); const renderer = await env.mount();
+  await act(async () => button(renderer, 'Tools').props.onClick());
+  const label = renderer.root.findAllByType('label').find(node => node.findAllByType('span').some(span => span.props.children === 'WebSearchTool'));
+  const checkbox = label.findByType('input');
+  assert.equal(checkbox.props.checked, true);
+  await act(async () => checkbox.props.onChange({target:{checked:false}}));
+  await save(renderer);
+  assert.deepEqual(env.saves[0].tool_ids, [1]);
+});
