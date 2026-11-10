@@ -60,6 +60,10 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_database():
+    # Production releases validate schema separately and never migrate at startup.
+    if os.getenv("DATABASE_AUTO_INIT", "true").lower() == "false":
+        logger.info("Automatic database initialization is disabled")
+        return
     from app.builtin_tools import STARTUP_LOCK
     if engine.dialect.name != "postgresql":
         return _initialize_database()

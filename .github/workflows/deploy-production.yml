@@ -1,0 +1,92 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Service to deploy
+        type: choice
+        options: [both, frontend, backend]
+        default: both
+      dry_run:
+        description: Build and verify without switching production
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: servio-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'rujirapongsn2/servio' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: sqlite:////tmp/servio-ci-unused.sqlite
+      PYTHONPATH: server
+      OPENAI_API_KEY: fake-ci-key
+      JWT_SECRET_KEY: fake-ci-jwt
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.11.15'
+          enable-cache: true
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          uv sync --project server --frozen --python 3.11
+          uv pip install --python server/.venv/bin/python pytest==8.4.2
+          npm ci --prefix frontend
+      - name: Backend regression with isolated DB and fake services
+        run: |
+          server/.venv/bin/python -m pytest -q \
+            server/tests/test_deploy_production.py \
+            server/tests/test_private_channel_parity.py server/tests/test_workflow_preview.py \
+            server/tests/test_workflow_creation.py server/tests/test_team_workflow.py \
+            server/tests/test_workflow_membership.py server/tests/test_knowledge_runtime_scope.py \
+            server/tests/test_mcp_product_presentations.py server/tests/test_custom_api.py \
+            server/tests/test_a2ui_discovery.py server/tests/test_video_attachments.py
+      - name: Frontend regression
+        working-directory: frontend
+        run: node --test --test-concurrency=1 tests/*.test.mjs
+      - name: TypeScript
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+  deploy:
+    needs: validate
+    if: github.repository == 'rujirapongsn2/servio' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://servio-mini.softnix.ai
+    runs-on: [self-hosted, servio-production]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Deploy verified commit
+        env:
+          DEPLOY_COMPONENT: ${{ inputs.component || 'both' }}
+          DEPLOY_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: |
+          "$SERVIO_DEPLOY_PYTHON" scripts/deploy/production.py \
+            --config "$SERVIO_DEPLOY_CONFIG" \
+            --source "$GITHUB_WORKSPACE" --sha "$GITHUB_SHA" \
+            --component "$DEPLOY_COMPONENT" --dry-run "$DEPLOY_DRY_RUN"

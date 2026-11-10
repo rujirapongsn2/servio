@@ -1,0 +1,30 @@
+{
+  "repository": "rujirapongsn2/servio",
+  "root": "/absolute/path/to/servio",
+  "env_file": "/absolute/path/to/servio/.env",
+  "state_file": "/absolute/path/to/servio/.audit/production-actions/state.json",
+  "release_dir": "/absolute/path/to/servio/.audit/production-actions/releases",
+  "log_dir": "/absolute/path/to/servio/.audit/production-actions/logs",
+  "backup_dir": "/absolute/path/to/servio/.audit/production-actions/backups",
+  "shared_data": "/absolute/path/to/servio/server/data",
+  "public_url": "https://servio-mini.softnix.ai",
+  "node": "/absolute/path/to/node",
+  "npm": "/absolute/path/to/npm",
+  "uv": "/absolute/path/to/uv",
+  "database_host": "127.0.0.1",
+  "database_port": 15432,
+  "postgres_container": "voice-agent-postgres",
+  "runtime_defaults": {
+    "LOCAL_KNOWLEDGE_HYBRID_ENABLED": "true",
+    "EMBEDDING_BASE_URL": "http://127.0.0.1:8090/v1",
+    "MULTIMODAL_EMBEDDING_BASE_URL": "http://127.0.0.1:8092/v1"
+  },
+  "runtime_overrides": {"GEMINI_DOCUMENT_SEARCH_CREATE_ENABLED": "false"},
+  "public_environment": {
+    "NEXT_PUBLIC_API_URL": "https://localhost:18443",
+    "NEXT_PUBLIC_WEBSOCKET_ENDPOINT": "wss://localhost:18443/ws",
+    "NEXT_PUBLIC_ENABLE_GEMINI_DOCUMENT_SEARCH": "false"
+  },
+  "ports": {"frontend": 13000, "backend": 18000},
+  "candidate_ports": {"frontend": 13076, "backend": 18076}
+}
