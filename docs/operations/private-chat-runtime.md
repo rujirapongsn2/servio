@@ -16,7 +16,7 @@ The historical failed Private EPC session's arguments are unavailable. This chan
 | --- | --- | --- |
 | Factory, model, provider, settings | `agent_config.get_runtime_starting_agent`, including strict tool construction and provider settings | Private can select one member or capture drafts. Channel uses saved settings. |
 | Instructions and context | Same factory instructions and `agent_execution.TOOL_EVIDENCE_POLICY`; shared knowledge context builder | Draft instructions can intentionally differ. |
-| Tool request and result | Same tool schemas, credentials, request templates, adapters, validation, and `tool_execution` guards | Private requires explicit real-action consent before session creation. |
+| Tool request and result | Same tool schemas, credentials, request templates, adapters, validation, and `tool_execution` guards | Private displays a concise real-action notice without a blocking start dialog. |
 | Routing and handoff | Same coordinator, fallback, members, and SDK handoffs | Direct-member testing bypasses initial coordinator routing by design. |
 | SDK execution | Shared hooks, tracing policy, run budget, authorization, and history checks | Private and messaging collect a result. Web Chat streams SDK events. |
 | History | Full SDK messages, tool calls, results, and handoffs | Private history is owned by its admin session. Web Chat maintains customer analytics. |
@@ -47,7 +47,7 @@ Video evidence remains sampled frames. This patch does not add continuous video 
 
 ## Authorization and secrets
 
-Private creation requires team-admin access and `confirm_real_tools: true`. Canceling the UI confirmation sends no session or tool request. The UI states that tools can change external data.
+Private creation requires team-admin access. The client sends the existing `confirm_real_tools: true` API compatibility field automatically. Starting a chat does not open a confirmation dialog. The inline notice states that tools can change external data. Authorization and tool-grant checks remain unchanged.
 
 Every private request verifies its owner and team. Execution hooks and tool guards recheck team membership, tool grants, captured configuration, and provider credentials. Drafts cannot grant access to another team's tools or knowledge. Channel checks its API key and team, and uses the same runtime grant checks. Configuration changes require a new runtime session.
 
@@ -98,12 +98,12 @@ The regression commands and release steps are in [Deploy Private Chat parity](pr
 - `server/app/agent_config.py` and `custom_api.py` own shared construction and optional request/result contracts. `server/pyproject.toml` and `uv.lock` declare JSON Schema validation.
 - `server/app/workflow_preview.py`, `chat_inputs.py`, `chat_media.py`, and `chat_presentations.py` implement private transport, shared attachments, scoped media, and shared presentations. `knowledge_image_search.py` accepts authorized draft bundle scope.
 - `server/server.py`, `app/utils.py`, `app/voice_config.py`, and `app/messaging/handler.py` use shared execution, media, history, and transport protection.
-- `frontend/src/components/WorkflowPreviewChat.tsx`, `src/lib/workflow-preview.ts`, `src/lib/chat-inputs.ts`, `src/hooks/useWebsocket.ts`, `src/lib/product-presentations.ts`, `src/lib/team-workflow.ts`, and `src/lib/admin-copy.ts` implement private attachments, shared surfaces, consent, and pending-result recovery.
+- `frontend/src/components/WorkflowPreviewChat.tsx`, `src/lib/workflow-preview.ts`, `src/lib/chat-inputs.ts`, `src/hooks/useWebsocket.ts`, `src/lib/product-presentations.ts`, `src/lib/team-workflow.ts`, and `src/lib/admin-copy.ts` implement private attachments, shared surfaces, the real-action notice, and pending-result recovery.
 - `frontend/src/components/CreateToolForm.tsx`, `EditToolForm.tsx`, `CustomApiRequestEditor.tsx`, and `src/lib/custom-api.ts` expose and preserve optional contracts.
 - `server/tests/parity_fakes.py`, `test_private_channel_parity.py`, and `test_workflow_preview.py` cover backend behavior. `frontend/tests/workflow-preview.test.mjs`, `custom-api.test.mjs`, and `team-workflow.test.mjs` cover UI behavior and compatibility.
 - This reference, `private-chat-deploy.md`, and `docs/workflow-deployment.md` replace obsolete preview restrictions.
 
-Browser testing used a disposable profile at localhost with fake accounts and services. It covered consent cancellation, team routing, greetings, clarification, EPC response, previous-result follow-up, source expansion, product cards, and desktop and mobile layouts. Browser screenshots exposed and led to fixes for cumulative answers and dark-mode contrast.
+Browser testing used a disposable profile at localhost with fake accounts and services. At that revision it covered consent cancellation, team routing, greetings, clarification, EPC response, previous-result follow-up, source expansion, product cards, and desktop and mobile layouts. Browser screenshots exposed and led to fixes for cumulative answers and dark-mode contrast.
 
 Browser file upload was blocked by PinchTab's disabled upload endpoint. The browser check therefore does not establish file-picker or audio/video playback correctness. Automated tests exercise those backend paths with real encoded fixtures and fake inference services. Browser upload and playback remain a release acceptance check.
 

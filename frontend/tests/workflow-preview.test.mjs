@@ -250,23 +250,22 @@ test('locale switch preserves a live private conversation and composer without a
   assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 1);
 });
 
-test('real-tool consent is required per session; cancel sends no request', async t => {
-  const calls = []; const confirmations = [];
+test('private chat starts and switches targets without a real-tool confirmation popup', async t => {
+  const calls = [];
   const ui = await setup(t, async (url, init) => {
     calls.push({ url, init });
     return url.endsWith('/messages') ? reply('Verified result') : session('confirmed');
   });
-  global.window.confirm = message => { confirmations.push(message); return false; };
+  global.window.confirm = () => { throw new Error('Starting Private Chat must not open a confirmation popup'); };
   await ui.compose('Look up VIN'); await ui.send();
-  assert.equal(calls.length, 0);
-  assert.equal(ui.renderer.root.findByType('textarea').props.value, 'Look up VIN');
-  assert.match(confirmations[0], /real tools.*change external data/i);
-  global.window.confirm = () => true;
-  await ui.send();
+  assert.equal(calls.length, 2);
   assert.equal(JSON.parse(calls[0].init.body).confirm_real_tools, true);
-  global.window.confirm = () => { throw new Error('must not confirm again within session'); };
   await ui.compose('Next'); await ui.send();
   assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 1);
+  await ui.update({ targetAgentId: 1 });
+  await ui.compose('Direct agent'); await ui.send();
+  assert.equal(calls.filter(call => call.url.endsWith('/previews')).length, 2);
+  assert.match(text(ui.renderer.toJSON()), /Real tools/);
   assert.doesNotMatch(text(ui.renderer.toJSON()), /read-only/);
 });
 

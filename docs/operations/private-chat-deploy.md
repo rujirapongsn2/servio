@@ -44,7 +44,7 @@ Restore generated `tsconfig.json` changes after stopping the Dev frontend. Do no
 ## Release and validate
 
 1. Deploy backend and frontend together with the normal approved release process. Restarting workers clears Private sessions.
-2. Refresh the admin UI. Start a team with no Channel. Cancel real-tool consent and verify no call, then confirm and test a controlled sandbox tool.
+2. Refresh the admin UI. Start a team with no Channel and send a message. Verify that no start-confirmation dialog appears, the inline real-tool notice remains visible, and a controlled sandbox tool works.
 3. Compare Private and Channel using the same saved configuration and input. Inspect sanitized arguments and business outcomes, not just final prose.
 4. Test greetings, clarification, follow-up from earlier tool results, routing, handoff, failure recovery, and revoked grants.
 5. Test saved and draft configuration, image search, text files, audio, video, citations, product inquiry, and A2UI in desktop and mobile browsers.

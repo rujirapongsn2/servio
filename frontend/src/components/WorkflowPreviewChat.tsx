@@ -108,7 +108,6 @@ export default function WorkflowPreviewChat({ teamId, workflow, drafts, targetAg
   async function send(message = current.composer) {
     const content = message.trim();
     if ((!content && !current.attachments.length) || current.phase === "busy" || current.phase === "pending" || expired || targetRemoved) return;
-    if (!current.session && !window.confirm(copy.confirmRealTools)) return;
     current.phase = "busy";
     current.error = null;
     const requestSignature = signature;
