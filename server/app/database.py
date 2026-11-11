@@ -721,100 +721,70 @@ def assign_tool_to_agent(
 # Tool Operations
 # ============================================================================
 
+def _tool_catalog(db, tools, team_id):
+    """Project authorized rows into canonical tools with team-local usage."""
+    from app.builtin_tools import aliases
+    mapping = aliases(tools)
+    groups = {}
+    for tool in tools:
+        groups.setdefault(mapping.get(tool.id, tool.id), set()).add(tool.id)
+    agents = {ident: set() for ident in groups}
+    if team_id is not None and tools:
+        bindings = db.query(AgentTool.tool_id, AgentTool.agent_id).join(
+            TeamAgentMember, TeamAgentMember.agent_id == AgentTool.agent_id
+        ).filter(TeamAgentMember.team_agent_id == team_id,
+                 AgentTool.tool_id.in_([tool.id for tool in tools])).distinct().all()
+        for tool_id, agent_id in bindings:
+            agents[mapping.get(tool_id, tool_id)].add(agent_id)
+    owner_ids = {tool.owner_team_agent_id for tool in tools if tool.owner_team_agent_id is not None}
+    creator_ids = {tool.created_by_admin_id for tool in tools if tool.created_by_admin_id is not None}
+    owners = dict(db.query(TeamAgent.id, TeamAgent.name).filter(TeamAgent.id.in_(owner_ids)).all())
+    creators = dict(db.query(Admin.id, Admin.username).filter(Admin.id.in_(creator_ids)).all())
+    return [{
+        "id": tool.id, "name": tool.name, "type": tool.type,
+        "config": json.dumps(tool.config) if tool.config else None,
+        "visibility": tool.visibility, "owner_team_agent_id": tool.owner_team_agent_id,
+        "owner_team_name": owners.get(tool.owner_team_agent_id),
+        "created_by_admin_id": tool.created_by_admin_id,
+        "created_by_username": creators.get(tool.created_by_admin_id),
+        "agent_usage_count": len(agents[tool.id]),
+        "agent_usage_scope": "team", "agent_usage_team_agent_id": team_id,
+        **({"alias_ids": sorted(groups[tool.id])} if tool.id in mapping else {}),
+        "created_at": tool.created_at.isoformat() if tool.created_at else None,
+        "updated_at": tool.updated_at.isoformat() if tool.updated_at else None,
+    } for tool in sorted(tools, key=lambda row: row.id) if mapping.get(tool.id, tool.id) == tool.id]
+
+
+def _tool_team(db, team_id):
+    if team_id is None:
+        default_team = db.query(TeamAgent).filter_by(slug="default").first()
+        return default_team.id if default_team else None
+    return team_id
+
+
 def get_all_tools(team_agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Get tools, optionally filtered by team.
-
-    When team_agent_id is provided, returns:
-    - Tools owned by that team
-    - Tools with visibility='global'
-    - Tools shared into the team via team_tool_assignments
-
-    When team_agent_id is None, returns Default Team tools rather than leaking
-    private tools owned by every team.
-    """
+    """List accessible canonical tools; usage counts distinct members of this team."""
+    from app.builtin_tools import available_tools
     with get_db() as db:
-        if team_agent_id is None:
-            default_team = db.query(TeamAgent).filter_by(slug="default").first()
-            team_agent_id = default_team.id if default_team else None
-        if team_agent_id is not None:
-            # Owned by team
-            owned = db.query(Tool).filter_by(owner_team_agent_id=team_agent_id).all()
-            # Global tools
-            global_tools = db.query(Tool).filter_by(visibility="global").all()
-            # Shared into team
-            shared_ids = [
-                row.tool_id for row in
-                db.query(TeamToolAssignment.tool_id).filter_by(
-                    team_agent_id=team_agent_id, relationship="shared_in"
-                ).all()
-            ]
-            shared = db.query(Tool).filter(Tool.id.in_(shared_ids)).all() if shared_ids else []
-            tools = list({t.id: t for t in owned + global_tools + shared}.values())
-        else:
-            tools = db.query(Tool).filter_by(visibility="global").order_by(Tool.type, Tool.name).all()
-
-        result = []
-        for tool in tools:
-            owner_team_name = None
-            created_by_username = None
-            if tool.owner_team_agent_id is not None:
-                owner_team = db.query(TeamAgent).filter_by(id=tool.owner_team_agent_id).first()
-                owner_team_name = owner_team.name if owner_team else None
-            if tool.created_by_admin_id is not None:
-                creator = db.query(Admin).filter_by(id=tool.created_by_admin_id).first()
-                created_by_username = creator.username if creator else None
-            usage_count = db.query(AgentTool).filter_by(tool_id=tool.id).count()
-            result.append({
-                "id": tool.id,
-                "name": tool.name,
-                "type": tool.type,
-                "config": json.dumps(tool.config) if tool.config else None,
-                "visibility": tool.visibility,
-                "owner_team_agent_id": tool.owner_team_agent_id,
-                "owner_team_name": owner_team_name,
-                "created_by_admin_id": tool.created_by_admin_id,
-                "created_by_username": created_by_username,
-                "agent_usage_count": usage_count,
-                "created_at": tool.created_at.isoformat() if tool.created_at else None,
-                "updated_at": tool.updated_at.isoformat() if tool.updated_at else None,
-            })
-        return result
+        team_id = _tool_team(db, team_agent_id)
+        return _tool_catalog(db, available_tools(db, team_id), team_id)
 
 
 def get_tool_by_id(tool_id: int, team_agent_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Get a single tool by ID"""
+    """Authorize the requested row before resolving its team-local builtin alias."""
+    from app.builtin_tools import BUILTINS, available_tools
     with get_db() as db:
-        if team_agent_id is None:
-            default_team = db.query(TeamAgent).filter_by(slug="default").first()
-            team_agent_id = default_team.id if default_team else None
-        tool = db.query(Tool).filter_by(id=tool_id).first()
+        team_id = _tool_team(db, team_agent_id)
+        tool = db.get(Tool, tool_id)
         if not tool:
             return None
-        if team_agent_id is not None and not _tool_available_to_team(db, tool_id, team_agent_id):
+        allowed = _tool_available_to_team(db, tool_id, team_id) if team_id is not None else tool.visibility == "global"
+        if not allowed:
             return None
-        owner_team_name = None
-        created_by_username = None
-        if tool.owner_team_agent_id is not None:
-            owner_team = db.query(TeamAgent).filter_by(id=tool.owner_team_agent_id).first()
-            owner_team_name = owner_team.name if owner_team else None
-        if tool.created_by_admin_id is not None:
-            creator = db.query(Admin).filter_by(id=tool.created_by_admin_id).first()
-            created_by_username = creator.username if creator else None
-        usage_count = db.query(AgentTool).filter_by(tool_id=tool.id).count()
-        return {
-            "id": tool.id,
-            "name": tool.name,
-            "type": tool.type,
-            "config": json.dumps(tool.config) if tool.config else None,
-            "visibility": tool.visibility,
-            "owner_team_agent_id": tool.owner_team_agent_id,
-            "owner_team_name": owner_team_name,
-            "created_by_admin_id": tool.created_by_admin_id,
-            "created_by_username": created_by_username,
-            "agent_usage_count": usage_count,
-            "created_at": tool.created_at.isoformat() if tool.created_at else None,
-            "updated_at": tool.updated_at.isoformat() if tool.updated_at else None,
-        }
+        tools = [tool]
+        if tool.type == "builtin" and tool.name in BUILTINS:
+            tools = [row for row in available_tools(db, team_id) if row.name == tool.name and row.type == "builtin"]
+        return _tool_catalog(db, tools, team_id)[0]
 
 
 def create_custom_tool(

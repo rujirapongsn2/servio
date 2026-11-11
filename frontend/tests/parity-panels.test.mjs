@@ -181,3 +181,39 @@ test('comparison photos from separate calls share one gallery without duplicate 
     assert.deepEqual(tree.root.findAllByType('img').map(node => node.props.alt), ['Sofa', 'Bed']);
   } finally { if (tree) await act(async () => tree.unmount()); restore(); }
 });
+
+const builtinFixture = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/builtin-capabilities.json'), 'utf8'));
+test('actual Capabilities renders canonical API fixture once through search, refresh and reopen', async () => {
+  const restore = globals(); let tree; let reads = 0;
+  globalThis.fetch = async url => { assert.equal(url, '/api/admin/tools?team_agent_id=11'); reads++; return response(builtinFixture.expected_tools); };
+  const mount = async () => { await act(async () => { tree = create(React.createElement(EnglishAdminLocale, null, React.createElement(library.default, { teamId: 11, canEdit: true, onClose() {}, onMutation: async () => {} }))); }); };
+  const names = () => tree.root.findAllByType('li').map(row => row.findAllByType('p')[0]?.children.join(''));
+  try {
+    assert.equal(builtinFixture.raw_tool_ids.length, 4);
+    await mount(); assert.deepEqual(names(), ['DateTimeTool', 'WebSearchTool']);
+    assert.match(text(tree), /2 agents in this team/);
+    assert.equal(tree.root.findAllByProps({ 'data-admin-write': true }).filter(node => /DateTimeTool|WebSearchTool/.test(node.props['aria-label'] ?? '')).length, 0);
+    await act(async () => tree.root.findByProps({ 'aria-label': 'Search capabilities' }).props.onChange({ target: { value: 'DateTime' } }));
+    assert.deepEqual(names(), ['DateTimeTool']);
+    await act(async () => tree.root.findByProps({ 'aria-label': 'Refresh capabilities' }).props.onClick());
+    assert.deepEqual(names(), ['DateTimeTool']);
+    await act(async () => tree.unmount()); await mount();
+    assert.deepEqual(names(), ['DateTimeTool', 'WebSearchTool']); assert.equal(reads, 3);
+  } finally { if (tree) await act(async () => tree.unmount()); restore(); }
+});
+
+test('registry conflict clears stale capabilities and a successful refresh clears its error', async () => {
+  const restore = globals(); let tree; let conflict = false;
+  globalThis.fetch = async () => conflict ? { ...response({ detail: 'Conflicting builtin config for DateTimeTool; repair the registry before saving' }, false), status: 409 } : response(builtinFixture.expected_tools);
+  try {
+    tree = await mountLibrary(); assert.equal(tree.root.findAllByType('li').length, 2);
+    conflict = true;
+    await act(async () => tree.root.findByProps({ 'aria-label': 'Refresh capabilities' }).props.onClick());
+    assert.match(text(tree), /Conflicting builtin config/);
+    assert.doesNotMatch(text(tree), /WebSearchTool/);
+    conflict = false;
+    await act(async () => tree.root.findByProps({ 'aria-label': 'Refresh capabilities' }).props.onClick());
+    assert.doesNotMatch(text(tree), /Conflicting builtin/);
+    assert.equal(tree.root.findAllByType('li').length, 2);
+  } finally { if (tree) await act(async () => tree.unmount()); restore(); }
+});

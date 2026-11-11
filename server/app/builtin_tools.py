@@ -40,13 +40,19 @@ def aliases(tools):
     return result
 
 
-def normalize_agent_tool_ids(db, tool_ids, team_id):
+def available_tools(db, team_id):
+    """Filter row-level grants before builtin equivalence is evaluated."""
     from app.database import _tool_available_to_team
-    rows = sequential_registry(db)
+    return [row for row in sequential_registry(db)
+            if (_tool_available_to_team(db, row.id, team_id) if team_id is not None
+                else row.visibility == 'global')]
+
+
+def normalize_agent_tool_ids(db, tool_ids, team_id):
     requested = set(tool_ids)
-    if team_id is not None and any(not _tool_available_to_team(db, ident, team_id) for ident in requested):
+    available = available_tools(db, team_id) if team_id is not None else sequential_registry(db)
+    if not requested.issubset({row.id for row in available}):
         raise ValueError('One or more tools are not available to this Team Agent')
-    available = [row for row in rows if team_id is None or _tool_available_to_team(db, row.id, team_id)]
     mapping = aliases(available)
     ids = {mapping.get(ident, ident) for ident in requested}
     clock = next((row for row in available if row.type == 'builtin' and row.name == 'DateTimeTool'), None)

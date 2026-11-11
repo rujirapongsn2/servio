@@ -1228,11 +1228,14 @@ async def get_tools(
     current_user: str = Depends(get_current_user),
 ):
     """Get tools, optionally filtered by team"""
-    require_team_access(current_user, team_agent_id, "viewer")
+    resolved_team_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
     if team_agent_id is None:
         response.headers["Deprecation"] = "true"
         response.headers["Sunset"] = "Sat, 01 Aug 2026 00:00:00 GMT"
-    tools = database.get_all_tools(team_agent_id=team_agent_id)
+    try:
+        tools = database.get_all_tools(team_agent_id=resolved_team_id)
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
     return tools
 
 
@@ -1243,8 +1246,11 @@ async def get_tool(
     current_user: str = Depends(get_current_user),
 ):
     """Get a single tool by ID"""
-    require_team_access(current_user, team_agent_id, "viewer")
-    tool = database.get_tool_by_id(tool_id, team_agent_id=team_agent_id)
+    resolved_team_id = _require_resolved_team_access(current_user, team_agent_id, "viewer")
+    try:
+        tool = database.get_tool_by_id(tool_id, team_agent_id=resolved_team_id)
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
 
     if not tool:
         raise HTTPException(

@@ -6,6 +6,7 @@ This runbook is for a DBA to execute later. Development and regression testing u
 
 - Runtime constructs at most one DateTimeTool and one WebSearchTool. It selects the lowest assigned row ID, logs duplicate bindings, and keeps other tool types intact. It does not infer that differing builtin configurations are equivalent.
 - Workflow returns one representative per available builtin name with equivalent configuration, owner and visibility, plus the available alias IDs. Conflicting groups stop with an error. Saving checks access to every submitted ID before replacing aliases with the lowest available ID. DateTime remains the automatic default. Shared agents remain read-only.
+- Capabilities and tool details use the same authorized alias rules. Usage counts distinct agents in the requested team across its accessible aliases, rather than summing per-row counts or exposing system-wide usage. This projection does not repair registry rows or indexes; see [Capabilities verification](builtin-capabilities-verification.md).
 - Existing registry ownership, visibility and team grants are preserved during initialization. A global startup advisory lock serializes schema initialization across processes. A transaction advisory lock serializes registry seeds and repair. Sequential reads protect seed checks from the reported name-index inconsistency. Existing duplicates are reported, not deleted during startup.
 - Custom-tool create and rename paths reject reserved builtin names.
 

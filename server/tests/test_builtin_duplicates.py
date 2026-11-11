@@ -359,3 +359,41 @@ def test_expression_composite_index_is_not_name_uniqueness(pg,tmp_path):
         conn.execute(text('DROP INDEX tools_name_key'))
         conn.execute(text('CREATE UNIQUE INDEX tools_name_key ON tools(name,(id % 2))'))
         assert not migration.diagnostics(conn,'public')['name_uniqueness_enforced']
+
+
+def test_full_backup_restore_then_repair_and_rollback_only_on_disposable_copy(pg,tmp_path):
+    """A real pg_dump/restore rehearsal supplements the migration JSON backup."""
+    seed(pg,ids=(51,155,52,156));engine,*_=pg
+    with engine.begin() as conn:before=migration.snapshot(conn,'public')
+    container='servio-builtin-capabilities-dev'
+    # This optional rehearsal never guesses a deployment/container name.
+    if os.getenv('SERVIO_BUILTIN_TEST_CONTAINER')!=container:
+        pytest.skip('Set SERVIO_BUILTIN_TEST_CONTAINER for the dedicated backup rehearsal')
+    dump=tmp_path/'before.dump'
+    with dump.open('wb') as stream:
+        os.chmod(dump,0o600)
+        subprocess.run(['docker','exec',container,'pg_dump','-U','postgres','--format=custom','-d',engine.url.database],stdout=stream,stderr=subprocess.PIPE,check=True)
+    with dump.open('rb') as stream:
+        inventory=subprocess.run(['docker','exec','-i',container,'pg_restore','--list'],stdin=stream,capture_output=True,check=True)
+    assert b'TABLE DATA' in inventory.stdout
+    admin=create_engine(engine.url.set(database='servio_builtin_test'),isolation_level='AUTOCOMMIT')
+    name='builtin_case_restore_'+uuid4().hex
+    with admin.connect() as conn:conn.execute(text(f'CREATE DATABASE {name}'))
+    restored=create_engine(engine.url.set(database=name))
+    try:
+        with dump.open('rb') as stream:
+            subprocess.run(['docker','exec','-i',container,'pg_restore','-U','postgres','--dbname',name,'--exit-on-error'],stdin=stream,capture_output=True,check=True)
+        with restored.begin() as conn:
+            assert migration.snapshot(conn,'public')==before
+            plan=migration.audit(conn)
+            assert plan['mapping']=={'155':51,'156':52} and not plan['blockers']
+        backup=tmp_path/'copy-before.json'
+        with restored.begin() as conn:assert migration.apply(conn,plan,backup)=='applied'
+        with restored.begin() as conn:assert migration.apply(conn,plan,tmp_path/'unused.json')=='already_applied'
+        with restored.begin() as conn:assert migration.rollback(conn,json.loads(backup.read_text()))=='restored'
+        with restored.begin() as conn:assert migration.snapshot(conn,'public')==before
+        with engine.begin() as conn:assert migration.snapshot(conn,'public')==before
+    finally:
+        restored.dispose()
+        with admin.connect() as conn:conn.execute(text(f'DROP DATABASE {name} WITH (FORCE)'))
+        admin.dispose()

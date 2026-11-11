@@ -1,0 +1,12 @@
+{
+  "team_id": 11,
+  "raw_tool_ids": [41, 144, 42, 145],
+  "bindings": [
+    {"agent_id": 21, "tool_ids": [41, 144, 42, 145]},
+    {"agent_id": 22, "tool_ids": [144]}
+  ],
+  "expected_tools": [
+    {"id": 41, "name": "DateTimeTool", "type": "builtin", "config": "{\"description\": \"DateTimeTool\"}", "owner_team_agent_id": 11, "owner_team_name": "Owner", "visibility": "team", "alias_ids": [41, 144], "agent_usage_count": 2, "agent_usage_scope": "team", "agent_usage_team_agent_id": 11},
+    {"id": 42, "name": "WebSearchTool", "type": "builtin", "config": "{\"description\": \"WebSearchTool\"}", "owner_team_agent_id": 11, "owner_team_name": "Owner", "visibility": "team", "alias_ids": [42, 145], "agent_usage_count": 1, "agent_usage_scope": "team", "agent_usage_team_agent_id": 11}
+  ]
+}

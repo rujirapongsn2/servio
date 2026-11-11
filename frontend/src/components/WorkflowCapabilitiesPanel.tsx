@@ -28,6 +28,9 @@ interface LibraryTool {
   owner_team_name?: string;
   visibility?: string;
   agent_usage_count?: number;
+  agent_usage_scope?: "team";
+  agent_usage_team_agent_id?: number;
+  alias_ids?: number[];
 }
 type FileStore = ComponentProps<typeof FileStoreDetailModal>["store"];
 type ResourceView = {
@@ -76,8 +79,12 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
   const fetchTools = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`${getApiBaseUrl()}/api/admin/tools?team_agent_id=${teamId}`, { signal, headers: { Authorization: `Bearer ${localStorage.getItem("adminToken")}` } });
     const data: unknown = await response.json().catch(() => null);
-    if (!response.ok)
+    if (!response.ok) {
+      if (!signal?.aborted && active.current) setTools([]);
+      if (response.status === 409 && data && typeof data === "object" && "detail" in data && typeof data.detail === "string")
+        throw new Error(data.detail);
       throw new Error("Failed to load capabilities");
+    }
     if (!Array.isArray(data) || !data.every(value => value && typeof value === "object" && Number.isSafeInteger(value.id) && value.id > 0 && typeof value.name === "string" && typeof value.type === "string" && (value.config == null || typeof value.config === "string")))
       throw new Error("Invalid capabilities response");
     const loaded: LibraryTool[] = data.map((tool: LibraryTool) => {
@@ -89,14 +96,18 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
       }
       return tool;
     });
-    if (!signal?.aborted && active.current)
+    if (!signal?.aborted && active.current) {
       setTools(loaded);
+      setError("");
+    }
     return loaded;
   }, [teamId]);
   useEffect(() => {
     active.current = true;
     const controller = new AbortController();
     setLoading(true);
+    setTools([]);
+    setError("");
     setView({ kind: "list" });
     setPending(null);
     fetchTools(controller.signal).catch(failure => {
@@ -265,7 +276,7 @@ export default function WorkflowCapabilitiesPanel({ teamId, canEdit, onClose, on
           <span>{tool.type === "builtin" ? copy.included : tool.type === "custom_api" ? "API" : tool.type === "mcp_streamable_http" ? "MCP" : copy.knowledge}</span>
                 <span>{tool.owner_team_agent_id === teamId ? copy.thisTeam : tool.owner_team_name || (tool.type === "builtin" ? copy.system : copy.unassigned)}</span>
           <span>{tool.visibility === "global" ? copy.global : tool.type === "builtin" ? "" : copy.private}</span>
-          <span>{copy.agentsCount(tool.agent_usage_count ?? 0)}</span>
+          <span>{tool.agent_usage_scope === "team" ? copy.agentsInThisTeamCount(tool.agent_usage_count ?? 0) : copy.agentsCount(tool.agent_usage_count ?? 0)}</span>
           </div>
           </div>
           <div className="flex shrink-0 gap-1">{knowledge && <>

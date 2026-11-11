@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app import database
-from app.builtin_tools import aliases, normalize_agent_tool_ids, sequential_registry
+from app.builtin_tools import aliases, available_tools, normalize_agent_tool_ids
 from app.model_settings import default_agent_model
 from app.models import CreateWorkflowAgentRequest, CreateWorkflowToolRequest, UpdateWorkflowAgentRequest, UpdateWorkflowMembersRequest, DeleteWorkflowAgentRequest
 from app.orm_models import Admin, TeamToolAssignment, WorkflowCreationReceipt, Agent, AgentHandoff, AgentTool, LLMProvider, OKFBundle, TeamAgent, TeamAgentMember, TeamUserMembership, Tool
@@ -31,7 +31,8 @@ def get_snapshot(team_id: int) -> dict[str, Any] | None:
         agents = db.query(Agent).options(selectinload(Agent.tools), selectinload(Agent.handoff_to)).filter(Agent.id.in_(member_ids)).all()
         by_id = {agent.id: agent for agent in agents}
         counts = dict(db.query(TeamAgentMember.agent_id, func.count()).filter(TeamAgentMember.agent_id.in_(member_ids)).group_by(TeamAgentMember.agent_id).all())
-        tools = [tool for tool in sequential_registry(db) if database._tool_available_to_team(db, tool.id, team_id)]
+        tools = available_tools(db, team_id)
+        available_ids = {tool.id for tool in tools}
         mapping = aliases(tools)
         visible_tools = [tool for tool in tools if mapping.get(tool.id, tool.id) == tool.id]
         knowledge_tools = [tool for tool in tools if tool.type == "okf_knowledge_graph"
@@ -47,7 +48,7 @@ def get_snapshot(team_id: int) -> dict[str, Any] | None:
             "agents": [{
                 "id": agent.id, "name": agent.name, "instructions": agent.instructions,
                 "model": agent.model, "llm_provider_id": agent.llm_provider_id,
-                "tool_ids": sorted({mapping.get(tool.id, tool.id) for tool in agent.tools}),
+                "tool_ids": sorted({mapping.get(tool.id, tool.id) for tool in agent.tools if tool.id in available_ids}),
                 "handoff_agent_ids": [target.id for target in agent.handoff_to if target.id in member_ids],
                 "shared": counts[agent.id] > 1,
                 "updated_at": agent.updated_at.isoformat() if agent.updated_at else None,
