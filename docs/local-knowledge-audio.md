@@ -4,6 +4,23 @@ WAV and MP3 uploads become OKF sources with original assets and timestamped tran
 
 ## Start the local processor
 
+### Docker with Groq
+
+The optional `audio-processor` Compose service uses FFmpeg and Groq on the
+internal network, with no published port. On the host, set
+`KNOWLEDGE_AUDIO_ASR_PROVIDER=groq`, `GROQ_API_KEY`, and
+`AUDIO_PROCESSOR_BASE_URL=http://audio-processor:8094`. Include `audio` in
+`COMPOSE_PROFILES`. Keep native audio embedding endpoint/model/revision settings
+separate; this image does not install local Whisper weights or embeddings.
+
+For a local stack, run `docker compose --profile audio up -d --build audio-processor`
+and wait for health before enabling `LOCAL_KNOWLEDGE_AUDIO_ENABLED` on the backend.
+Changing processor settings requires recreating that service. Recordings are
+sent to Groq during transcription; temporary local data lives in `/tmp` tmpfs.
+For Production, use the reviewed [Ubuntu deployment procedure](operations/github-actions-production.md)
+instead of ad hoc rebuilds.
+
+
 Install `ffmpeg` and `ffprobe` for either provider. The processor loads `KNOWLEDGE_AUDIO_*` and `GROQ_API_KEY` from the repository root `.env`, including when launched directly through Uvicorn. Existing shell or LaunchAgent environment values take precedence. Restart the processor after configuration changes. `/health` reports readiness for the selected provider; the launcher checks decoder availability.
 
 ### Local Whisper (default)

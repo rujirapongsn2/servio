@@ -5,15 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      component:
-        description: Service to deploy
+      mode:
+        description: Start with verify-ssh, then dry-run before enabling deploy
         type: choice
-        options: [both, frontend, backend]
-        default: both
-      dry_run:
-        description: Build and verify without switching production
-        type: boolean
-        default: true
+        options: [verify-ssh, dry-run, deploy, rollback]
+        default: verify-ssh
+      rollback_sha:
+        description: Currently deployed release SHA, required for rollback
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -55,7 +55,7 @@ jobs:
       - name: Backend regression with isolated DB and fake services
         run: |
           server/.venv/bin/python -m pytest -q \
-            server/tests/test_deploy_production.py server/tests/test_host_startup.py \
+            server/tests/test_deploy_production.py server/tests/test_docker_deployment.py server/tests/test_host_startup.py \
             server/tests/test_private_channel_parity.py server/tests/test_workflow_preview.py \
             server/tests/test_workflow_creation.py server/tests/test_team_workflow.py \
             server/tests/test_workflow_membership.py server/tests/test_knowledge_runtime_scope.py \
@@ -68,25 +68,64 @@ jobs:
         working-directory: frontend
         run: npx tsc --noEmit
 
-  deploy:
+  build:
     needs: validate
-    if: github.repository == 'rujirapongsn2/servio' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'rujirapongsn2/servio' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.PROD_AUTO_DEPLOY == 'true') ||
+       (github.event_name == 'workflow_dispatch' && (inputs.mode == 'dry-run' || inputs.mode == 'deploy')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      images: ${{ steps.images.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Publish immutable Linux images
+        id: images
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT
+          python3 scripts/deploy/build_images.py
+
+  deploy:
+    needs: [validate, build]
+    if: >-
+      always() && !cancelled() && needs.validate.result == 'success' &&
+      github.repository == 'rujirapongsn2/servio' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' &&
+        ((inputs.mode == 'verify-ssh' || inputs.mode == 'rollback') || needs.build.result == 'success')) ||
+       (github.event_name == 'push' && vars.PROD_AUTO_DEPLOY == 'true' && needs.build.result == 'success'))
     environment:
       name: production
-      url: https://servio-mini.softnix.ai
-    runs-on: [self-hosted, servio-production]
-    timeout-minutes: 45
+      url: https://servio.softnix.ai
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Deploy verified commit
+      - name: Restricted SSH deployment
         env:
-          DEPLOY_COMPONENT: ${{ inputs.component || 'both' }}
-          DEPLOY_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_SSH_HOST: ${{ vars.PROD_SSH_HOST }}
+          PROD_SSH_PORT: ${{ vars.PROD_SSH_PORT }}
+          PROD_SSH_USER: ${{ vars.PROD_SSH_USER }}
+          PROD_SSH_KNOWN_HOSTS: ${{ vars.PROD_SSH_KNOWN_HOSTS }}
+          PROD_SSH_HOST_KEY_SHA256: ${{ vars.PROD_SSH_HOST_KEY_SHA256 }}
+          PROD_HOST_ID: ${{ vars.PROD_HOST_ID }}
+          PROD_IMAGES: ${{ needs.build.outputs.images }}
+          DEPLOY_MODE: ${{ github.event_name == 'push' && 'deploy' || inputs.mode }}
+          RELEASE_SHA: ${{ inputs.mode == 'rollback' && inputs.rollback_sha || github.sha }}
         run: |
-          "$SERVIO_DEPLOY_PYTHON" scripts/deploy/production.py \
-            --config "$SERVIO_DEPLOY_CONFIG" \
-            --source "$GITHUB_WORKSPACE" --sha "$GITHUB_SHA" \
-            --component "$DEPLOY_COMPONENT" --dry-run "$DEPLOY_DRY_RUN"
+          python3 scripts/deploy/ssh_client.py --mode "$DEPLOY_MODE" --sha "$RELEASE_SHA" > "$RUNNER_TEMP/deploy-result.json"
+          cat "$RUNNER_TEMP/deploy-result.json" >> "$GITHUB_STEP_SUMMARY"

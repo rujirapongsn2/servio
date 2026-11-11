@@ -109,6 +109,35 @@ services:
       retries: 3
       start_period: 40s
 
+  audio-processor:
+    profiles: [audio]
+    build:
+      context: ./server
+      dockerfile: Dockerfile.audio-processor
+    container_name: voice-agent-audio-processor
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m
+    environment:
+      - KNOWLEDGE_AUDIO_ASR_PROVIDER=${KNOWLEDGE_AUDIO_ASR_PROVIDER:-groq}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - KNOWLEDGE_AUDIO_GROQ_MODEL=${KNOWLEDGE_AUDIO_GROQ_MODEL:-whisper-large-v3-turbo}
+      - KNOWLEDGE_AUDIO_GROQ_BASE_URL=${KNOWLEDGE_AUDIO_GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      - KNOWLEDGE_AUDIO_ASR_TIMEOUT_SECONDS=${KNOWLEDGE_AUDIO_ASR_TIMEOUT_SECONDS:-1200}
+      - KNOWLEDGE_AUDIO_MAX_SECONDS=${KNOWLEDGE_AUDIO_MAX_SECONDS:-600}
+      - KNOWLEDGE_AUDIO_SEGMENT_SECONDS=${KNOWLEDGE_AUDIO_SEGMENT_SECONDS:-20}
+      - KNOWLEDGE_AUDIO_OVERLAP_SECONDS=${KNOWLEDGE_AUDIO_OVERLAP_SECONDS:-2}
+    networks: [proxy-network]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://localhost:8094/health', timeout=3))['ready'] is True"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   frontend:
     build:
       context: ./frontend

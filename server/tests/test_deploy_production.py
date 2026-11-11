@@ -170,8 +170,9 @@ def test_production_workflow_is_main_only_and_waits_for_validation():
     assert workflow['concurrency']['cancel-in-progress'] == 'false'
     assert workflow['permissions'] == {'contents': 'read'}
     job = workflow['jobs']['deploy']
-    assert job['needs'] == 'validate' and job['environment']['name'] == 'production'
-    assert job['runs-on'] == ['self-hosted', 'servio-production']
+    assert job['needs'] == ['validate', 'build'] and job['environment']['name'] == 'production'
+    assert job['runs-on'] == 'ubuntu-24.04'
+    assert job['environment']['url'] == 'https://servio.softnix.ai'
     for step in (*workflow['jobs']['validate']['steps'], *job['steps']):
         if 'uses' in step:
             assert len(step['uses'].split('@')[1]) == 40

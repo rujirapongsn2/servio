@@ -1,0 +1,15 @@
+{
+  "host_id": "REPLACE-WITH-UUID-GENERATED-ON-PRODUCTION",
+  "project_dir": "/home/ubuntu/servio",
+  "compose_project": "servio",
+  "compose_file": "/etc/servio-deploy/compose.yml",
+  "state_dir": "/var/lib/servio-deploy",
+  "docker": "/usr/bin/docker",
+  "docker_config": "/root/.docker",
+  "postgres_image": "pgvector/pgvector:pg15",
+  "public_url": "https://servio.softnix.ai",
+  "origin_url": "http://127.0.0.1:8080",
+  "minimum_free_gb": 8,
+  "restore_rehearsed": false,
+  "allow_apply": false
+}
