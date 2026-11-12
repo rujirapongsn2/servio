@@ -1,5 +1,13 @@
 # คู่มือการติดตั้ง Widget พร้อม API Key Authentication
 
+ส่วน embed code ตรวจปรับเมื่อ 12 พฤศจิกายน 2026: Channels, Team Channels และ
+Widget setup ใช้ `/embed.js` พร้อม `data-server-url` จาก public gateway ที่ตั้งใน
+`NEXT_PUBLIC_API_URL` ตาม URL resolver ของระบบ โดยคง attributes ของช่องทางเดิม
+หากไม่ส่ง `data-server-url` ตัว loader จะใช้ origin ของ script ที่โหลด ไม่ใช่
+localhost หรือเว็บไซต์ที่นำไปฝัง ส่วน `/widget.js` เป็น compatibility rewrite
+ไป implementation เดียวกัน ดู configuration และผลทดสอบคนละ origin ได้ใน
+[คู่มือ Web Chat embed](docs/web-chat-embed.md)
+
 ## ภาพรวม
 
 Widget ของ Servio ตอนนี้มีระบบ authentication ด้วย API Key เพื่อป้องกันการใช้งานโดยไม่ได้รับอนุญาต คู่มือนี้จะแนะนำวิธีการสร้าง API Key และติดตั้ง Widget บนเว็บไซต์ของคุณ

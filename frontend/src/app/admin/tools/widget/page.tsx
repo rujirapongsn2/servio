@@ -11,6 +11,8 @@ import {
   MessageCircle,
   Radio,
 } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
+import { widgetEmbedCode } from "@/lib/embed-code";
 import { Button } from "@/components/ui/Button";
 import MicIcon from "@/components/icons/MicIcon";
 import WriteIcon from "@/components/icons/WriteIcon";
@@ -102,7 +104,7 @@ export default function ChannelsPage() {
   }, [selectedTeamId, selectedChannel]);
 
   const token = typeof window !== "undefined" ? localStorage.getItem("adminToken") || "" : "";
-  const serverUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const serverUrl = getApiBaseUrl();
 
   useEffect(() => {
     if (!token || !selectedTeamId) {
@@ -143,9 +145,7 @@ export default function ChannelsPage() {
         && channelReadiness.teamId === selectedTeamId
         && channelReadiness.channel === selectedChannel);
 
-  const embedCode = selectedApiKey
-    ? `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}" data-api-key="${selectedApiKey}"></script>`
-    : `<script src="${serverUrl}/embed.js" data-position="${position}" data-type="${widgetType}" data-allow-toggle="${allowToggle}" data-server-url="${serverUrl}" data-api-key="YOUR_API_KEY_HERE"></script>`;
+  const embedCode = widgetEmbedCode({ baseUrl: serverUrl, apiKey: selectedApiKey || "YOUR_API_KEY_HERE", position, type: widgetType, allowToggle });
 
   const shareUrl = selectedSlug
     ? `${serverUrl}/c/${selectedSlug}?type=${widgetType}${allowToggle ? "" : "&allowToggle=false"}`
@@ -498,7 +498,7 @@ export default function ChannelsPage() {
                       </Button>
                     </a>
                     <a
-                      href={`/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}&apiKey=${selectedApiKey}`}
+                      href={`${serverUrl}/test_widget.html?type=${widgetType}&position=${position}&allowToggle=${allowToggle}&apiKey=${selectedApiKey}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className={!selectedApiKey ? "pointer-events-none opacity-50" : ""}

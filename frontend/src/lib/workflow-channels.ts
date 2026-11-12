@@ -1,3 +1,5 @@
+import { widgetEmbedCode } from "@/lib/embed-code";
+
 export interface WorkflowWebChat {
   id: number;
   name: string;
@@ -29,6 +31,5 @@ export function workflowChatUrl(origin: string, channel: WorkflowWebChat): strin
 }
 
 export function workflowChatEmbed(origin: string, channel: WorkflowWebChat): string {
-  const safeOrigin = new URL(origin).origin.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-  return `<script src="${safeOrigin}/embed.js" data-type="chat" data-server-url="${safeOrigin}" data-api-key="${channel.key}"></script>`;
+  return widgetEmbedCode({ baseUrl: origin, apiKey: channel.key, type: "chat" });
 }

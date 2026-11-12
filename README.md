@@ -10,7 +10,7 @@ Servio เป็นระบบผู้ช่วยบริการลูก�
 - **Hybrid Search**: รวม Semantic Search และ Keyword Search ด้วย Reciprocal Rank Fusion (RRF) บน PostgreSQL และ pgvector
 - **Web Chat**: แสดงคำตอบพร้อมภาพและเสียงอ้างอิง รองรับแนบภาพพร้อมข้อความเพื่อค้นหาสินค้า และแสดง Carousel พร้อมปุ่มดูรายละเอียดและสอบถามสินค้านี้
 - **Integrations**: Custom API พร้อมแปลง cURL เป็นช่องกรอกข้อมูล และ MCP รวมถึงผลลัพธ์สินค้าแบบ `structuredContent`
-- **Channels**: สร้าง Web Chat และโค้ด Widget สำหรับเว็บไซต์ พร้อมการสนทนาแบบข้อความและเสียง
+- **Channels**: สร้าง Web Chat และโค้ด Widget สำหรับเว็บไซต์ พร้อมการสนทนาแบบข้อความและเสียง ([วิธีฝังบนเว็บไซต์](docs/web-chat-embed.md))
 
 Local Knowledge เป็นระบบหลัก ส่วน Gemini Document Search เป็น Legacy และปิดการสร้างใหม่เป็นค่าเริ่มต้น
 

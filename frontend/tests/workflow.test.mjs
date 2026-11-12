@@ -14,7 +14,7 @@ const loadDependency = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const frontend = path.resolve(__dirname, '..');
-function load(relativePath, mocks) {
+function load(relativePath, mocks, asModule = false) {
   const filename = path.join(frontend, relativePath);
   const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
@@ -26,7 +26,7 @@ function load(relativePath, mocks) {
     return loadDependency(name);
   };
   vm.runInThisContext(`(function(require, exports) {${code}\n})`, { filename })(localRequire, exports);
-  return exports.default;
+  return asModule ? exports : exports.default;
 }
 function deferred() {
   let resolve;
@@ -68,7 +68,9 @@ function setup(t) {
 }
 const Button = (props) => React.createElement('button', props, props.children);
 const Placeholder = () => null;
+const embedCode = load('src/lib/embed-code.ts', {}, true);
 const commonMocks = {
+  '@/lib/embed-code': embedCode,
   '@/components/ui/Button': { Button },
   '@/components/WorkflowNavigator': { __esModule: true, default: Placeholder },
   'next/link': { __esModule: true, default: (props) => React.createElement('a', props, props.children) },
@@ -166,7 +168,7 @@ for (const channelType of ['line', 'facebook']) {
     } };
     const mocks = { ...commonMocks, '@/lib/team-context': { useTeam: () => team }, '@/lib/channelConfigs': channelApi };
     const ChannelForm = load('src/components/ChannelConfigForm.tsx', mocks);
-    const Wizard = load('src/app/admin/tools/widget/page.tsx', { ...mocks, '@/components/ChannelConfigForm': { __esModule: true, default: ChannelForm }, '@/components/ApiKeyManager': { ApiKeyManager: Placeholder }, '@/components/WidgetThemeEditor': { __esModule: true, default: Placeholder }, '@/lib/apiKeys': { getAllApiKeys: async () => [] } });
+    const Wizard = load('src/app/admin/tools/widget/page.tsx', { ...mocks, '@/lib/api': { getApiBaseUrl: () => window.location.origin }, '@/components/ChannelConfigForm': { __esModule: true, default: ChannelForm }, '@/components/ApiKeyManager': { ApiKeyManager: Placeholder }, '@/components/WidgetThemeEditor': { __esModule: true, default: Placeholder }, '@/lib/apiKeys': { getAllApiKeys: async () => [] } });
     const renderer = await env.mount(Wizard);
     await click(renderer, 'Next');
     const label = channelType === 'line' ? 'LINE Official Account' : 'Facebook Messenger';

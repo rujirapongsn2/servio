@@ -18,7 +18,9 @@ function load(name, mocks = {}) {
   vm.runInThisContext(`(function(require,exports){${code}\n})`)(require, exports);
   return exports;
 }
-const helpers = load('lib/workflow-channels.ts');
+const embed = load('lib/embed-code.ts');
+const api = load('lib/api.ts');
+const helpers = load('lib/workflow-channels.ts', { '@/lib/embed-code': embed });
 const key = (changes = {}) => ({ id: 1, name: 'Existing shop', slug: 'shop', key: 'sk_test', team_agent_id: 7, channel_type: 'web_widget', is_active: true, expires_at: null, ...changes });
 test('Web Chat choices exclude other teams, channels, inactive and expired links', () => {
   const data = [key(), key({ id: 2, team_agent_id: 8 }), key({ id: 3, channel_type: 'line' }), key({ id: 4, is_active: false }), key({ id: 5, expires_at: '2026-10-23T00:00:00' }), key({ id: 6, slug: '"><script>' })];
@@ -42,6 +44,7 @@ test('Visiting and choosing existing channels never creates one; new channel req
       return data;
     } },
     '@/lib/workflow-channels': helpers,
+    '@/lib/api': api,
     '@/components/WorkflowPanelDialog': { default: ({ children }) => React.createElement('div', null, children) },
   }).default;
   let view;
@@ -65,6 +68,7 @@ test('An uncertain creation disables re-submission until channels have been refr
   const Component = load('components/WorkflowChannels.tsx', {
     '@/lib/team-workflow': { workflowRequest: async (_path, init) => { if (init?.method === 'POST') { writes++; throw Error('lost response'); } return [key()]; } },
     '@/lib/workflow-channels': helpers,
+    '@/lib/api': api,
     '@/components/WorkflowPanelDialog': { default: ({ children }) => React.createElement('div', null, children) },
   }).default;
   let view;

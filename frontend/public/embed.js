@@ -1,6 +1,12 @@
-(function () {
-  const script = document.currentScript;
-  const serverUrl = (script.getAttribute('data-server-url') || 'http://localhost:3000').replace(/\/$/, '');
+(function initialize(script) {
+  if (!script) return;
+  if (!document.body) {
+    document.addEventListener('DOMContentLoaded', () => initialize(script), { once: true });
+    return;
+  }
+  const explicitServer = (script.getAttribute('data-server-url') || '').trim();
+  const scriptOrigin = new URL(script.src || script.getAttribute('src'), document.baseURI).origin;
+  const serverUrl = (explicitServer || scriptOrigin).replace(/\/+$/, '');
   const position = script.getAttribute('data-position') === 'bottom-left' ? 'bottom-left' : 'bottom-right';
   const type = script.getAttribute('data-type') || 'voice';
   const allowToggle = script.getAttribute('data-allow-toggle') !== 'false';
@@ -138,4 +144,4 @@
       .then(applyTheme)
       .catch(() => { /* keep the default Servio look */ });
   }
-})();
+})(document.currentScript);

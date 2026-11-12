@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, Copy, ExternalLink, MessageSquare, Plus, RefreshCw } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
 import { workflowRequest } from "@/lib/team-workflow";
 import { parseWorkflowWebChats, workflowChatEmbed, workflowChatUrl, type WorkflowWebChat } from "@/lib/workflow-channels";
 import WorkflowPanelDialog from "@/components/WorkflowPanelDialog";
@@ -63,7 +64,7 @@ export default function WorkflowChannels({ teamId, teamName, canEdit, hasDrafts 
     catch { setNotice("Copy unavailable. Select and copy the text below."); }
   };
   const chosen = channels.find(item => item.id === selected);
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const origin = getApiBaseUrl();
   const url = chosen ? workflowChatUrl(origin, chosen) : "";
   return <section aria-label="Team channels" className="mx-auto w-full max-w-4xl space-y-4 py-4 sm:py-8">
     <div><h2 className="text-xl font-semibold text-slate-900">Channels for {teamName}</h2><p className="mt-1 text-sm text-slate-500">Private preview does not need a channel.</p></div>

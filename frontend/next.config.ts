@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  async rewrites() {
+    return [{ source: "/widget.js", destination: "/embed.js" }];
+  },
   async headers() {
     return [
       {

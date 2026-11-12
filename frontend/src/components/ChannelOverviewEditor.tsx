@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Save, X } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
+import { widgetEmbedCode } from "@/lib/embed-code";
 import { Button } from "@/components/ui/Button";
 import WidgetThemeEditor from "@/components/WidgetThemeEditor";
 import { useAdminLocale } from "@/lib/admin-locale";
@@ -53,7 +55,7 @@ export default function ChannelOverviewEditor({ row, onClose, onSaved }: { row: 
   const { draft } = state;
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const chatLink = row.kind === "web" && row.slug ? `${origin}/c/${row.slug}?type=chat` : "";
-  const snippet = `<script src="${origin}/widget.js" data-api-key="${draft.api_key}" data-type="chat" data-position="bottom-right" data-allow-toggle="true" async></script>`;
+  const snippet = widgetEmbedCode({ baseUrl: getApiBaseUrl(), apiKey: draft.api_key, type: "chat", position: "bottom-right", allowToggle: true, async: true });
   return <div className="space-y-5 p-4 sm:p-6"><form className="space-y-5" aria-label={tr(`แก้ไข ${row.name}`, `Edit ${row.name}`)} onSubmit={async e => {
     e.preventDefault(); setError(""); setSaving(true);
     try { await saveChannelDraft(row, draft, renewal); onSaved(); }

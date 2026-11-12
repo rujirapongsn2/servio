@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../public/embed.js', import.meta.url), 'utf8');
-function mount(attributes = {}, { fetch } = {}) {
+function mount(attributes = {}, { fetch, scriptUrl = 'https://widgets.example/embed.js', delayBody = false } = {}) {
   let focused;
   class Element {
     attributes = new Map(); children = []; handlers = {}; className = ''; contentWindow = {};
@@ -21,10 +21,18 @@ function mount(attributes = {}, { fetch } = {}) {
     get textContent() { return this._text; }
   }
   const script = new Element();
+  script.src = scriptUrl;
   for (const [key, value] of Object.entries(attributes)) script.setAttribute(key, value);
   const document = { currentScript: script, baseURI: 'https://shop.example/page', head: new Element(), body: new Element(), handlers: {}, createElement: () => new Element(), addEventListener(name, handler) { this.handlers[name] = handler; } };
+  const pendingBody = document.body;
+  if (delayBody) document.body = null;
   const window = { handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } };
   vm.runInNewContext(source, { document, window, URL, Math, encodeURIComponent, ...(fetch ? { fetch } : {}) });
+  if (delayBody) {
+    document.currentScript = null;
+    document.body = pendingBody;
+    document.handlers.DOMContentLoaded();
+  }
   const container = document.body.children[0];
   return { document, window, container, frame: container.children[0], button: container.children[1], focus: () => focused };
 }
@@ -113,4 +121,39 @@ test('no API key means no theme request', () => {
   let called = false;
   mount({}, { fetch: async () => { called = true; } });
   assert.equal(called, false);
+});
+
+test('without an override, iframe, theme and logo use the script origin across sites', async () => {
+  const requests = [];
+  const ui = mount({ 'data-api-key': 'fake-channel-only', 'data-type': 'chat' }, {
+    scriptUrl: 'https://servio.example/embed.js?revision=2',
+    fetch: async (url, init) => { requests.push({ url, init }); return { ok: true, json: async () => ({ palette: PALETTE, launcher_logo: true, logo_url: '/api/public/widget-logo/fake-logo.png' }) }; },
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(requests[0].url, 'https://servio.example/api/public/widget-theme?api_key=fake-channel-only');
+  assert.equal(ui.button.children[0].src, 'https://servio.example/api/public/widget-logo/fake-logo.png');
+  ui.button.handlers.click();
+  assert.equal(new URL(ui.frame.src).origin, 'https://servio.example');
+  assert.doesNotMatch(ui.frame.src, /shop\.example|localhost/);
+});
+
+test('explicit server URL wins over script and embedding page origins for all requests', async () => {
+  const requests = [];
+  const ui = mount({ 'data-server-url': ' https://override.example/service/// ', 'data-api-key': 'fake-only' }, {
+    scriptUrl: 'https://cdn.example/embed.js', fetch: async url => { requests.push(url); return { ok: true, json: async () => ({ palette: PALETTE, launcher_logo: true, logo_url: '/api/public/widget-logo/fake-logo.png' }) }; },
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  ui.button.handlers.click();
+  assert.equal(new URL(ui.frame.src).pathname, '/service/widget');
+  assert.equal(requests[0], 'https://override.example/service/api/public/widget-theme?api_key=fake-only');
+  assert.equal(ui.button.children[0].src, 'https://override.example/service/api/public/widget-logo/fake-logo.png');
+  assert.match(ui.button.innerHTML, /m6 6 12 12/);
+});
+
+test('legacy script URL and async head placement still retain the actual script origin', () => {
+  for (const scriptUrl of ['https://servio.example/widget.js', '//servio.example/embed.js']) {
+    const ui = mount({ 'data-type': 'chat' }, { scriptUrl, delayBody: true });
+    ui.button.handlers.click();
+    assert.equal(new URL(ui.frame.src).origin, 'https://servio.example');
+  }
 });
